@@ -7,5 +7,5 @@ setuptools.setup(
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
     license='BSD',
-    install_requires=['numpy', 'scipy']
+    install_requires=['numpy', 'pystan']
 )
