@@ -7,6 +7,5 @@ setuptools.setup(
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
     license='BSD',
-    install_requires=['numpy', 'pystan'],
-    package_data={'pybslmm': ['*.stan']}
+    install_requires=['numpy', 'scipy']
 )
