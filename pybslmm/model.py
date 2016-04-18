@@ -2,24 +2,22 @@ import collections
 
 import numpy
 import theano
-import theano.config
 import theano.tensor as T
 
-def _adam(objective, params, a, b1, b2, e):
+_real = theano.config.floatX
+_S = theano.shared
 
 class Model:
-    _S = theano.shared
-    _F = theano.function
-    _Z = lambda n: numpy.zeros(n).astype(theano.config.floatX)
-
-    def __init__(self, a=1e-3, b1=0.9, b2=0.999, e=1e-3):
+    def __init__(self, n, p):
+        self.shape = (n, p)
         self.random = T.shared_randomstreams.RandomStreams(seed=0)
 
         X = T.matrix('X')
-        y = T.matrix('y')
+        y = T.vector('y')
+        self.obs = [X, y]
 
         # Variational parameters
-        n, p = X.shape
+        _Z = lambda n: numpy.zeros(n).astype(_real)
         alpha = _S(_Z(p), name='alpha')
         beta = _S(_Z(p), name='beta')
         gamma = _S(_Z(p), name='gamma')
@@ -28,50 +26,83 @@ class Model:
         # Variational approximation (re-parameterize eta = X theta)
         mu = T.dot(X, alpha * beta)
         nu = T.dot(X * X, (alpha / gamma + alpha * (1 - alpha) + beta * beta))
-        eta_raw = self.random.normal(n)
+        eta_raw = self.random.normal((n,))
         eta = mu + T.pow(nu, .5) * eta_raw
 
         # Generative model parameters
-        pi = T.scalar('pi')
-        tau = T.scalar('tau')
+        pi = _S(numpy.array(0).astype(_real), name='pi')
+        tau = _S(numpy.array(0).astype(_real), name='tau')
         self.hyperparams = [pi, tau]
 
         # Objective function
-        elbo = T.mean(
+        self.elbo = T.mean(
             # Data likelihood
-            T.dot(y, eta) - T.log(1 + T.exp(T.dot(y, eta)))
+            T.sum(T.log(y * eta) - T.log(1 + T.exp(y * eta)))
             # Data prior
-            - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) T.log(1 - alpha / (1 - pi)))
-            # Variational likelihood
-            -.5 * T.sum(T.log(nu) + (eta - mu)^2 / nu)
+            - T.sum(alpha * T.log(alpha / pi) +
+                    (1 - alpha) * T.log(1 - alpha / (1 - pi)))
+            # Variational entropy
+            - .5 * T.sum(T.log(nu) + (eta - mu) * (eta - mu) / nu)
             # Variational prior
-            -.5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) -
+            - .5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) -
                                  tau * alpha * (beta * beta + 1 / gamma)))
         )
 
+        # Hyperparameter updates (Empirical Bayes)
+        self.eb_updates = [(pi, T.sum(alpha) / self.shape[1]),
+                           (tau, T.sum(alpha) / T.sum(alpha * alpha * (beta * beta + 1 / gamma)))]
+
+    def fit(self, X_, y_, num_epochs=1000, a=1e-3, b1=0.9, b2=0.999, e=1e-3):
+        if X_.shape != self.shape:
+            raise ValueError("dimension mismatch: model {} vs X {}".format(self.shape, X_.shape))
+        if X_.shape[0] != y_.shape[0]:
+            raise ValueError("dimension mismatch: X {} vs y {}".format(X_.shape, y_.shape))
+
         # Stochastic gradient parameter updates (Adam)
-        grad = T.grad(elbo, self.)
+        grad = T.grad(self.elbo, self.params)
         epoch = T.iscalar('epoch')
         M = [_S(_Z(param.get_value().shape), name='m{}'.format(param.name))
              for param in self.params]
         V = [_S(_Z(param.get_value().shape), name='v{}'.format(param.name))
              for param in self.params]
         a_t = a * T.sqrt(1 - b2 ** epoch) / (1 - b1 ** epoch)
-        updates = {}
+        self.vb_updates = collections.OrderedDict()
         for param, g, m, v in zip(self.params, grad, M, V):
             new_m = b1 * m + (1 - b1) * g
             new_v = b2 * v + (1 - b2) * (g ** 2)
-            updates[param.name] = param + a_t * new_m / (T.sqrt(new_v) + e)
-            updates[m.name] = new_m
-            updates[v.name] = new_v
-        self.sg_step = theano.function([X, y, epoch], elbo, updates=updates)
+            self.vb_updates[param] = param + a_t * new_m / (T.sqrt(new_v) + e)
+            self.vb_updates[m] = new_m
+            self.vb_updates[v] = new_v
 
-        # Hyperparameter updates
-        eb_updates = {'pi': T.sum(alpha) / p,
-                      'tau': T.sum(alpha) / T.sum(alpha * alpha * (beta * beta + 1 / gamma))}
-        self.eb_step = theano.function([], elbo, updates=eb_updates)
+        # Observed data
+        X = theano.shared(X_.astype(_real), name='X')
+        y = theano.shared(y_, name='y')
 
-    def fit(self, X, y, minibatch_size=1000, num_epochs=100):
+        # Initial hyperparameters
+        pi = theano.shared(numpy.array(1000 / X_.shape[1]).astype(_real), name='pi')
+        tau = theano.shared(numpy.array(1).astype(_real), name='tau')
+
+        givens = list(zip(self.obs, [X, y])) + list(zip(self.hyperparams, [pi, tau]))
+
+        print('Compiling...', end='')
+        _F = theano.function
+        self.sg_step = _F([epoch], self.elbo, updates=self.vb_updates, givens=givens,
+                          mode=theano.compile.MonitorMode(post_func=theano.compile.monitormode.detect_nan))
+        self.eb_step = _F([], self.elbo, updates=self.eb_updates, givens=givens)
+        print('done')
+
+        print('Optimizing...', end='')
+        # Optimize
         for epoch in range(num_epochs):
-            self.sg_step(X, y)
-            self.eb_step()
+            elbo = self.sg_step(epoch + 1)
+            elbo = self.eb_step()
+        print('done')
+
+        return elbo
+
+def test():
+    from .simulation import simulate
+    theano.config.optimizer = 'fast_compile'
+    x, y, theta = simulate(100, 100, .5)
+    m = Model(*x.shape)
+    m.fit(x, y)
