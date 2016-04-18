@@ -1,125 +1,77 @@
+import collections
+
 import numpy
-import scipy
-import scipy.stats
+import theano
+import theano.config
+import theano.tensor as T
 
-N = scipy.stats.norm()
-
-class SpikeSlab:
-    def __init__(self, n, p):
-        # Gaussian re-parameterization
-        self.n = n
-        self.mu = numpy.zeros(n)
-        self.nu = numpy.zeros(n)
-
-        # Variational parameters Q(.)
-        self.alpha = numpy.zeros(p)
-        self.beta = numpy.zeros(p)
-        self.gamma = numpy.zeros(p)
-
-        # ∇Q
-        self.dalpha = numpy.zeros(p)
-        self.dbeta = numpy.zeros(p)
-        self.dgamma = numpy.zeros(p)
-
-    def sample(self, num_samples=10):
-        """Re-parameterize and sample to make expectation differentiable (Kingma,
-        Welling arXiv 2014). Return intermediates for gradient calculation.
-
-        """
-        sum_F = numpy.zeros(self.n)
-        sum_Z1 = numpy.zeros(self.n)
-        sum_Z2 = numpy.zeros(self.n)
-        # Important intermediates
-        # T1 = (Z .* F) / sqrt(nu)
-        # T2 = (Z^2 - 1) .* F / nu
-        sum_T1 = numpy.zeros(self.n)
-        sum_T2 = numpy.zeros(self.n)
-        for i in range(num_samples):
-            z = N.rvs(size=n)
-            eta = self.mu + numpy.sqrt(self.nu) * z
-            llik = self.llik(eta)
-            sum_F += llik
-            sum_Z1 += z
-            sum_T1 += z * llik
-            w = z * z
-            sum_Z2 += w
-            sum_T2 += (w - 1) * llik
-        # Control variate (Paisley, Jordan, Blei ICML 2012; Ranganath, Gerrish,
-        # Blei AIT1TATT1 2014)
-        #
-        # T1 -= E[T1]
-        # T2 -= E[T2]
-        T1 = (sum_T1 - sum_Z1 * sum_F) / (numpy.sqrt(self.nu) * nsamples)
-        T2 = (sum_T1 - sum_Z2 * sum_F) / self.nu
-        return T1, T2
-
-    def gradient(self, num_samples=10):
-        """Return ∇q_i
-
-        q ~ N(\mu, \nu)
-        \mu = \sum_j X_ij \alpha_j \beta_j
-        \nu = \sum_j X_ij^2 (\alpha_j / \gamma_j + \alpha_j (1 - \alpha_j) \beta_j^2)
-
-        """
-        T1, T2 = self.sample(num_samples)
-        B = self.beta * self.beta
-        self.dalpha = T1 * self.beta + .5 * T2 * (1 / self.gamma + B + 2 * self.alpha * B)
-        raise NotImplementedError
-
-    def adam(self, step_size=.1e-3, b1=.9, b2=.999, eps=1e-8):
-        """Perform stochastic gradient update with adaptive estimation (Adam).
-
-        http://arxiv.org/pdf/1412.6980.pdf
-
-        """
-        m = [numpy.zeros(p.shape) for p in (self.alpha, self.beta, self.gamma)]
-        v = [numpy.zeros(p.shape) for p in (self.alpha, self.beta, self.gamma)]
-        while True:
-            t = yield
-            nabla = self.gradient()
-            m = [(1 - b1) * g + b1 * m for g in nabla]
-            v = [(1 - b2) * (numpy.pow(g, 2)) + b2 * v for g in nabla]
-            rate = step_size * numpy.sqrt(1 - numpy.pow(b2, t)) / (1 - math.pow(b1, t))
-            self.alpha -= rate * m[0] / (numpy.sqrt(v[0]) + eps)
-            self.beta -= rate * m[1] / (numpy.sqrt(v[1]) + eps)
-            self.gamma -= rate * m[2] / (numpy.sqrt(v[2]) + eps)
+def _adam(objective, params, a, b1, b2, e):
 
 class Model:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-        self.params = SpikeSlab(y.shape, x.shape[1])
+    _S = theano.shared
+    _F = theano.function
+    _Z = lambda n: numpy.zeros(n).astype(theano.config.floatX)
 
-    def llik(eta):
-        """Return a matrix of log-likelihood per sample for (re-parameterized) generative model.
+    def __init__(self, a=1e-3, b1=0.9, b2=0.999, e=1e-3):
+        self.random = T.shared_randomstreams.RandomStreams(seed=0)
 
-        eta = X theta
+        X = T.matrix('X')
+        y = T.matrix('y')
 
-        """
-        raise NotImplementedError
+        # Variational parameters
+        n, p = X.shape
+        alpha = _S(_Z(p), name='alpha')
+        beta = _S(_Z(p), name='beta')
+        gamma = _S(_Z(p), name='gamma')
+        self.params = [alpha, beta, gamma]
 
-    def fit(num_iters=1000, step_size=0.001, b1=0.9, b2=0.999, eps=1e-8):
-        """Perform stochastic gradient descent with adaptive estimation (Adam)
+        # Variational approximation (re-parameterize eta = X theta)
+        mu = T.dot(X, alpha * beta)
+        nu = T.dot(X * X, (alpha / gamma + alpha * (1 - alpha) + beta * beta))
+        eta_raw = self.random.normal(n)
+        eta = mu + T.pow(nu, .5) * eta_raw
 
-        http://arxiv.org/pdf/1412.6980.pdf
+        # Generative model parameters
+        pi = T.scalar('pi')
+        tau = T.scalar('tau')
+        self.hyperparams = [pi, tau]
 
-        """
-        m = np.zeros(len(x))
-        v = np.zeros(len(x))
-        opt = self.params.adam()
-        opt.send(None)
-        for t in range(num_iters):
-            opt.send(t + 1)
+        # Objective function
+        elbo = T.mean(
+            # Data likelihood
+            T.dot(y, eta) - T.log(1 + T.exp(T.dot(y, eta)))
+            # Data prior
+            - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) T.log(1 - alpha / (1 - pi)))
+            # Variational likelihood
+            -.5 * T.sum(T.log(nu) + (eta - mu)^2 / nu)
+            # Variational prior
+            -.5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) -
+                                 tau * alpha * (beta * beta + 1 / gamma)))
+        )
 
-class Logit(Model):
-    def __init__(self, x, y):
-        super().__init__(x, y)
+        # Stochastic gradient parameter updates (Adam)
+        grad = T.grad(elbo, self.)
+        epoch = T.iscalar('epoch')
+        M = [_S(_Z(param.get_value().shape), name='m{}'.format(param.name))
+             for param in self.params]
+        V = [_S(_Z(param.get_value().shape), name='v{}'.format(param.name))
+             for param in self.params]
+        a_t = a * T.sqrt(1 - b2 ** epoch) / (1 - b1 ** epoch)
+        updates = {}
+        for param, g, m, v in zip(self.params, grad, M, V):
+            new_m = b1 * m + (1 - b1) * g
+            new_v = b2 * v + (1 - b2) * (g ** 2)
+            updates[param.name] = param + a_t * new_m / (T.sqrt(new_v) + e)
+            updates[m.name] = new_m
+            updates[v.name] = new_v
+        self.sg_step = theano.function([X, y, epoch], elbo, updates=updates)
 
-    def llik(eta):
-        """Return the model log-likelihood
+        # Hyperparameter updates
+        eb_updates = {'pi': T.sum(alpha) / p,
+                      'tau': T.sum(alpha) / T.sum(alpha * alpha * (beta * beta + 1 / gamma))}
+        self.eb_step = theano.function([], elbo, updates=eb_updates)
 
-        logit(y) = eta + e
-        eta = X (z .* b)
-
-        """
-        return eta * self.y - numpy.log(1 + numpy.exp(eta))
+    def fit(self, X, y, minibatch_size=1000, num_epochs=100):
+        for epoch in range(num_epochs):
+            self.sg_step(X, y)
+            self.eb_step()
