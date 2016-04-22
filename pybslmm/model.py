@@ -1,3 +1,8 @@
+"""Fit variational approximation to desired model.
+
+Author: Abhishek Sarkar <aksarkar@mit.edu>
+
+"""
 import collections
 
 import numpy
@@ -11,96 +16,95 @@ _F = theano.function
 _S = theano.shared
 _Z = lambda n: numpy.zeros(n).astype(_real)
 
-class Model:
-    def __init__(self, n, p):
-        self.shape = (n, p)
-        self.random = T.shared_randomstreams.RandomStreams(seed=0)
+def fit(X_, y_, minibatch_size, num_epochs=5000, a=1e-3, b1=0.9, b2=0.999, e=1e-3):
+    if X_.shape[0] != y_.shape[0]:
+        raise ValueError("dimension mismatch: X {} vs y {}".format(X_.shape, y_.shape))
+    n, p = X_.shape
 
-        X = T.matrix('X')
-        y = T.lvector('y')
-        self.obs = [X, y]
+    # Observed data
+    X = theano.shared(X_.astype(_real))
+    num_minibatch = p // minibatch_size
+    y = theano.shared(y_)
 
-        # Variational parameters
-        alpha_raw = _S(_Z(p))
-        alpha = T.nnet.sigmoid(alpha_raw)
-        beta = _S(_Z(p))
+    # Variational parameters
+    alpha_raw = _S(_Z(p))  # alpha = sigmoid(alpha_raw)
+    beta = _S(_Z(p))
+    gamma_raw = _S(_Z(p))  # gamma = gamma_max * sigmoid(gamma_raw)
+    params = [alpha_raw, beta, gamma_raw]
 
-        # Genuine prior on variance of causal effects
-        self.gamma_max = 1.5
-        gamma_raw = _S(_Z(p))
-        gamma = self.gamma_max * T.nnet.sigmoid(gamma_raw)
-        self.params = [alpha_raw, beta, gamma_raw]
+    # Minibatches of SNPs (features)
+    minibatch_index = T.iscalar()
+    minibatch_start = minibatch_index * minibatch_size
+    minibatch_end = (minibatch_index + 1) * minibatch_size
+    X_s = X[:,minibatch_start:minibatch_end]
+    minibatch_params = [p[minibatch_start:minibatch_end] for p in params]
+    alpha_raw_s, beta_s, gamma_raw_s = minibatch_params
 
-        # Variational approximation (re-parameterize eta = X theta)
-        mu = T.dot(X, alpha * beta)
-        nu = T.dot(T.sqr(X), alpha / gamma + alpha * (1 - alpha) + T.sqr(beta))
+    # Re-parameterize to guarantee bounded values
+    alpha_s = T.nnet.sigmoid(alpha_raw_s)
+    gamma_max = 1.5
+    gamma_s = gamma_max * T.nnet.sigmoid(gamma_raw_s)
 
-        # Re-parameterization to make expectation differentiable
-        eta_raw = self.random.normal(size=(10, n))
-        eta = mu + T.sqrt(nu) * eta_raw
+    # Variational approximation (re-parameterize eta = X theta)
+    mu = T.dot(X_s, alpha_s * beta_s)
+    nu = T.dot(T.sqr(X_s), alpha_s / gamma_s + alpha_s * (1 - alpha_s) + T.sqr(beta_s))
 
-        # Hyperparameters
-        pi = _S(numpy.array(0.1).astype(_real))
-        tau = _S(numpy.array(1).astype(_real))
-        self.hyperparams = [pi, tau]
+    # Re-parameterization to make expectation differentiable
+    random = T.shared_randomstreams.RandomStreams(seed=0)
+    eta_raw = random.normal(size=(10, n))
+    eta = mu + T.sqrt(nu) * eta_raw
 
-        # Objective function
-        self.elbo = (
-            # Data likelihood
-            T.mean(T.sum(y * eta - T.nnet.softplus(eta), axis=1))
-            # Prior
-            + .5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) - tau * alpha * (T.sqr(beta) + 1 / gamma)))
-            # Variational entropy
-            - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) * T.log((1 - alpha) / (1 - pi)))
-        )
+    # Hyperparameters
+    pi = _S(numpy.array(0.1).astype(_real))
+    # Genuine prior on P(theta | z)
+    tau = _S(numpy.array(1.5).astype(_real))
+    hyperparams = [pi, tau]
 
-    def fit(self, X_, y_, num_epochs=1000, a=1e-3, b1=0.9, b2=0.999, e=1e-3):
-        if X_.shape != self.shape:
-            raise ValueError("dimension mismatch: model {} vs X {}".format(self.shape, X_.shape))
-        if X_.shape[0] != y_.shape[0]:
-            raise ValueError("dimension mismatch: X {} vs y {}".format(X_.shape, y_.shape))
+    # Objective function
+    elbo = (
+        # Data likelihood
+        T.mean(T.sum(y * eta - T.nnet.softplus(eta), axis=1))
+        # Prior
+        + .5 * T.sum(alpha_s * (1 + T.log(tau) - T.log(gamma_s) - tau * alpha_s * (T.sqr(beta_s) + 1 / gamma_s)))
+        # Variational entropy
+        - T.sum(alpha_s * T.log(alpha_s / pi) + (1 - alpha_s) * T.log((1 - alpha_s) / (1 - pi)))
+    )
 
-        # Gradient ascent (Adam)
-        grad = T.grad(self.elbo, self.params)
-        epoch = T.iscalar('epoch')
-        M = [_S(_Z(param.get_value().shape))
-             for param in self.params]
-        V = [_S(_Z(param.get_value().shape))
-             for param in self.params]
-        a_t = a * T.sqrt(1 - T.pow(b2, epoch)) / (1 - T.pow(b1, epoch))
-        grad_updates = collections.OrderedDict()
-        for param, g, m, v in zip(self.params, grad, M, V):
-            new_m = b1 * m + (1 - b1) * g
-            new_v = b2 * v + (1 - b2) * T.sqr(g)
-            grad_updates[param] = param + a_t * new_m / (T.sqrt(new_v) + e)
-            grad_updates[m] = new_m
-            grad_updates[v] = new_v
+    # Gradient ascent (Adam)
+    grad = T.grad(elbo, minibatch_params)
+    epoch = T.iscalar('epoch')
+    M = [_S(_Z(minibatch_size)) for param in minibatch_params]
+    V = [_S(_Z(minibatch_size)) for param in minibatch_params]
+    a_t = a * T.sqrt(1 - T.pow(b2, epoch)) / (1 - T.pow(b1, epoch))
+    adam_updates = collections.OrderedDict()
+    for p, p_s, g, m, v in zip(params, minibatch_params, grad, M, V):
+        new_m = b1 * m + (1 - b1) * g
+        new_v = b2 * v + (1 - b2) * T.sqr(g)
+        adam_updates[p] = T.inc_subtensor(p_s, a_t * new_m / (T.sqrt(new_v) + e))
+        adam_updates[m] = new_m
+        adam_updates[v] = new_v
+    adam_step = _F([minibatch_index, epoch], elbo, updates=adam_updates)
 
-        # Observed data
-        X = theano.shared(X_.astype(_real))
-        y = theano.shared(y_)
+    # Optimize
+    for t in range(num_epochs):
+        elbo = adam_step(t % num_minibatch, t + 1)
+        if not t % 100:
+            print('ELBO:', elbo)
 
-        givens = list(zip(self.obs, [X, y]))
-        self.adam_step = _F([epoch], self.elbo, updates=grad_updates, givens=givens)
-
-        # Optimize
-        for epoch in range(1, num_epochs + 1):
-            elbo = self.adam_step(epoch)
-            # elbo = self.eb_step()
-            if not epoch % 100:
-                print('ELBO:', elbo)
-
-        self.alpha = T.nnet.sigmoid(self.params[0].get_value()).eval()
-        self.beta = self.params[1].get_value()
-        self.gamma = self.gamma_max * T.nnet.sigmoid(self.params[2].get_value()).eval()
-        self.pi, self.tau = [p.get_value() for p in self.hyperparams]
-        self.elbo_val = elbo
-        return self
+    return (T.nnet.sigmoid(alpha_raw.get_value()).eval(),
+            beta.get_value(),
+            gamma_max * T.nnet.sigmoid(gamma_raw.get_value()).eval())
 
 def test():
     from .simulation import simulate
+    import sklearn.linear_model
+
     numpy.random.seed(0)
-    x, y, theta = simulate(1000, 100, .5)
-    m = Model(*x.shape).fit(x, y)
-    theta_hat = m.alpha * m.beta
-    return m, x, y, theta
+    x, y, theta = simulate(1000, 10000, .5)
+    alpha, beta, gamma = fit(x[:900,:], y[:900], 10000)
+    yhat = x[900:].dot(alpha * beta)
+    rmse = numpy.std(y[900:] - yhat)
+    print('RMSE:', rmse)
+
+    ytilde = sklearn.linear_model.LogisticRegression().fit(x[:900,:], y[:900]).predict(x[900:])
+    print('RMSE (l2):', numpy.std(y[900:] - ytilde))
