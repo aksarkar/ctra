@@ -29,14 +29,18 @@ import numpy
 import numpy.random as R
 import scipy.stats
 
-def simulate_parameters(p, m=None):
-    """Return vector of MAFs and vector of effect sizes"""
+def simulate_parameters(p, pve, m=None):
+    """Return vector of MAFs, vector of effect sizes, and noise scale to achieve
+desired PVE"""
     maf = R.uniform(0.05, 0.5, size=p)
     theta = numpy.zeros(p)
     if m is None:
         m = p // 10
     theta[:m] = R.normal(size=m)
-    return maf, theta
+    var_xtheta = numpy.sum(2 * maf * (1 - maf) * theta * theta)
+    error_scale = numpy.sqrt(var_xtheta * (1 / pve - 1))
+    liability_scale = numpy.sqrt(var_xtheta / pve)
+    return maf, theta, error_scale, liability_scale
 
 def simulate_genotypes(n, p, maf):
     """Return matrix of dosages.
@@ -44,21 +48,18 @@ def simulate_genotypes(n, p, maf):
     This implementation generates independent SNPs.
 
     """
-    x = R.binomial(2, maf, size=(n, maf.shape[0])).astype(float)
-    return x
+    return R.binomial(2, maf, size=(n, p)).astype(float)
 
-def simulate_liabilities(x, theta, pve):
+def simulate_liabilities(x, theta, error_scale):
     """Return vector of liabilities"""
     n, p = x.shape
-    g = numpy.dot(x, theta)
-    e = R.normal(scale=numpy.var(g) * (1 / pve - 1), size=n)
-    return g + e
+    return numpy.dot(x, theta) + R.normal(scale=error_scale, size=n)
 
-def simulate_gaussian(n, p, pve, center=True):
+def simulate_gaussian(n, p, error_scale, center=True):
     """Return genotypes and Gaussian phenotype with specified PVE"""
-    maf, theta = simulate_parameters(p)
+    maf, theta, error_scale, _ = simulate_parameters(p)
     x = simulate_genotypes(n, p, maf)
-    l = simulate_liabilities(x, theta, pve)
+    l = simulate_liabilities(x, theta, error_scale)
     if center:
         x -= x.mean(axis=0)[numpy.newaxis,:]
     return x, l, theta
@@ -75,12 +76,12 @@ def simulate_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True):
     controls = numpy.zeros((1, p))
     y = numpy.zeros(n)
     y[:int(n * P)] = 1
-    maf, theta = simulate_parameters(p)
+    maf, theta, error_scale, liability_scale = simulate_parameters(p, pve, m)
     case_target = int(n * P)
+    t = scipy.stats.norm(scale=liability_scale).isf(K)
     while case_target > 0 or n - case_target > 0:
         x = simulate_genotypes(batch_size, p, maf)
-        l = simulate_liabilities(x, theta, pve)
-        t = scipy.stats.norm(scale=numpy.std(l)).isf(K)
+        l = simulate_liabilities(x, theta, error_scale)
         case_index = l > t
         num_sampled_cases = x[case_index].shape[0]
         if case_target > 0 and num_sampled_cases > 0:
