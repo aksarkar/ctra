@@ -95,16 +95,16 @@ def fit(X_, y_, minibatch_size, num_epochs=5000, a=1e-3, b1=0.9, b2=0.999, e=1e-
             beta.get_value(),
             gamma_max * T.nnet.sigmoid(gamma_raw.get_value()).eval())
 
-def test():
-    from .simulation import simulate
-    import sklearn.linear_model
+def test(a=1e-3):
+    from .simulation import simulate_ascertained_probit
+    from sklearn.linear_model import LogisticRegression
 
     numpy.random.seed(0)
-    x, y, theta = simulate(1000, 10000, .5)
-    alpha, beta, gamma = fit(x[:900,:], y[:900], 10000)
-    yhat = x[900:].dot(alpha * beta)
-    rmse = numpy.std(y[900:] - yhat)
-    print('RMSE:', rmse)
+    x, y, theta = simulate_ascertained_probit(n=1000, p=10000, K=.01, P=.5, pve=.5, batch_size=10000)
 
-    ytilde = sklearn.linear_model.LogisticRegression().fit(x[:900,:], y[:900]).predict(x[900:])
-    print('RMSE (l2):', numpy.std(y[900:] - ytilde))
+    alpha, beta, gamma = fit(x[:900,:], y[:900], a=a)
+    theta_hat = alpha * beta
+    print('RMSE (VB):', numpy.std(y[900:] - (x[900:].dot(alpha * beta) > 0)), end='\n\n')
+
+    alt = LogisticRegression().fit(x[:900,:], y[:900])
+    print('RMSE (l2):', numpy.std(y[900:] - alt.predict(x[900:])))
