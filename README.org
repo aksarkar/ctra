@@ -1,0 +1,20 @@
+#+TITLE: Contrasting regulatory architectures of complex traits
+#+OPTIONS: toc:nil num:nil
+
+This repository provides a Python package implementing the model and analyses
+presented in:
+
+Sarkar, Park, Kellis, "Contrasting regulatory architectures of complex traits".
+
+* Installation
+
+#+BEGIN_SRC sh
+pip install git://github.mit.edu/aksarkar/pybslmm
+#+END_SRC
+
+* Dependencies
+  - Python > 3
+  - numpy
+  - scipy
+  - Theano
+  - nvcc (optional)
