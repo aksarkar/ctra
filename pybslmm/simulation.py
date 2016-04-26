@@ -64,7 +64,7 @@ def simulate_gaussian(n, p, error_scale, center=True):
         x -= x.mean(axis=0)[numpy.newaxis,:]
     return x, l, theta
 
-def simulate_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True):
+def simulate_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True, m=None):
     """Return genotypes and case-control phenotype with specified PVE
 
     K - case prevalence in the population
