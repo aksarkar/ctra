@@ -8,7 +8,6 @@ import collections
 import numpy
 import numpy.random
 import theano
-import theano.printing
 import theano.tensor as T
 
 _real = theano.config.floatX
@@ -107,24 +106,30 @@ def fit(X_, y_, llik=logit, num_epochs=5000, max_precision=1e6, a=1e-3, b1=0.9, 
     # Optimize
     for t in range(num_epochs):
         elbo = adam_step(t + 1)
-        if not t % 100:
-            print('.', end='')
-    print()
 
     return (alpha.eval(),
             beta.get_value(),
             gamma.eval())
 
-def test(llik=logit, a=1e-3, **kwargs):
+if __name__ == '__main__':
+    import os
+    import pickle
+    import pdb
+    import sys
+
     from .simulation import simulate_ascertained_probit
     from sklearn.linear_model import LogisticRegression
 
-    numpy.random.seed(0)
-    x, y, theta = simulate_ascertained_probit(n=1000, p=10000, K=.01, P=.5, pve=.5, batch_size=10000)
+    # Hack needed for Broad UGER
+    os.environ['LD_LIBRARY_PATH'] = os.getenv('LIBRARY_PATH')
+    with open(sys.argv[1], 'rb') as f:
+        x, y, theta = pickle.load(f)
 
-    alpha, beta, gamma = fit(x[:900,:], y[:900], a=a)
-    theta_hat = alpha * beta
-    print('RMSE (VB):', numpy.std(y[900:] - (x[900:].dot(alpha * beta) > 0)), end='\n\n')
+    m = numpy.count_nonzero(theta)
+    x_train, x_test = x[::2], x[1::2]
+    y_train, y_test = y[::2], y[1::2]
 
-    alt = LogisticRegression().fit(x[:900,:], y[:900])
-    print('RMSE (l2):', numpy.std(y[900:] - alt.predict(x[900:])))
+    alpha, beta, gamma = fit(x_train, y_train)
+    alt = LogisticRegression(fit_intercept=False).fit(x_train, y_train)
+
+    pdb.set_trace()
