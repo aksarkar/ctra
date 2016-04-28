@@ -4,6 +4,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import collections
+import pdb
 
 import numpy
 import numpy.random
@@ -128,6 +129,7 @@ def fit(X_, y_, llik=logit, outer_steps=10, inner_steps=5000, max_precision=1e6,
             elbo = inner_step(t + 1)
         objective = outer_step(s + 1)
         print('Objective:', objective)
+    pdb.set_trace()
 
     return (alpha.eval(),
             beta.get_value(),
@@ -138,22 +140,13 @@ def fit(X_, y_, llik=logit, outer_steps=10, inner_steps=5000, max_precision=1e6,
 if __name__ == '__main__':
     import os
     import pickle
-    import pdb
     import sys
-
-    from .simulation import simulate_ascertained_probit
-    from sklearn.linear_model import LogisticRegression
 
     # Hack needed for Broad UGER
     os.environ['LD_LIBRARY_PATH'] = os.getenv('LIBRARY_PATH')
     with open(sys.argv[1], 'rb') as f:
         x, y, theta = pickle.load(f)
-
     m = numpy.count_nonzero(theta)
     x_train, x_test = x[::2], x[1::2]
     y_train, y_test = y[::2], y[1::2]
-
-    alpha, beta, gamma = fit(x_train, y_train)
-    alt = LogisticRegression(fit_intercept=False).fit(x_train, y_train)
-
-    pdb.set_trace()
+    fit(x_train, y_train, outer_steps=50, inner_steps=1000)
