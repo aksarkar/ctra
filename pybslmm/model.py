@@ -49,8 +49,9 @@ def beta(y, eta, eps=1e-7):
     y = T.clip(y, eps, 1 - eps)
     m = T.nnet.sigmoid(eta)
     v = T.exp(-eta)
-    return T.mean(m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
-                  T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v))
+    return T.mean(T.sum(m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
+                        T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v),
+                        axis=1))
 
 def fit(X_, y_, llik=logit, outer_steps=10, inner_steps=5000, max_precision=1e6, **adam_params):
     """Return the variational parameters alpha, beta, gamma.
