@@ -15,6 +15,23 @@ _F = theano.function
 _S = theano.shared
 _Z = lambda n: numpy.zeros(n).astype(_real)
 
+def _adam(objective, params, grad=None, a=1e-3, b1=0.9, b2=0.999, e=1e-8):
+    # Gradient ascent (Adam)
+    if grad is None:
+        grad = T.grad(objective, params)
+    epoch = T.iscalar('epoch')
+    M = [_S(numpy.zeros_like(param.get_value())) for param in params]
+    V = [_S(numpy.zeros_like(param.get_value())) for param in params]
+    a_t = a * T.sqrt(1 - T.pow(b2, epoch)) / (1 - T.pow(b1, epoch))
+    adam_updates = collections.OrderedDict()
+    for p, g, m, v in zip(params, grad, M, V):
+        new_m = b1 * m + (1 - b1) * g
+        new_v = b2 * v + (1 - b2) * T.sqr(g)
+        adam_updates[p] = T.cast(p + a_t * new_m / (T.sqrt(new_v) + e), _real)
+        adam_updates[m] = new_m
+        adam_updates[v] = new_v
+    return _F([epoch], objective, updates=adam_updates)
+
 def logit(y, eta):
     """Return E_q[ln p(y | eta)] assuming a logit link."""
     return T.mean(T.sum(y * eta - T.nnet.softplus(eta), axis=1))
@@ -34,14 +51,15 @@ def beta(y, eta, eps=1e-7):
     return T.mean(m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
                   T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v))
 
-def fit(X_, y_, llik=logit, num_epochs=5000, max_precision=1e6, a=1e-3, b1=0.9, b2=0.999, e=1e-8):
+def fit(X_, y_, llik=logit, outer_steps=10, inner_steps=5000, max_precision=1e6, **adam_params):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
     y_ - response vector (n x 1)
     llik - data likelihood under the variational approximation. A function
            which takes parameters y, mu, nu and returns a TensorVariable
-    num_epochs - number of stochastic gradient steps
+    outer_steps - number of hyperparameter stochastic gradient ascent steps
+    inner_steps - number of parameter stochastic gradient ascent steps
     max_precision - maximum value of gamma
     a, b1, b2, e - Adam parameters for auto-tuning learning rate
 
@@ -72,15 +90,28 @@ def fit(X_, y_, llik=logit, num_epochs=5000, max_precision=1e6, a=1e-3, b1=0.9, 
     random = T.shared_randomstreams.RandomStreams(seed=0)
     eta_raw = random.normal(size=(10, y.shape[0]))
     eta = mu + T.sqrt(nu) * eta_raw
+    # Take independent samples for the outer optimization
+    eta_outer_raw = random.normal(size=(10, y.shape[0]))
+    eta_outer = mu + T.sqrt(nu) * eta_outer_raw
 
     # Hyperparameters
-    pi = (numpy.array(0.1).astype(_real))
-    tau = (numpy.array(1).astype(_real))
-    hyperparams = [pi, tau]
+    pi_raw = _S(numpy.array(numpy.log(.1 / .9)).astype(_real))
+    pi = T.nnet.sigmoid(pi_raw)
+    tau_raw = _S(numpy.array(0, dtype=_real))
+    tau = T.exp(-tau_raw)
+    hyper_params = [pi_raw, tau_raw]
 
-    # Objective function
-    elbo = (
+    # Outer objective function
+    objective = (
         # Data likelihood
+        llik(y, eta_outer)
+        # Hyperprior
+        / pi * T.sqr(tau)
+    )
+
+    # Inner objective function
+    elbo = (
+        # Data log likelihood
         llik(y, eta) +
         # Prior
         + .5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) - tau * (T.sqr(beta) + 1 / gamma)))
@@ -88,28 +119,21 @@ def fit(X_, y_, llik=logit, num_epochs=5000, max_precision=1e6, a=1e-3, b1=0.9, 
         - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) * T.log((1 - alpha) / (1 - pi)))
     )
 
-    # Gradient ascent (Adam)
-    grad = T.grad(elbo, params)
-    epoch = T.iscalar('epoch')
-    M = [_S(_Z(p)) for param in params]
-    V = [_S(_Z(p)) for param in params]
-    a_t = a * T.sqrt(1 - T.pow(b2, epoch)) / (1 - T.pow(b1, epoch))
-    adam_updates = collections.OrderedDict()
-    for p, g, m, v in zip(params, grad, M, V):
-        new_m = b1 * m + (1 - b1) * g
-        new_v = b2 * v + (1 - b2) * T.sqr(g)
-        adam_updates[p] = T.cast(p + a_t * new_m / (T.sqrt(new_v) + e), _real)
-        adam_updates[m] = new_m
-        adam_updates[v] = new_v
-    adam_step = _F([epoch], elbo, updates=adam_updates)
+    inner_step = _adam(elbo, params, **adam_params)
+    outer_step = _adam(objective, hyper_params, **adam_params)
 
     # Optimize
-    for t in range(num_epochs):
-        elbo = adam_step(t + 1)
+    for s in range(outer_steps):
+        for t in range(inner_steps):
+            elbo = inner_step(t + 1)
+        objective = outer_step(s + 1)
+        print('Objective:', objective)
 
     return (alpha.eval(),
             beta.get_value(),
-            gamma.eval())
+            gamma.eval(),
+            pi.get_value(),
+            tau.get_value())
 
 if __name__ == '__main__':
     import os
