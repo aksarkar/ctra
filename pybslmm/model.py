@@ -1,4 +1,23 @@
-"""Fit variational approximation to desired model.
+"""Fit the hierarchical model
+
+We fit a generalized linear model regressing phenotype against genotype. We
+impose a spike-and-slab prior on the coefficients to regularize the
+problem. Our inference task is to find the maximum a posteriori estimate of the
+parameters pi (probability each SNP is causal) and tau (precision of causal
+effects).
+
+pi*, tau* := argmax_{pi, tau} p(x, y | pi, tau)
+
+The inference requires integrating over latent variables z (causal indicator)
+and theta (effect size). Our strategy is to fit a variational approximation to
+the posterior p(theta, z | x, y) and perform stochastic optimization to find
+the MAP estimates. We find the variational approximation by performing an inner
+stochastic optimization loop, maximizing the evidence lower bound given the
+current values of (pi, tau).
+
+In our stochastic optimization, we use the sample mean of of the individual
+sample likelihoods across the random samples eta as a control variate, since
+its expectation is 0.
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
@@ -17,7 +36,13 @@ _S = theano.shared
 _Z = lambda n: numpy.zeros(n).astype(_real)
 
 def _adam(objective, params, grad=None, a=1e-3, b1=0.9, b2=0.999, e=1e-8):
-    # Gradient ascent (Adam)
+    """Return a Theano function which updates params according to the gradient
+
+    Adaptive estimation (Kingma & Welling arxiv:1412.6980) tunes the learning
+    rate based on exponentially weighted moving averages of the first and
+    second moments of the gradient.
+
+    """
     if grad is None:
         grad = T.grad(objective, params)
     epoch = T.iscalar('epoch')
