@@ -60,7 +60,8 @@ def _adam(objective, params, grad=None, a=1e-3, b1=0.9, b2=0.999, e=1e-8):
 
 def logit(y, eta):
     """Return E_q[ln p(y | eta)] assuming a logit link."""
-    return T.mean(T.sum(y * eta - T.nnet.softplus(eta), axis=1))
+    F = y * eta - T.nnet.softplus(eta)
+    return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
 def beta(y, eta, eps=1e-7):
     """Return E_q[ln p(y | eta)] assuming y ~ Beta(sigmoid(eta), exp(-eta))
@@ -72,13 +73,12 @@ def beta(y, eta, eps=1e-7):
 
     """
     y = T.clip(y, eps, 1 - eps)
-    m = T.nnet.sigmoid(eta)
-    v = T.exp(-eta)
-    return T.mean(T.sum(m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
-                        T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v),
-                        axis=1))
+    m = T.clip(T.nnet.sigmoid(eta), eps, 1 - eps)
+    v = T.clip(T.exp(-eta), eps, 1 - eps)
+    F = (m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
+         T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v)
+    return T.mean(T.sum(F), axis=1)) - T.mean(F)
 
-def fit(X_, y_, llik=logit, outer_steps=10, inner_steps=5000, max_precision=1e6, **adam_params):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
