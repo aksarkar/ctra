@@ -79,16 +79,19 @@ def beta(y, eta, eps=1e-7):
          T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v)
     return T.mean(T.sum(F), axis=1)) - T.mean(F)
 
+def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
+        inner_params=dict(), outer_steps=10, outer_params=dict()):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
     y_ - response vector (n x 1)
     llik - data likelihood under the variational approximation. A function
            which takes parameters y, mu, nu and returns a TensorVariable
-    outer_steps - number of hyperparameter stochastic gradient ascent steps
-    inner_steps - number of parameter stochastic gradient ascent steps
     max_precision - maximum value of gamma
-    a, b1, b2, e - Adam parameters for auto-tuning learning rate
+    inner_steps - number of parameter stochastic gradient ascent steps
+    inner_params - Adam parameters for variational approximation
+    outer_steps - number of hyperparameter stochastic gradient ascent steps
+    outer_params - Adam parameters for MAP estimation
 
     """
     if X_.shape[0] != y_.shape[0]:
@@ -122,46 +125,42 @@ def beta(y, eta, eps=1e-7):
     eta_outer = mu + T.sqrt(nu) * eta_outer_raw
 
     # Hyperparameters
-    pi_raw = _S(numpy.array(numpy.log(.1 / .9)).astype(_real))
-    pi = T.nnet.sigmoid(pi_raw)
-    tau_raw = _S(numpy.array(0, dtype=_real))
-    tau = T.exp(-tau_raw)
-    hyper_params = [pi_raw, tau_raw]
+    logit_pi = _S(numpy.array(numpy.log(.1 / .9)).astype(_real))
+    pi = T.nnet.sigmoid(logit_pi)
+    log_tau = _S(numpy.array(0, dtype=_real))
+    tau = T.exp(-log_tau)
+    hyper_params = [logit_pi, log_tau]
 
     # Outer objective function
     objective = (
         # Data likelihood
         llik(y, eta_outer)
         # Hyperprior
-        / pi * T.sqr(tau)
+        - .5 * (T.sqr(logit_pi + 2) + T.sqr(log_tau))
     )
 
     # Inner objective function
     elbo = (
         # Data log likelihood
-        llik(y, eta) +
+        llik(y, eta)
         # Prior
         + .5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) - tau * (T.sqr(beta) + 1 / gamma)))
         # Variational entropy
         - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) * T.log((1 - alpha) / (1 - pi)))
     )
 
-    inner_step = _adam(elbo, params, **adam_params)
-    outer_step = _adam(objective, hyper_params, **adam_params)
+    inner_step = _adam(elbo, params, **inner_params)
+    outer_step = _adam(objective, hyper_params, **outer_params)
 
     # Optimize
     for s in range(outer_steps):
         for t in range(inner_steps):
             elbo = inner_step(t + 1)
         objective = outer_step(s + 1)
-        print('Objective:', objective)
+        print(pi.eval(), tau.eval())
     pdb.set_trace()
 
-    return (alpha.eval(),
-            beta.get_value(),
-            gamma.eval(),
-            pi.get_value(),
-            tau.get_value())
+    return pi.eval(), tau.eval()
 
 if __name__ == '__main__':
     import os
@@ -175,4 +174,5 @@ if __name__ == '__main__':
     m = numpy.count_nonzero(theta)
     x_train, x_test = x[::2], x[1::2]
     y_train, y_test = y[::2], y[1::2]
-    fit(x_train, y_train, outer_steps=50, inner_steps=1000)
+    pi, tau = fit(x_train, y_train, outer_steps=10, outer_params={'a': .01},
+                  inner_steps=1000, inner_params={'a': .01})
