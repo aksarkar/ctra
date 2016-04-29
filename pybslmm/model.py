@@ -76,8 +76,8 @@ def beta(y, eta, eps=1e-7):
     m = T.clip(T.nnet.sigmoid(eta), eps, 1 - eps)
     v = T.clip(T.exp(-eta), eps, 1 - eps)
     F = (m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
-         T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v)
-    return T.mean(T.sum(F), axis=1)) - T.mean(F)
+         T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v))
+    return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
 def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
         inner_params=dict(), outer_steps=10, outer_params=dict()):
