@@ -80,7 +80,7 @@ def beta(y, eta, eps=1e-7):
     return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
 def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
-        inner_params=dict(), outer_steps=10, outer_params=dict()):
+        inner_params=dict(), outer_steps=10):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
@@ -91,7 +91,6 @@ def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
     inner_steps - number of parameter stochastic gradient ascent steps
     inner_params - Adam parameters for variational approximation
     outer_steps - number of hyperparameter stochastic gradient ascent steps
-    outer_params - Adam parameters for MAP estimation
 
     """
     if X_.shape[0] != y_.shape[0]:
@@ -120,24 +119,10 @@ def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
     random = T.shared_randomstreams.RandomStreams(seed=0)
     eta_raw = random.normal(size=(10, y.shape[0]))
     eta = mu + T.sqrt(nu) * eta_raw
-    # Take independent samples for the outer optimization
-    eta_outer_raw = random.normal(size=(10, y.shape[0]))
-    eta_outer = mu + T.sqrt(nu) * eta_outer_raw
 
     # Hyperparameters
-    logit_pi = _S(numpy.array(numpy.log(.1 / .9)).astype(_real))
-    pi = T.nnet.sigmoid(logit_pi)
-    log_tau = _S(numpy.array(0, dtype=_real))
-    tau = T.exp(-log_tau)
-    hyper_params = [logit_pi, log_tau]
-
-    # Outer objective function
-    objective = (
-        # Data likelihood
-        llik(y, eta_outer)
-        # Hyperprior
-        - .5 * (T.sqr(logit_pi + 2) + T.sqr(log_tau))
-    )
+    pi = _S(numpy.array(.1).astype(_real))
+    tau = _S(numpy.array(1).astype(_real))
 
     # Inner objective function
     elbo = (
@@ -150,29 +135,14 @@ def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
     )
 
     inner_step = _adam(elbo, params, **inner_params)
-    outer_step = _adam(objective, hyper_params, **outer_params)
+    outer_step = _F([], elbo, updates=[(pi, T.mean(alpha)),
+                                       (tau, T.clip(T.mean(alpha / (T.sqr(beta) + 1 / gamma)), 0, max_precision))])
 
     # Optimize
     for s in range(outer_steps):
         for t in range(inner_steps):
             elbo = inner_step(t + 1)
-        objective = outer_step(s + 1)
+        objective = outer_step()
         print(pi.eval(), tau.eval())
-    pdb.set_trace()
 
-    return pi.eval(), tau.eval()
-
-if __name__ == '__main__':
-    import os
-    import pickle
-    import sys
-
-    # Hack needed for Broad UGER
-    os.environ['LD_LIBRARY_PATH'] = os.getenv('LIBRARY_PATH')
-    with open(sys.argv[1], 'rb') as f:
-        x, y, theta = pickle.load(f)
-    m = numpy.count_nonzero(theta)
-    x_train, x_test = x[::2], x[1::2]
-    y_train, y_test = y[::2], y[1::2]
-    pi, tau = fit(x_train, y_train, outer_steps=10, outer_params={'a': .01},
-                  inner_steps=1000, inner_params={'a': .01})
+    return alpha.eval(), beta.get_value(), gamma.eval(), pi.eval(), tau.eval()
