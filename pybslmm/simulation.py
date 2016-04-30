@@ -100,10 +100,3 @@ def simulate_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True, m
     if center:
         x -= x.mean(axis=0)[numpy.newaxis,:]
     return x, y, theta
-
-if __name__ == '__main__':
-    import pickle
-    x, y, theta = simulate_ascertained_probit(n=2000, p=10000, K=.01, P=.5,
-                                              pve=.5, batch_size=10000, m=100)
-    with open('data.pkl', 'wb') as f:
-        pickle.dump((x, y, theta), f)
