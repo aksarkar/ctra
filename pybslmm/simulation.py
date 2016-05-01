@@ -71,7 +71,6 @@ def simulate_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True, m
     P - target case proportion in the study
 
     """
-    R.seed(0)
     cases = numpy.zeros((1, p))
     controls = numpy.zeros((1, p))
     y = numpy.zeros(n)
