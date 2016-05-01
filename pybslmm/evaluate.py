@@ -34,7 +34,7 @@ def evaluate(datafile=None, seed=None):
     m = numpy.count_nonzero(theta)
     x_train, x_test = x[::2], x[1::2]
     y_train, y_test = y[::2], y[1::2]
-    alpha, beta, gamma, pi, tau = fit(x_train, y_train, outer_steps=100, inner_steps=100,
+    alpha, beta, gamma, pi, tau = fit(x_train, y_train, outer_steps=10, inner_steps=1000,
                                       inner_params={'a': .01})
     rmse = numpy.std(y_test - scipy.special.expit(x_test.dot(alpha * beta)))
     print(pi, tau, rmse)
