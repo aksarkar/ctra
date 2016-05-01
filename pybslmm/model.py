@@ -56,7 +56,7 @@ def _adam(objective, params, grad=None, a=1e-3, b1=0.9, b2=0.999, e=1e-8):
         adam_updates[p] = T.cast(p + a_t * new_m / (T.sqrt(new_v) + e), _real)
         adam_updates[m] = new_m
         adam_updates[v] = new_v
-    return _F([epoch], objective, updates=adam_updates)
+    return _F([epoch], [], updates=adam_updates)
 
 def logit(y, eta):
     """Return E_q[ln p(y | eta)] assuming a logit link."""
@@ -135,14 +135,13 @@ def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
     )
 
     inner_step = _adam(elbo, params, **inner_params)
-    outer_step = _F([], elbo, updates=[(pi, T.mean(alpha)),
-                                       (tau, T.clip(T.mean(alpha / (T.sqr(beta) + 1 / gamma)), 0, max_precision))])
+    outer_step = _F([], [], updates=[(pi, T.mean(alpha)),
+                                     (tau, T.clip(T.mean(alpha / (T.sqr(beta) + 1 / gamma)), 0, max_precision))])
 
     # Optimize
     for s in range(outer_steps):
         for t in range(inner_steps):
-            elbo = inner_step(t + 1)
-        objective = outer_step()
-        print(pi.eval(), tau.eval())
+            inner_step(t + 1)
+        outer_step()
 
     return alpha.eval(), beta.get_value(), gamma.eval(), pi.eval(), tau.eval()
