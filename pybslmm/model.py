@@ -23,10 +23,10 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import collections
-import pdb
 
 import numpy
 import numpy.random
+import scipy.special
 import theano
 import theano.tensor as T
 
@@ -35,7 +35,7 @@ _F = theano.function
 _S = theano.shared
 _Z = lambda n: numpy.zeros(n).astype(_real)
 
-def _adam(objective, params, grad=None, a=1e-3, b1=0.9, b2=0.999, e=1e-8):
+def _adam(objective, params, grad=None, a=0.05, b1=0.9, b2=0.999, e=1e-8):
     """Return a Theano function which updates params according to the gradient
 
     Adaptive estimation (Kingma & Welling arxiv:1412.6980) tunes the learning
@@ -79,8 +79,8 @@ def beta(y, eta, eps=1e-7):
          T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v))
     return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
-def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
-        inner_params=dict(), outer_steps=10):
+def fit(X_, y_, llik=logit, max_precision=1e6, steps=5000,
+        inner_params=dict()):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
@@ -121,27 +121,26 @@ def fit(X_, y_, llik=logit, max_precision=1e6, inner_steps=5000,
     eta = mu + T.sqrt(nu) * eta_raw
 
     # Hyperparameters
-    pi = _S(numpy.array(.1).astype(_real))
-    tau = _S(numpy.array(1).astype(_real))
+    logit_pi = _S(numpy.array(scipy.special.logit(.25)).astype(_real))
+    pi = T.nnet.sigmoid(logit_pi)
+    log_tau = _S(numpy.array(numpy.log(.1)).astype(_real))
+    tau = T.exp(log_tau)
+    hyper_params = [logit_pi, log_tau]
 
     # Inner objective function
     elbo = (
-        # Data log likelihood
         llik(y, eta)
-        # Prior
         + .5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) - tau * (T.sqr(beta) + 1 / gamma)))
-        # Variational entropy
         - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) * T.log((1 - alpha) / (1 - pi)))
+        - .5 * (T.sqr(logit_pi + 4) + T.sqr(log_tau))
     )
 
-    inner_step = _adam(elbo, params, **inner_params)
-    outer_step = _F([], [], updates=[(pi, T.mean(alpha)),
-                                     (tau, T.clip(T.mean(alpha / (T.sqr(beta) + 1 / gamma)), 0, max_precision))])
+    vbe_step = _adam(elbo, params)
+    vbm_step = _adam(elbo, hyper_params, a=5e-3)
 
     # Optimize
-    for s in range(outer_steps):
-        for t in range(inner_steps):
-            inner_step(t + 1)
-        outer_step()
-
-    return alpha.eval(), beta.get_value(), gamma.eval(), pi.eval(), tau.eval()
+    for t in range(steps):
+        vbe_step(t + 1)
+        vbm_step(t + 1)
+        if not t % 500:
+            yield alpha.eval(), beta.get_value(), gamma.eval(), pi.eval(), tau.eval()
