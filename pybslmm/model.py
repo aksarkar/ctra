@@ -2,11 +2,9 @@
 
 We fit a generalized linear model regressing phenotype against genotype. We
 impose a spike-and-slab prior on the coefficients to regularize the
-problem. Our inference task is to find the maximum a posteriori estimate of the
+problem. Our inference task is to estimate the posterior distribution of the
 parameters pi (probability each SNP is causal) and tau (precision of causal
 effects).
-
-pi*, tau* := argmax_{pi, tau} p(x, y | pi, tau)
 
 The inference requires integrating over latent variables z (causal indicator)
 and theta (effect size). Our strategy is to fit a variational approximation to
@@ -63,44 +61,31 @@ def logit(y, eta):
     F = y * eta - T.nnet.softplus(eta)
     return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
-def beta(y, eta, eps=1e-7):
-    """Return E_q[ln p(y | eta)] assuming y ~ Beta(sigmoid(eta), exp(-eta))
-
-    The Beta distribution is technically not appropriate for binary responses,
-    but we simply clamp the observed values into its support. We might prefer
-    Beta response to a binomial response (logit link) because it will handle
-    responses close to the decision boundary (E[y] > 0.5) better.
-
-    """
-    y = T.clip(y, eps, 1 - eps)
-    m = T.clip(T.nnet.sigmoid(eta), eps, 1 - eps)
-    v = T.clip(T.exp(-eta), eps, 1 - eps)
-    F = (m * v * (T.log(y) - T.log(1 - y)) + v * T.log(1 - y) +
-         T.gammaln(v) - T.gammaln(m * v) - T.gammaln((1 - m) * v))
-    return T.mean(T.sum(F, axis=1)) - T.mean(F)
-
-def fit(X_, y_, llik=logit, max_precision=1e6, steps=5000,
-        inner_params=dict()):
+def fit(X_, y_, a_, llik=logit, max_precision=1e6, steps=5000, learning_rate=0.05):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
     y_ - response vector (n x 1)
+    a_ - annotation vector (p x 1), values {0, ..., m - 1}
     llik - data likelihood under the variational approximation. A function
            which takes parameters y, mu, nu and returns a TensorVariable
     max_precision - maximum value of gamma
-    inner_steps - number of parameter stochastic gradient ascent steps
-    inner_params - Adam parameters for variational approximation
-    outer_steps - number of hyperparameter stochastic gradient ascent steps
+    steps - number of parameter stochastic gradient ascent steps
+    learning_rate - initial gradient ascent step size (used for Adam)
 
     """
     if X_.shape[0] != y_.shape[0]:
         raise ValueError("dimension mismatch: X {} vs y {}".format(X_.shape, y_.shape))
+    if X_.shape[1] != a_.shape[0]:
+        raise ValueError("dimension mismatch: X {} vs a {}".format(X_.shape, a_.shape))
     n, p = X_.shape
+    m = 1 + max(a_)
 
     # Observed data
     X = theano.shared(X_.astype(_real))
     y_obs = theano.shared(y_)
     y = T.cast(y_obs, 'int32')
+    a = theano.shared(a_.astype('int32'))
 
     # Variational parameters
     alpha_raw = _S(_Z(p))
@@ -121,26 +106,23 @@ def fit(X_, y_, llik=logit, max_precision=1e6, steps=5000,
     eta = mu + T.sqrt(nu) * eta_raw
 
     # Hyperparameters
-    logit_pi = _S(numpy.array(scipy.special.logit(.25)).astype(_real))
-    pi = T.nnet.sigmoid(logit_pi)
-    log_tau = _S(numpy.array(numpy.log(.1)).astype(_real))
-    tau = T.exp(log_tau)
-    hyper_params = [logit_pi, log_tau]
+    pi = _S(0.1 + _Z(m))
+    tau = _S(1 + _Z(m))
 
-    # Inner objective function
+    pi_deref = T.basic.choose(a, pi)
+    tau_deref = T.basic.choose(a, tau)
+
+    # Objective function
     elbo = (
         llik(y, eta)
-        + .5 * T.sum(alpha * (1 + T.log(tau) - T.log(gamma) - tau * (T.sqr(beta) + 1 / gamma)))
-        - T.sum(alpha * T.log(alpha / pi) + (1 - alpha) * T.log((1 - alpha) / (1 - pi)))
-        - .5 * (T.sqr(logit_pi + 4) + T.sqr(log_tau))
+        + .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
+        - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
     )
 
-    vbe_step = _adam(elbo, params)
-    vbm_step = _adam(elbo, hyper_params, a=5e-3)
+    vb_step = _adam(elbo, params, a=learning_rate)
 
     # Optimize
     for t in range(steps):
-        vbe_step(t + 1)
-        vbm_step(t + 1)
+        vb_step(t + 1)
         if not t % 500:
-            yield alpha.eval(), beta.get_value(), gamma.eval(), pi.eval(), tau.eval()
+            yield elbo.eval(), alpha.eval(), beta.get_value(), gamma.eval()

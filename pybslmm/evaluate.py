@@ -22,17 +22,16 @@ from .model import fit
 def evaluate(datafile=None, seed=0, pve=0.5, m=100):
     if datafile is not None:
         with open(datafile, 'rb') as f:
-            x, y, theta = pickle.load(f)
+            x, y, a, theta = pickle.load(f)
     else:
         numpy.random.seed(seed)
         x, y, theta = sample_case_control(n=2000, p=10000, K=.01, P=.5,
                                           pve=pve, m=m, batch_size=10000)
-    m = numpy.count_nonzero(theta)
     x_train, x_test = x[::2], x[1::2]
     y_train, y_test = y[::2], y[1::2]
-    for alpha, beta, gamma, pi, tau in fit(x_train, y_train, steps=10000):
+    for elbo, alpha, beta, gamma in fit(x_train, y_train, a):
         rmse = numpy.std(y_test - scipy.special.expit(x_test.dot(alpha * beta)))
-        print(pi, tau, rmse)
+        print(elbo, rmse)
 
 if __name__ == '__main__':
     evaluate(datafile=sys.argv[1])

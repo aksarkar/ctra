@@ -28,6 +28,8 @@ the cases.
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
+import pickle
+
 import numpy
 import numpy.random as R
 import scipy.stats
@@ -43,6 +45,12 @@ to sample from individual-specific genotype conditional probabilities.
     query = R.rand(pmf.shape[1])
     return (cdf < query).sum(axis=0)
 
+def sample_annotations(p):
+    """Return a vector of annotations"""
+    a = numpy.zeros(p)
+    a[:p // 2] = 1
+    return a
+
 def sample_parameters(p, pve, m=None):
     """Return vector of MAFs, vector of effect sizes, and noise scale to achieve
 desired PVE"""
@@ -50,7 +58,7 @@ desired PVE"""
     theta = numpy.zeros(p)
     if m is None:
         m = p // 10
-    theta[:m] = R.normal(size=m)
+    theta[::p // m] = R.normal(size=m)
     var_xtheta = numpy.sum(2 * maf * (1 - maf) * theta * theta)
     error_scale = numpy.sqrt(var_xtheta * (1 / pve - 1))
     liability_scale = numpy.sqrt(var_xtheta / pve)
@@ -123,8 +131,8 @@ def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
     x -= x.mean(axis=0)[numpy.newaxis,:]
     return x, y, theta
 
-if __name__ == '__main__':
-    import pickle
-    x, y, theta = sample_case_control(n=2000, p=10000, K=.01, P=.5, pve=.5, batch_size=10000, m=100)
-    with open('new-simulation-2000-10000-1000-0.01-0.5', 'wb') as f:
-        pickle.dump((x, y, theta), f)
+def main(outfile, n=10000, p=10000, K=.01, P=.5, pve=.5, batch_size=1000, m=100):
+    a = sample_annotations(p)
+    x, y, theta = sample_case_control(n=n, p=p, K=K, P=P, pve=pve, batch_size=batch_size, m=m)
+    with open(outfile, 'wb') as f:
+        pickle.dump((x, y, a, theta), f)
