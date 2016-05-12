@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name='pybslmm',
     description='Python implementation of Bayesian Sparse Linear Mixed Models',
-    version='0.1',
+    version='0.2',
     url='https://github.mit.edu/aksarkar/pybslmm',
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
