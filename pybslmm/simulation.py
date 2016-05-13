@@ -71,8 +71,7 @@ def sample_genotypes_iid(n, p, maf):
 
     """
     return R.binomial(2, maf, size=(n, p)).astype(float)
-
-def sample_genotypes_given_case(n, p, maf, theta, liability_scale, t):
+def sample_genotypes_given_pheno(n, p, maf, theta, liability_scale, thresh, case=True):
     """Return genotypes given all samples are cases.
 
     Based on algorithm "simCC" from Golan et al, PNAS 2015. We have to modify
@@ -88,9 +87,13 @@ def sample_genotypes_given_case(n, p, maf, theta, liability_scale, t):
     var_liability = liability_scale ** 2 - numpy.cumsum(var_xtheta)
     for i, (f, t, v) in enumerate(zip(maf, theta, var_liability)):
         prob_gi = numpy.array([f * f, 2 * f * (1 - f), (1 - f) * (1 - f)])
-        prob_p_given_g = scipy.stats.norm(liabilities, v).sf(t)
+        prob_p_given_g = scipy.stats.norm(liabilities, v).sf(thresh)
+        if not case:
+            prob_p_given_g = 1 - prob_p_given_g
         pmf = numpy.outer(prob_gi, prob_p_given_g)
-        x[:,i] = _multinomial(pmf)
+        x_i = _multinomial(pmf)
+        liabilities += x_i * t
+        x[:,i] = x_i
     return x
 
 def compute_liabilities(x, theta, error_scale):
@@ -98,7 +101,7 @@ def compute_liabilities(x, theta, error_scale):
     n, p = x.shape
     return numpy.dot(x, theta) + R.normal(scale=error_scale, size=n)
 
-def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
+def sample_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True, m=None):
     """Return genotypes and case-control phenotype with specified PVE
 
     K - case prevalence in the population
@@ -112,27 +115,54 @@ def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
     maf, theta, error_scale, liability_scale = sample_parameters(p, pve, m)
     case_target = int(n * P)
     t = scipy.stats.norm(scale=liability_scale).isf(K)
-    while n - case_target > 0:
+    while case_target > 0 or n - case_target > 0:
         x = sample_genotypes_iid(batch_size, p, maf)
         l = compute_liabilities(x, theta, error_scale)
         case_index = l > t
-        controls = numpy.vstack((controls, x[~case_index][:n - case_target]))
-        num_taken_controls = x[~case_index][:n - case_target].shape[0]
         num_sampled_cases = x[case_index].shape[0]
         if case_target > 0 and num_sampled_cases > 0:
             cases = numpy.vstack((cases, x[case_index][:case_target]))
             num_taken_cases = x[case_index][:case_target].shape[0]
         else:
             num_taken_cases = 0
+        if n - case_target > 0:
+            controls = numpy.vstack((controls, x[~case_index][:n - case_target]))
+            num_taken_controls = x[~case_index][:n - case_target].shape[0]
+        else:
+            num_taken_controls = 0
         case_target -= num_taken_cases
         n -= num_taken_cases + num_taken_controls
-    additional_cases = sample_genotypes_given_case(case_target, p, maf, theta, liability_scale, t)
-    x = numpy.vstack((cases[1:], additional_cases, controls[1:]))
+    x = numpy.vstack((cases[1:], controls[1:]))
+    if center:
+        x -= x.mean(axis=0)[numpy.newaxis,:]
+    return x, y, theta
+
+def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
+    """Return genotypes and case-control phenotype with specified PVE
+
+    K - case prevalence in the population
+    P - target case proportion in the study
+
+    """
+    case_target = int(n * P)
+    x = numpy.zeros((n, p), dtype='float32')
+    y = numpy.zeros(n)
+    y[:case_target] = 1
+    maf, theta, liability_scale = sample_parameters(p, pve, m)
+    thresh = scipy.stats.norm(scale=liability_scale).isf(K)
+    while n > case_target:
+        samples = min(n - case_target, batch_size)
+        x[n - samples:n] = sample_genotypes_given_pheno(samples, p, maf, theta, liability_scale, thresh, False)
+        n -= samples
+    while case_target > 0:
+        samples = min(case_target, batch_size)
+        x[case_target - samples:case_target] = sample_genotypes_given_pheno(samples, p, maf, theta, liability_scale, thresh, True)
+        case_target -= samples
     x -= x.mean(axis=0)[numpy.newaxis,:]
     return x, y, theta
 
-def main(outfile, n=10000, p=10000, K=.01, P=.5, pve=.5, batch_size=1000, m=100):
+def main(outfile, n=10000, p=100000, K=.01, P=.5, pve=.5, batch_size=1000, m=100):
     a = sample_annotations(p)
-    x, y, theta = sample_case_control(n=n, p=p, K=K, P=P, pve=pve, batch_size=batch_size, m=m)
+    x, y, theta = sample_ascertained_probit(n=n, p=p, K=K, P=P, pve=pve, batch_size=batch_size, m=m)
     with open(outfile, 'wb') as f:
         pickle.dump((x, y, a, theta), f)
