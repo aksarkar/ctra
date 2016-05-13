@@ -15,9 +15,20 @@ import sys
 import numpy
 import numpy.random
 import scipy.special
+from sklearn.linear_model import LogisticRegression
 
-from .simulation import sample_case_control
+from .simulation import *
 from .model import fit
+
+def prc(y, p):
+    for thresh in sorted(p):
+        y_hat = (p > thresh).astype('int')
+        yield sum(y * y_hat) / sum(y + y_hat), sum(y * y_hat) / sum(y)
+
+def auprc(y, p):
+    points = numpy.array(sorted(prc(y, p)))
+    delta = numpy.diff(points[:,0], axis=0)
+    return points[1:,1].dot(delta)
 
 def evaluate(datafile=None, seed=0, pve=0.5, m=100):
     if datafile is not None:
@@ -29,9 +40,10 @@ def evaluate(datafile=None, seed=0, pve=0.5, m=100):
                                           pve=pve, m=m, batch_size=10000)
     x_train, x_test = x[::2], x[1::2]
     y_train, y_test = y[::2], y[1::2]
+    print('Baseline AUPRC:', auprc(y_test, LogisticRegression(fit_intercept=False).fit(x_train, y_train).predict_proba(x_test)[:,1]))
     for elbo, alpha, beta, gamma in fit(x_train, y_train, a):
-        rmse = numpy.std(y_test - scipy.special.expit(x_test.dot(alpha * beta)))
-        print(elbo, rmse)
+        print(elbo, auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta))))
+
 
 if __name__ == '__main__':
     evaluate(datafile=sys.argv[1])
