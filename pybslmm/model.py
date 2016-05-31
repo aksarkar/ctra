@@ -61,14 +61,15 @@ def logit(y, eta):
     F = y * eta - T.nnet.softplus(eta)
     return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
-def fit(X_, y_, a_, llik=logit, max_precision=1e6, steps=5000, learning_rate=0.05):
+def fit(X_, y_, a_, pi_, tau_, llik=logit, initial_params=None,
+        max_precision=1e5, steps=5000, learning_rate=None):
     """Return the variational parameters alpha, beta, gamma.
 
     X_ - dosage matrix (n x p)
     y_ - response vector (n x 1)
     a_ - annotation vector (p x 1), values {0, ..., m - 1}
-    llik - data likelihood under the variational approximation. A function
-           which takes parameters y, mu, nu and returns a TensorVariable
+    llik - data likelihood under the variational approximation
+    init - Initial values of (alpha, beta, gamma, pi, tau)
     max_precision - maximum value of gamma
     steps - number of parameter stochastic gradient ascent steps
     learning_rate - initial gradient ascent step size (used for Adam)
@@ -87,29 +88,40 @@ def fit(X_, y_, a_, llik=logit, max_precision=1e6, steps=5000, learning_rate=0.0
     y = T.cast(y_obs, 'int32')
     a = theano.shared(a_.astype('int32'))
 
+    # Randomly initialize over hyperparameter proposals to find optimal
+    # initialization, then re-run with that initialization for each proposal
+    if initial_params is None:
+        alpha_ = numpy.random.uniform(size=p).astype(_real)
+        beta_ = numpy.random.normal(size=p).astype(_real)
+        gamma_ = numpy.random.normal(size=p).astype(_real)
+
     # Variational parameters
-    alpha_raw = _S(_Z(p))
+    alpha_raw = _S(alpha_)
     alpha = T.nnet.sigmoid(alpha_raw)
-    beta = _S(_Z(p))
-    gamma_raw = _S(_Z(p))
+    beta = _S(beta_)
+    gamma_raw = _S(gamma_)
     gamma = max_precision * T.nnet.sigmoid(gamma_raw)
     params = [alpha_raw, beta, gamma_raw]
 
-    # Variational approximation (re-parameterize eta = X theta)
+    # Variational approximation (re-parameterize eta = X theta). This is a
+    # "Gaussian reconstruction" in that we characterize its expectation and
+    # variance, then approximate its distribution with a Gaussian.
+    #
+    # We need to take the gradient of an intractable integral, so we re-write
+    # it as a Monte Carlo integral which is differentiable, following Kingma &
+    # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114). When we take the
+    # gradient, the global mean of the reconstruction is constant and drops
+    # out, so we only need to keep the global variance.
     mu = T.dot(X, alpha * beta)
     nu = T.dot(T.sqr(X), alpha / gamma + alpha * (1 - alpha) + T.sqr(beta))
-
-    # Re-parameterize to get a differentiable expectation, following Kingma &
-    # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114)
     random = T.shared_randomstreams.RandomStreams(seed=0)
     eta_raw = random.normal(size=(10, y.shape[0]))
     eta = mu + T.sqrt(nu) * eta_raw
 
     # Hyperparameters
-    pi = _S(0.1 + _Z(m))
-    tau = _S(1 + _Z(m))
-
+    pi = _S(pi_.astype(_real))
     pi_deref = T.basic.choose(a, pi)
+    tau = _S(tau_.astype(_real))
     tau_deref = T.basic.choose(a, tau)
 
     # Objective function
@@ -119,9 +131,10 @@ def fit(X_, y_, a_, llik=logit, max_precision=1e6, steps=5000, learning_rate=0.0
         - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
     )
 
-    vb_step = _adam(elbo, params, a=learning_rate)
-
     # Optimize
+    if learning_rate is None:
+        learning_rate = 0.5 / n
+    vb_step = _adam(elbo, params, a=learning_rate)
     for t in range(steps):
         vb_step(t + 1)
         if not t % 500:
