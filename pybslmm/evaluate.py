@@ -36,14 +36,20 @@ def evaluate(datafile=None, seed=0, pve=0.5, m=100):
             x, y, a, theta = pickle.load(f)
     else:
         numpy.random.seed(seed)
-        x, y, theta = sample_case_control(n=2000, p=10000, K=.01, P=.5,
-                                          pve=pve, m=m, batch_size=10000)
+        x, y, theta = sample_ascertained_probit(n=2000, p=10000, K=.01, P=.5,
+                                                pve=pve, m=m, batch_size=10000)
     x_train, x_test = x[::2], x[1::2]
     y_train, y_test = y[::2], y[1::2]
-    print('Baseline AUPRC:', auprc(y_test, LogisticRegression(fit_intercept=False).fit(x_train, y_train).predict_proba(x_test)[:,1]))
-    for elbo, alpha, beta, gamma in fit(x_train, y_train, a):
-        print(elbo, auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta))))
-
+    baseline = auprc(y_test, LogisticRegression(fit_intercept=False).fit(x_train, y_train).predict_proba(x_test)[:,1])
+    result = None
+    pi = 0.1 + numpy.zeros(2)
+    tau = 1 + numpy.zeros(2)
+    for step in fit(x_train, y_train, a, pi, tau):
+        result = step
+        print(result)
+    elbo, alpha, beta, gamma = result
+    comparison = auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta)))
+    print(baseline, comparison)
 
 if __name__ == '__main__':
     evaluate(datafile=sys.argv[1])
