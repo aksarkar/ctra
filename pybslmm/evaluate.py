@@ -46,9 +46,9 @@ def evaluate(datafile=None, seed=0, pve=0.5, m=100):
     tau = 1 + numpy.zeros(2)
     for step in fit(x_train, y_train, a, pi, tau):
         result = step
-    alpha, beta, gamma = result
-    comparison = auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta)))
-    print(baseline, comparison)
+        elbo, alpha, beta, gamma = result
+        comparison = auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta)))
+        print(elbo, baseline, comparison)
 
 if __name__ == '__main__':
     evaluate(datafile=sys.argv[1])
