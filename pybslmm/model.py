@@ -39,7 +39,7 @@ def logit(y, eta):
     return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
 def fit(X_, y_, a_, pi_, tau_, llik=logit, initial_params=None,
-        minibatch_n=100, max_precision=1e5, steps=5000, learning_rate=None,
+        minibatch_n=100, max_precision=1e5, learning_rate=None,
         b1=0.9, b2=0.999, e=1e-8):
     """Return the variational parameters alpha, beta, gamma.
 
@@ -50,8 +50,10 @@ def fit(X_, y_, a_, pi_, tau_, llik=logit, initial_params=None,
     initial_params - Initial values of (alpha, beta, gamma, pi, tau)
     minibatch_n - size of sample minibatches
     max_precision - maximum value of gamma
-    steps - number of parameter stochastic gradient ascent steps
     learning_rate - initial gradient ascent step size (used for Adam)
+    b1 - first moment exponential decay (Adam)
+    b2 - second moment exponential decay (Adam)
+    e - tolerance (Adam)
 
     """
     if X_.shape[0] != y_.shape[0]:
@@ -127,9 +129,6 @@ def fit(X_, y_, a_, pi_, tau_, llik=logit, initial_params=None,
     # second moments of the gradient.
     if learning_rate is None:
         learning_rate = 0.5 / n
-    b1=0.9
-    b2=0.999
-    e=1e-8
     grad = T.grad(elbo, params)
     M = [_S(_Z(p)) for param in params]
     V = [_S(_Z(p)) for param in params]
@@ -142,7 +141,13 @@ def fit(X_, y_, a_, pi_, tau_, llik=logit, initial_params=None,
         adam_updates[m] = new_m
         adam_updates[v] = new_v
     vb_step = _F(inputs=[epoch], outputs=elbo, updates=adam_updates)
-    for t in range(steps):
-        vb_step(t + 1)
-        if not t % 500:
-            yield alpha.eval(), beta.get_value(), gamma.eval()
+    curr_elbo = numpy.array(0)
+    delta = 1
+    t = 0
+    while delta > 0:
+        t += 1
+        new_elbo = vb_step(t)
+        if not t % 1000:
+            delta = new_elbo - curr_elbo
+            curr_elbo = new_elbo
+            yield curr_elbo, alpha.eval(), beta.get_value(), gamma.eval()
