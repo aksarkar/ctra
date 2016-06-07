@@ -13,6 +13,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import numpy
+import scipy.linalg
 import scipy.optimize
 import scipy.stats
 
@@ -86,29 +87,32 @@ def _jacknife(pheno_var, numerator, denominator):
                                sum(d for j, d in enumerate(denominator) if not j % i))
                      for i in range(len(numerator)))
 
-def estimate(phenotype, grms, prevalence, fixed_effects=None, blocks=200):
-    """Return mean and standard error of PVE"""
-    if fixed_effects is None:
-        fixed_effects = phenotype[:,numpy.newaxis]
-    probs, mult, pheno_var = estimate_thresholds(phenotype, fixed_effects, prevalence)
-    numerator = [numpy.zeros(len(grms)) for _ in range(blocks)]  # X'y
-    denominator = [numpy.zeros(shape=(len(grms), len(grms))) for _ in range(blocks)]  # (X'X)^-1
-    for entries in zip(*grms):
-        a, b, _ = entries[0]
-        index = a * len(phenotype) + b
-        gen_corr = mult[a] * mult[b] * numpy.array([g[2] for g in entries])
-        pheno_corr = probs[a] * probs[b]
-        numerator[index % blocks] += gen_corr.dot(pheno_corr)
-        denominator[index % blocks] += gen_corr.dot(gen_corr)
-    pve = _estimate(pheno_var, sum(numerator), sum(denominator)) / pheno_var
-    se = _jacknife(pheno_var, numerator, denominator)
-    return pve, se
+def estimate(y, grm, K):
+    """Naive estimate of PVE (without fixed effects).
 
-def _grm(array):
-    """Yield indexed entries of the GRM"""
-    for i in range(array.shape[0]):
-        for j in range(array.shape[1]):
-            yield i, j, array[i, j]
+    This provides a nonstreaming implementation as a sanity check.
+
+    """
+    t = _N.isf(K)
+    z = _N.pdf(t)
+    P = numpy.mean(y)
+    c = K ** 2 * (1 - K) ** 2 / (z ** 2 * P * (1 - P))
+    prm = numpy.outer(y - P, y - P) / (P * (1 - P))
+    if len(grm.shape) == 3:
+        G = grm.reshape(grm.shape[0], -1).T
+    elif len(grm.shape) == 2:
+        G = grm.reshape(-1, 1)
+    return c * scipy.linalg.lstsq(G, prm.reshape(-1, 1))[0]
+
+def grm(x):
+    """Return the GRM estimated from SNPs in x"""
+    w = x - numpy.mean(x, axis=0)
+    w /= numpy.std(w, axis=0)
+    return numpy.inner(w, w) / w.shape[1]
+
+def partitioned_grm(x, a):
+    """Return the GRMs estimated on partitions of X, according to annotation a"""
+    return numpy.array([_grm(x[:,a == i]) for i in range(1 + max(a))])
 
 if __name__ == '__main__':
     import pickle
@@ -117,9 +121,6 @@ if __name__ == '__main__':
     with open(sys.argv[1], 'rb') as f:
         x, y, a, theta = pickle.load(f)
     n, p = x.shape
-    numpy.reshape(y, (n, 1))
     a = a.astype('int32')
-
-    grms = [_grm(x[:,a == i].dot(x[:,a == i].T)) for i in range(1 + max(a))]
-    pve, se = estimate(y, grms, .01)
-    print(pve, se)
+    pve = _naive_estimate(y, _partitioned_grm(x, a), 0.01)
+    print(pve)
