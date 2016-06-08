@@ -47,7 +47,7 @@ to sample from individual-specific genotype conditional probabilities.
 
 def sample_annotations(p):
     """Return a vector of annotations"""
-    a = numpy.zeros(p)
+    a = numpy.zeros(p, dtype='int32')
     a[:p // 2] = 1
     return a
 
@@ -71,6 +71,7 @@ def sample_genotypes_iid(n, p, maf):
 
     """
     return R.binomial(2, maf, size=(n, p)).astype(float)
+
 def sample_genotypes_given_pheno(n, p, maf, theta, liability_scale, thresh, case=True):
     """Return genotypes given all samples are cases.
 
@@ -91,6 +92,7 @@ def sample_genotypes_given_pheno(n, p, maf, theta, liability_scale, thresh, case
         if not case:
             prob_p_given_g = 1 - prob_p_given_g
         pmf = numpy.outer(prob_gi, prob_p_given_g)
+        pmf /= numpy.sum(pmf, axis=0)
         x_i = _multinomial(pmf)
         liabilities += x_i * t
         x[:,i] = x_i
@@ -148,7 +150,7 @@ def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
     x = numpy.zeros((n, p), dtype='float32')
     y = numpy.zeros(n)
     y[:case_target] = 1
-    maf, theta, liability_scale = sample_parameters(p, pve, m)
+    maf, theta, _, liability_scale = sample_parameters(p, pve, m)
     thresh = scipy.stats.norm(scale=liability_scale).isf(K)
     while n > case_target:
         samples = min(n - case_target, batch_size)
@@ -158,7 +160,7 @@ def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
         samples = min(case_target, batch_size)
         x[case_target - samples:case_target] = sample_genotypes_given_pheno(samples, p, maf, theta, liability_scale, thresh, True)
         case_target -= samples
-    x -= x.mean(axis=0)[numpy.newaxis,:]
+    x -= x.mean(axis=0)
     return x, y, theta
 
 def main(outfile, n=10000, p=100000, K=.01, P=.5, pve=.5, batch_size=1000, m=100):

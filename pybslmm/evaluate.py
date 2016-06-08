@@ -56,8 +56,8 @@ def evaluate_pcgc(ntrials=10, seed=0, n=2000, p=10000, pve=0.5, m=100, K=.01, P=
     pve_hat = numpy.zeros(ntrials)
     for i in range(ntrials):
         a = sample_annotations(p)
-        x, y, theta = sample_ascertained_probit(n=n, p=p, K=K, P=P, pve=pve, m=m)
-        pve_hat[i] = pybslmm.pcgc.estimate(y, pybslmm.pcgc.partitioned_grm(x, a), K)
+        x, y, theta = sample_case_control(n=n, p=p, K=K, P=P, pve=pve, m=m)
+        pve_hat[i] = pybslmm.pcgc.estimate(y, pybslmm.pcgc.grm(x), K)
         print(pve_hat[i])
     print('Mean PVE:', numpy.mean(pve_hat))
 

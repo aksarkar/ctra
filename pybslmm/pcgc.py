@@ -112,7 +112,7 @@ def grm(x):
 
 def partitioned_grm(x, a):
     """Return the GRMs estimated on partitions of X, according to annotation a"""
-    return numpy.array([_grm(x[:,a == i]) for i in range(1 + max(a))])
+    return numpy.array([grm(x[:,a == i]) for i in range(1 + max(a))])
 
 if __name__ == '__main__':
     import pickle
