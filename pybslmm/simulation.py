@@ -88,3 +88,35 @@ class Simulation():
         x = self.sample_genotypes_iid(n)
         y = self.compute_liabilities(x)
         return x, y
+
+    def sample_ascertained_probit(self, n, K, P, batch_size=1000):
+        """Return matrix of centered and scaled genotypes and vector of phenotypes.
+
+        This implementation uses rejection sampling to find samples with high
+        enough liability to be cases.
+
+        n - total samples
+        K - population prevalence of cases
+        P - target proportion of cases
+
+        """
+        case_target = int(n * P)
+        remaining_cases = case_target
+        x = numpy.zeros(shape=(n, self.p), dtype='float64')
+        y = numpy.zeros(n, dtype='int32')
+        y[:int(n * P)] = 1
+        thresh = _N.isf(K)
+        while remaining_cases > 0 or n - case_target > 0:
+            z = self.sample_genotypes_iid(batch_size)
+            l = self.compute_liabilities(z)
+            case_index = l > thresh
+            num_sampled_cases = z[case_index].shape[0]
+            if remaining_cases > 0 and num_sampled_cases > 0:
+                num_taken = min(remaining_cases, num_sampled_cases)
+                x[remaining_cases - num_taken:remaining_cases] = z[case_index][:num_taken]
+                remaining_cases -= num_taken
+            if n - case_target > 0 and batch_size - num_sampled_cases > 0:
+                num_taken = min(n - case_target, batch_size - num_sampled_cases)
+                x[n - num_taken:n] = z[~case_index][:num_taken]
+                n -= num_taken
+        return x, y
