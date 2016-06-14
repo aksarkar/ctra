@@ -50,25 +50,17 @@ to sample from individual-specific genotype conditional probabilities.
 class Simulation():
     """Sample genotypes and phenotypes from a variety of genetic architectures."""
 
-    def __init__(self, p, K, pve, min_maf=0.01, max_maf=0.5, m=None):
+    def __init__(self, p, pve, min_maf=0.01, max_maf=0.5, seed=0):
+        R.seed(seed)
         self.p = p
-        self.K = K
         self.pve = pve
-        if m is None:
-            self.m = p
-            self.theta = R.normal(scale=numpy.sqrt(self.pve / self.m), size=self.m)
-        else:
-            self.m = m
-            self.theta = numpy.zeros(self.p)
-            self.theta[::self.p // self.m] = R.normal(size=self.m)
+        self.theta = R.normal(scale=numpy.sqrt(self.pve / self.p), size=self.p)
         self.maf = R.uniform(min_maf, max_maf, size=self.p)
         # Population mean and variance of genotype, according to the binomial
         # distribution
         self.x_mean = 2 * self.maf
         self.x_var = 2 * self.maf * (1 - self.maf)
-        self.genetic_var = self.x_var * self.theta * self.theta
-        self.residual_var = self.genetic_var.sum() * (1 / self.pve - 1)
-        self.pheno_var = self.genetic_var.sum() + self.residual_var
+        self.residual_var = 1 - self.pve
 
     def sample_annotations(self):
         """Return vector of annotations"""

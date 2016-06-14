@@ -75,15 +75,13 @@ def evaluate(datafile=None, seed=0, pve=0.5, m=100):
         elbo, alpha, beta, gamma = result
         comparison = auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta)))
         print(elbo, baseline, comparison)
-def evaluate_pcgc(ntrials=10, seed=0, n=2000, p=10000, pve=0.5, m=100, K=.01, P=.5):
-    numpy.random.seed(seed)
-    pve_hat = numpy.zeros(ntrials)
-    for i in range(ntrials):
-        a = sample_annotations(p)
-        x, y, theta = sample_case_control(n=n, p=p, K=K, P=P, pve=pve, m=m)
-        pve_hat[i] = pybslmm.pcgc.estimate(y, pybslmm.pcgc.grm(x), K)
-        print(pve_hat[i])
-    print('Mean PVE:', numpy.mean(pve_hat))
+        print(baseline, comparison, pi, tau)
 
-if __name__ == '__main__':
-    evaluate(datafile=sys.argv[1])
+def evaluate_pcgc(n=2000, p=10000, m=100, K=.01, P=.5, pve=0.5, seed=0):
+    """Estimate PVE using PCGC regression.
+
+    Sanity check re-implementation of simCC from Golan et al PNAS 2015.
+
+    """
+    with simulated_data(n, p, m, K, P, pve, seed) as (x, y, a, theta):
+        print('{:.2f}'.format(pybslmm.pcgc.estimate(y, x.dot(x.T) / x.shape[1], K)[0][0]))

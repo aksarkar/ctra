@@ -87,22 +87,19 @@ def _jacknife(pheno_var, numerator, denominator):
                                sum(d for j, d in enumerate(denominator) if not j % i))
                      for i in range(len(numerator)))
 
-def estimate(y, grm, K):
+def estimate(y, grm):
     """Naive estimate of PVE (without fixed effects).
 
     This provides a nonstreaming implementation as a sanity check.
 
     """
-    t = _N.isf(K)
-    z = _N.pdf(t)
-    P = numpy.mean(y)
-    c = K ** 2 * (1 - K) ** 2 / (z ** 2 * P * (1 - P))
-    prm = numpy.outer(y - P, y - P) / (P * (1 - P))
-    if len(grm.shape) == 3:
-        G = grm.reshape(grm.shape[0], -1).T
-    elif len(grm.shape) == 2:
-        G = grm.reshape(-1, 1)
-    return c * scipy.linalg.lstsq(G, prm.reshape(-1, 1))[0]
+    index = numpy.triu_indices(grm.shape[0], 1)
+    if len(grm.shape) == 2:
+        G = grm[index].reshape(-1, 1)
+    else:
+        raise ValueError('Incorrect dimension of GRM: {}'.format(grm.shape))
+    prm = numpy.outer(y, y)[index].reshape(-1, 1)
+    return scipy.linalg.lstsq(G, prm)[0]
 
 def grm(x):
     """Return the GRM estimated from SNPs in x"""
