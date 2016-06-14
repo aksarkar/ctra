@@ -34,6 +34,8 @@ import numpy
 import numpy.random as R
 import scipy.stats
 
+_N = scipy.stats.norm()
+
 def _multinomial(pmf):
     """Sample from multiple multinomial distributions in parallel. This is needed
 to sample from individual-specific genotype conditional probabilities.
@@ -45,126 +47,52 @@ to sample from individual-specific genotype conditional probabilities.
     query = R.rand(pmf.shape[1])
     return (cdf < query).sum(axis=0)
 
-def sample_annotations(p):
-    """Return a vector of annotations"""
-    a = numpy.zeros(p, dtype='int32')
-    a[:p // 2] = 1
-    return a
+class Simulation():
+    """Sample genotypes and phenotypes from a variety of genetic architectures."""
 
-def sample_parameters(p, pve, m=None):
-    """Return vector of MAFs, vector of effect sizes, and noise scale to achieve
-desired PVE"""
-    maf = R.uniform(0.05, 0.5, size=p)
-    theta = numpy.zeros(p)
-    if m is None:
-        m = p // 10
-    theta[::p // m] = R.normal(size=m)
-    var_xtheta = numpy.sum(2 * maf * (1 - maf) * theta * theta)
-    error_scale = numpy.sqrt(var_xtheta * (1 / pve - 1))
-    liability_scale = numpy.sqrt(var_xtheta / pve)
-    return maf, theta, error_scale, liability_scale
-
-def sample_genotypes_iid(n, p, maf):
-    """Return matrix of dosages.
-
-    This implementation generates independent SNPs.
-
-    """
-    return R.binomial(2, maf, size=(n, p)).astype(float)
-
-def sample_genotypes_given_pheno(n, p, maf, theta, liability_scale, thresh, case=True):
-    """Return genotypes given all samples are cases.
-
-    Based on algorithm "simCC" from Golan et al, PNAS 2015. We have to modify
-    the algorithm when we relax the infinitesimal assumption. Specifically, we
-    use the population variance of X (based on SNPs being independent with
-    known MAF) to compute the residual variance needed to estimate p(y = 1 |
-    g_{1..i}).
-
-    """
-    x = numpy.zeros(shape=(n, p))
-    liabilities = numpy.zeros(n)
-    var_xtheta = 2 * maf * (1 - maf) * theta * theta
-    var_liability = liability_scale ** 2 - numpy.cumsum(var_xtheta)
-    for i, (f, t, v) in enumerate(zip(maf, theta, var_liability)):
-        prob_gi = numpy.array([f * f, 2 * f * (1 - f), (1 - f) * (1 - f)])
-        prob_p_given_g = scipy.stats.norm(liabilities, v).sf(thresh)
-        if not case:
-            prob_p_given_g = 1 - prob_p_given_g
-        pmf = numpy.outer(prob_gi, prob_p_given_g)
-        pmf /= numpy.sum(pmf, axis=0)
-        x_i = _multinomial(pmf)
-        liabilities += x_i * t
-        x[:,i] = x_i
-    return x
-
-def compute_liabilities(x, theta, error_scale):
-    """Return vector of liabilities"""
-    n, p = x.shape
-    return numpy.dot(x, theta) + R.normal(scale=error_scale, size=n)
-
-def sample_ascertained_probit(n, p, K, P, pve, batch_size=1000, center=True, m=None):
-    """Return genotypes and case-control phenotype with specified PVE
-
-    K - case prevalence in the population
-    P - target case proportion in the study
-
-    """
-    cases = numpy.zeros((1, p))
-    controls = numpy.zeros((1, p))
-    y = numpy.zeros(n)
-    y[:int(n * P)] = 1
-    maf, theta, error_scale, liability_scale = sample_parameters(p, pve, m)
-    case_target = int(n * P)
-    t = scipy.stats.norm(scale=liability_scale).isf(K)
-    while case_target > 0 or n - case_target > 0:
-        x = sample_genotypes_iid(batch_size, p, maf)
-        l = compute_liabilities(x, theta, error_scale)
-        case_index = l > t
-        num_sampled_cases = x[case_index].shape[0]
-        if case_target > 0 and num_sampled_cases > 0:
-            cases = numpy.vstack((cases, x[case_index][:case_target]))
-            num_taken_cases = x[case_index][:case_target].shape[0]
+    def __init__(self, p, K, pve, min_maf=0.01, max_maf=0.5, m=None):
+        self.p = p
+        self.K = K
+        self.pve = pve
+        if m is None:
+            self.m = p
+            self.theta = R.normal(scale=numpy.sqrt(self.pve / self.m), size=self.m)
         else:
-            num_taken_cases = 0
-        if n - case_target > 0:
-            controls = numpy.vstack((controls, x[~case_index][:n - case_target]))
-            num_taken_controls = x[~case_index][:n - case_target].shape[0]
-        else:
-            num_taken_controls = 0
-        case_target -= num_taken_cases
-        n -= num_taken_cases + num_taken_controls
-    x = numpy.vstack((cases[1:], controls[1:]))
-    if center:
-        x -= x.mean(axis=0)[numpy.newaxis,:]
-    return x, y, theta
+            self.m = m
+            self.theta = numpy.zeros(self.p)
+            self.theta[::self.p // self.m] = R.normal(size=self.m)
+        self.maf = R.uniform(min_maf, max_maf, size=self.p)
+        # Population mean and variance of genotype, according to the binomial
+        # distribution
+        self.x_mean = 2 * self.maf
+        self.x_var = 2 * self.maf * (1 - self.maf)
+        self.genetic_var = self.x_var * self.theta * self.theta
+        self.residual_var = self.genetic_var.sum() * (1 / self.pve - 1)
+        self.pheno_var = self.genetic_var.sum() + self.residual_var
 
-def sample_case_control(n, p, K, P, pve, batch_size=1000, m=None):
-    """Return genotypes and case-control phenotype with specified PVE
+    def sample_annotations(self):
+        """Return vector of annotations"""
+        a = numpy.zeros(self.p, dtype='int32')
+        a[:self.p // 2] = 1
+        return a
 
-    K - case prevalence in the population
-    P - target case proportion in the study
+    def sample_genotypes_iid(self, n):
+        """Return matrix of dosages.
 
-    """
-    case_target = int(n * P)
-    x = numpy.zeros((n, p), dtype='float32')
-    y = numpy.zeros(n)
-    y[:case_target] = 1
-    maf, theta, _, liability_scale = sample_parameters(p, pve, m)
-    thresh = scipy.stats.norm(scale=liability_scale).isf(K)
-    while n > case_target:
-        samples = min(n - case_target, batch_size)
-        x[n - samples:n] = sample_genotypes_given_pheno(samples, p, maf, theta, liability_scale, thresh, False)
-        n -= samples
-    while case_target > 0:
-        samples = min(case_target, batch_size)
-        x[case_target - samples:case_target] = sample_genotypes_given_pheno(samples, p, maf, theta, liability_scale, thresh, True)
-        case_target -= samples
-    x -= x.mean(axis=0)
-    return x, y, theta
+        This implementation generates independent SNPs, centered and scaled
+        according to the population mean and population variance (based on
+        MAF).
 
-def main(outfile, n=10000, p=100000, K=.01, P=.5, pve=.5, batch_size=1000, m=100):
-    a = sample_annotations(p)
-    x, y, theta = sample_ascertained_probit(n=n, p=p, K=K, P=P, pve=pve, batch_size=batch_size, m=m)
-    with open(outfile, 'wb') as f:
-        pickle.dump((x, y, a, theta), f)
+        """
+        return (R.binomial(2, self.maf, size=(n, self.p)) - self.x_mean) / numpy.sqrt(self.x_var)
+
+    def compute_liabilities(self, x):
+        """Return vector of liabilities"""
+        n, p = x.shape
+        return x.dot(self.theta) + R.normal(scale=numpy.sqrt(self.residual_var), size=n)
+
+    def sample_gaussian(self, n):
+        """Return matrix of centered and scaled genotypes and vector of phenotypes"""
+        x = self.sample_genotypes_iid(n)
+        y = self.compute_liabilities(x)
+        return x, y
