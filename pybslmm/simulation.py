@@ -80,8 +80,9 @@ class Simulation():
 
     def compute_liabilities(self, x):
         """Return vector of liabilities"""
-        n, p = x.shape
-        return x.dot(self.theta) + R.normal(scale=numpy.sqrt(self.residual_var), size=n)
+        genetic_value = x.dot(self.theta)
+        genetic_value += numpy.sqrt(self.residual_var) * R.normal(size=x.shape[0])
+        return genetic_value
 
     def sample_gaussian(self, n):
         """Return matrix of centered and scaled genotypes and vector of phenotypes"""
@@ -119,4 +120,58 @@ class Simulation():
                 num_taken = min(n - case_target, batch_size - num_sampled_cases)
                 x[n - num_taken:n] = z[~case_index][:num_taken]
                 n -= num_taken
+        return x, y
+
+    def sample_genotypes_given_pheno(self, n, K, case=True):
+        """Sample matrix of genotypes given phenotype.
+
+        Based on algorithm "simCC" from Golan et al, PNAS 2015. We have to modify
+        the algorithm when we relax the infinitesimal assumption. Specifically, we
+        use the population variance of X (based on SNPs being independent with
+        known MAF) to compute the residual variance needed to estimate p(y = 1 |
+        g_{1..i}).
+
+        """
+        x = numpy.zeros(shape=(n, self.p))
+        thresh = _N.isf(K)
+        remaining_pheno_scale = numpy.sqrt(1 - numpy.cumsum(self.theta * self.theta))
+        for i in range(n):
+            y = numpy.zeros(1)
+            for j in range(self.p):
+                z = (numpy.arange(3) - self.x_mean[j]) / numpy.sqrt(self.x_var[j])
+                prob_z = numpy.array([(1 - self.maf[j]) ** 2,
+                                      2 * self.maf[j] * (1 - self.maf[j]),
+                                      self.maf[j] ** 2])
+                new_y = y + z * self.theta[j]
+                prob_p_given_g = _N.sf((thresh - new_y) / remaining_pheno_scale[j])
+                if not case:
+                    prob_p_given_g = 1 - prob_p_given_g
+                pmf = prob_p_given_g * prob_z
+                pmf /= pmf.sum()
+                x[i, j] = R.choice(numpy.arange(3), p=pmf)
+                y = new_y[x[i, j]]
+        return x
+
+    def sample_case_control(self, n, K, P, batch_size=1000):
+        """Return matrix of genotypes and vector of phenotypes.
+
+        This implementation uses a faster algorithm to sample cases.
+
+        n - total samples
+        P - target proportion of cases
+
+        """
+        case_target = int(n * P)
+        x = numpy.zeros((n, self.p), dtype='float32')
+        y = numpy.zeros(n, dtype='int32')
+        y[:case_target] = 1
+        thresh = _N.isf(K)
+        while n > case_target:
+            samples = min(n - case_target, batch_size)
+            x[n - samples:n] = self.sample_genotypes_given_pheno(samples, K, False)
+            n -= samples
+        while case_target > 0:
+            samples = min(case_target, batch_size)
+            x[case_target - samples:case_target] = self.sample_genotypes_given_pheno(samples, K, True)
+            case_target -= samples
         return x, y

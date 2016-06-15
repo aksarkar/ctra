@@ -77,12 +77,15 @@ def evaluate(datafile=None, seed=0, pve=0.5, m=100):
         print(elbo, baseline, comparison)
         print(baseline, comparison, pi, tau)
 
-def evaluate_pcgc(n=2000, p=10000, K=0.01, P=0.5, pve=0.5, seed=0):
+def evaluate_pcgc(n=2000, p=10000, m=None, K=None, P=0.5, pve=0.5, seed=0):
     """Estimate PVE using PCGC regression.
 
     Sanity check re-implementation of simCC from Golan et al PNAS 2015.
 
     """
     s = pybslmm.simulation.Simulation(p=p, pve=pve, seed=seed)
-    x, y = s.sample_ascertained_probit(n=n, K=K, P=P)
-    return pybslmm.pcgc.estimate(y, x.dot(x.T) / x.shape[1], K=K)[0][0]
+    if K is None:
+        x, y = s.sample_gaussian(n=n)
+    else:
+        x, y = s.sample_case_control(n=n, K=K, P=P)
+    return pybslmm.pcgc.estimate(y, pybslmm.pcgc.grm(x), K=K)[0][0]
