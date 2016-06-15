@@ -133,23 +133,24 @@ class Simulation():
 
         """
         x = numpy.zeros(shape=(n, self.p))
+        y = numpy.zeros(n)
         thresh = _N.isf(K)
         remaining_pheno_scale = numpy.sqrt(1 - numpy.cumsum(self.theta * self.theta))
-        for i in range(n):
-            y = numpy.zeros(1)
-            for j in range(self.p):
-                z = (numpy.arange(3) - self.x_mean[j]) / numpy.sqrt(self.x_var[j])
-                prob_z = numpy.array([(1 - self.maf[j]) ** 2,
-                                      2 * self.maf[j] * (1 - self.maf[j]),
-                                      self.maf[j] ** 2])
-                new_y = y + z * self.theta[j]
-                prob_p_given_g = _N.sf((thresh - new_y) / remaining_pheno_scale[j])
-                if not case:
-                    prob_p_given_g = 1 - prob_p_given_g
-                pmf = prob_p_given_g * prob_z
-                pmf /= pmf.sum()
-                x[i, j] = R.choice(numpy.arange(3), p=pmf)
-                y = new_y[x[i, j]]
+        z = ((numpy.arange(3)[:, numpy.newaxis] - self.x_mean).T /
+             numpy.sqrt(self.x_var)[:, numpy.newaxis])
+        prob_z = numpy.column_stack(((1 - self.maf) ** 2,
+                                     2 * self.maf * (1 - self.maf),
+                                     self.maf ** 2))
+        for j in range(self.p):
+            new_y = y[:, numpy.newaxis] + z[j] * self.theta[j]
+            prob_p_given_g = _N.sf((thresh - new_y.T) / remaining_pheno_scale[j])
+            if not case:
+                prob_p_given_g = 1 - prob_p_given_g
+            pmf = prob_p_given_g * prob_z[j][:, numpy.newaxis]
+            pmf /= pmf.sum(axis=0)
+            x_j = _multinomial(pmf)
+            x[:, j] = x_j
+            y = new_y[numpy.arange(n), x_j]
         return x
 
     def sample_case_control(self, n, K, P, batch_size=1000):
