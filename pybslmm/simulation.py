@@ -111,13 +111,13 @@ class Simulation:
         return genetic_value
 
     def sample_gaussian(self, n):
-        """Return matrix of centered and scaled genotypes and vector of phenotypes"""
+        """Return matrix of genotypes and vector of phenotypes"""
         x = self.sample_genotypes_iid(n)
         y = self.compute_liabilities(x)
         return x, y
 
     def sample_ascertained_probit(self, n, K, P, batch_size=1000):
-        """Return matrix of centered and scaled genotypes and vector of phenotypes.
+        """Return matrix of genotypes and vector of phenotypes.
 
         This implementation uses rejection sampling to find samples with high
         enough liability to be cases.
@@ -160,13 +160,14 @@ class Simulation:
         """
         x = numpy.zeros(shape=(n, self.p))
         y = numpy.zeros(n)
-        thresh = _N.isf(K)
-        remaining_pheno_scale = numpy.sqrt(1 - numpy.cumsum(self.theta * self.theta))
-        z = ((numpy.arange(3)[:, numpy.newaxis] - self.x_mean).T /
-             numpy.sqrt(self.x_var)[:, numpy.newaxis])
-        prob_z = numpy.column_stack(((1 - self.maf) ** 2,
+        thresh = numpy.sqrt(self.pheno_var) * _N.isf(K)
+        remaining_pheno_scale = numpy.sqrt(self.pheno_var - numpy.cumsum(self.genetic_var))
+        z = (numpy.arange(3)[:, numpy.newaxis] - self.x_mean).T
+        if self.m is None:
+             z /= numpy.sqrt(self.x_var)[:, numpy.newaxis]
+        prob_z = numpy.column_stack((numpy.square(1 - self.maf),
                                      2 * self.maf * (1 - self.maf),
-                                     self.maf ** 2))
+                                     numpy.square(self.maf)))
         for j in range(self.p):
             new_y = y[:, numpy.newaxis] + z[j] * self.theta[j]
             prob_p_given_g = _N.sf((thresh - new_y.T) / remaining_pheno_scale[j])
