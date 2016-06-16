@@ -91,17 +91,23 @@ class Simulation:
     def sample_genotypes_iid(self, n):
         """Return matrix of dosages.
 
-        This implementation generates independent SNPs, centered and scaled
-        according to the population mean and population variance (based on
-        MAF).
+        This implementation generates independent SNPs. In infinitesimal
+        architectures, these are normalized according to the population mean
+        and population variance (based on MAF).
+
+        In non-infinitesimal architectures, dosages are only centered.
 
         """
-        return (R.binomial(2, self.maf, size=(n, self.p)) - self.x_mean) / numpy.sqrt(self.x_var)
+        x = R.binomial(2, self.maf, size=(n, self.p)) - self.x_mean
+        if self.m is None:
+            x /= numpy.sqrt(self.x_var)
+        return x
 
     def compute_liabilities(self, x):
-        """Return vector of liabilities"""
+        """Return normalized vector of liabilities"""
         genetic_value = x.dot(self.theta)
         genetic_value += numpy.sqrt(self.residual_var) * R.normal(size=x.shape[0])
+        genetic_value /= numpy.sqrt(self.pheno_var)
         return genetic_value
 
     def sample_gaussian(self, n):
