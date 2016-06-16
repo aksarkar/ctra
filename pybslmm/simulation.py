@@ -47,20 +47,40 @@ to sample from individual-specific genotype conditional probabilities.
     query = R.rand(pmf.shape[1])
     return (cdf < query).sum(axis=0)
 
-class Simulation():
+class Simulation:
     """Sample genotypes and phenotypes from a variety of genetic architectures."""
 
-    def __init__(self, p, pve, min_maf=0.01, max_maf=0.5, seed=0):
+    def __init__(self, p, pve, m=None, min_maf=0.01, max_maf=0.5, seed=0):
+        """Initialize the simulation.
+
+        If m is None, generates an infinitesimal phenotype. Genotypes and
+        phenotypes are normalized to have mean zero and variance
+        one. Otherwise, genotypes are centered but not scaled and phenotypes
+        are normalized.
+
+        """
         R.seed(seed)
         self.p = p
         self.pve = pve
-        self.theta = R.normal(scale=numpy.sqrt(self.pve / self.p), size=self.p)
+        self.m = m
         self.maf = R.uniform(min_maf, max_maf, size=self.p)
         # Population mean and variance of genotype, according to the binomial
         # distribution
         self.x_mean = 2 * self.maf
         self.x_var = 2 * self.maf * (1 - self.maf)
-        self.residual_var = 1 - self.pve
+        if self.m is None:
+            self.theta = R.normal(scale=numpy.sqrt(self.pve / self.p), size=self.p)
+            # Keep genetic variance as a vector (per-SNP) for quicker case-control
+            # sampling: at each step we need the remaining variance.
+            self.genetic_var = numpy.square(self.theta)
+            self.pheno_var = 1
+        else:
+            self.theta = numpy.zeros(self.p)
+            self.theta[:self.m] = R.normal(size=self.m)
+            # Don't ignore population variance of genotype
+            self.genetic_var = self.x_var * numpy.square(self.theta)
+            self.pheno_var = self.genetic_var.sum() / pve
+        self.residual_var = self.pheno_var - self.genetic_var.sum()
 
     def sample_annotations(self):
         """Return vector of annotations"""
