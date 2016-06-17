@@ -25,26 +25,17 @@ def _test(p, m, pheno):
 def test_infinitesimal_gaussian():
     _test(p=1000, m=None, pheno='gaussian')
 
-def test_unnormalized_gaussian():
-    _test(p=1000, m=1000, pheno='gaussian')
-
 def test_non_infinitesimal_gaussian():
     _test(p=1000, m=100, pheno='gaussian')
 
 def test_infinitesimal_ascertained_probit():
     _test(p=1000, m=None, pheno='ascertained_probit')
 
-def test_unnormalized_ascertained_probit():
-    _test(p=1000, m=1000, pheno='ascertained_probit')
-
 def test_non_infinitesimal_ascertained_probit():
     _test(p=1000, m=100, pheno='ascertained_probit')
 
 def test_infinitesimal_case_control():
     _test(p=1000, m=None, pheno='case_control')
-
-def test_unnormalized_case_control():
-    _test(p=1000, m=1000, pheno='case_control')
 
 def test_non_infinitesimal_case_control():
     _test(p=1000, m=100, pheno='case_control')
