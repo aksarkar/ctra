@@ -37,12 +37,12 @@ to sample from individual-specific genotype conditional probabilities.
 class Simulation:
     """Sample genotypes and phenotypes from a variety of genetic architectures."""
 
-    def __init__(self, p, pve, m=None, min_maf=0.01, max_maf=0.5, seed=0):
-        """Initialize the simulation.
+    def __init__(self, p, min_maf=0.01, max_maf=0.5, seed=0):
+        """Initialize the SNP parameters of the simulation.
+
+        By default all SNPs are given the same annotation.
 
         p - total number of SNPs
-        pve - proportion of phenotypic variance explained by genotypic variance
-        m - number of causal SNPs (default: all)
         min_maf - minimum MAF of SNPs
         max_maf - maximum MAF of SNPs
         seed - random seed
@@ -50,30 +50,67 @@ class Simulation:
         """
         R.seed(seed)
         self.p = p
-        self.pve = pve
-        if m is None:
-            self.m = self.p
-        else:
-            self.m = m
         self.maf = R.uniform(min_maf, max_maf, size=self.p)
         # Population mean and variance of genotype, according to the binomial
         # distribution
         self.x_mean = 2 * self.maf
         self.x_var = 2 * self.maf * (1 - self.maf)
+        # Should raise an exception if this is used before sampling
+        self.theta = None
+        # By default, put all SNPs in the same annotation
+        self.num_annot = 0
+        # Keep the right-most index of each annotation
+        self.annot_index = numpy.array([self.p])
+        self.annot = numpy.zeros(self.p, dtype='int32')
+
+    def _annotations(self):
+        """Yield blocks of annotated SNPs"""
+        start = 0
+        for end in self.annot_index:
+            yield start, end
+            start = end
+
+    def sample_annotations(self, proportion=None):
+        """Generate annotations covering target proportion of SNPs.
+
+        proportion - (num_annotations,)
+
+        """
+        if proportion is None:
+            proportion = numpy.array([1])
+        self.annot_index = numpy.cumsum(self.p * proportion).astype('int32')
+        for i, (start, end) in enumerate(self._annotations()):
+            self.annot[start:end] = i
+        return self
+
+    def sample_effects(self, pve, annotation_params=None):
+        """Generate SNP effects according to annotations and target PVE.
+
+        By default all SNPs are given the same annotation.
+
+        pve - total PVE
+        annotation_params - list of tuples (number of causal variants, relative scale of effects)
+
+        """
+        if not 0 < pve < 1:
+            raise ValueError('PVE must be in (0, 1)')
+        elif annotation_params is not None and len(annotation_params) != self.annot_index.shape[0]:
+            raise ValueError('Shape mismatch: annotations parameters {} vs. annotations {}'.format(len(annotation_params), self.annot_index.shape[0]))
+        if annotation_params is None:
+            annotation_params = [(end - start, 1) for start, end
+                                 in self._annotations()]
+
         self.theta = numpy.zeros(self.p)
-        self.theta[:self.m] = R.normal(size=self.m)
+        for (num, scale), (start, end) in zip(annotation_params, self._annotations()):
+            self.theta[start:end][:num] = R.normal(scale=scale, size=num)
+
         # Keep genetic variance as a vector (per-SNP) for quicker case-control
         # sampling: at each step we need the remaining variance. Don't ignore
         # population variance of genotype in computing the genetic variance
         self.genetic_var = self.x_var * numpy.square(self.theta)
         self.pheno_var = self.genetic_var.sum() / pve
         self.residual_var = self.pheno_var - self.genetic_var.sum()
-
-    def sample_annotations(self):
-        """Return vector of annotations"""
-        a = numpy.zeros(self.p, dtype='int32')
-        a[:self.p // 2] = 1
-        return a
+        return self
 
     def sample_genotypes_iid(self, n):
         """Return matrix of dosages.
@@ -89,6 +126,8 @@ class Simulation:
 
     def compute_liabilities(self, x):
         """Return normalized vector of liabilities"""
+        if self.theta is None:
+            raise ValueError('Need to sample theta first')
         genetic_value = x.dot(self.theta)
         genetic_value += numpy.sqrt(self.residual_var) * R.normal(size=x.shape[0])
         genetic_value /= numpy.sqrt(self.pheno_var)
@@ -142,6 +181,8 @@ class Simulation:
         g_{1..i}).
 
         """
+        if self.theta is None:
+            raise ValueError('Need to sample theta first')
         x = numpy.zeros(shape=(n, self.p))
         y = numpy.zeros(n)
         thresh = numpy.sqrt(self.pheno_var) * _N.isf(K)
