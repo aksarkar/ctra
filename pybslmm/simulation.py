@@ -99,12 +99,14 @@ class Simulation:
         return self
 
     def sample_effects(self, pve, annotation_params=None):
-        """Generate SNP effects according to annotations and target PVE.
+        """Generate SNP effects according to annotations.
 
-        By default all SNPs are given the same annotation.
+        Generate residual variance and phenotypic variance based on target
+        PVE. By default all SNPs are given the same annotation and effect size
+        variance one.
 
         pve - total PVE
-        annotation_params - list of tuples (number of causal variants, relative scale of effects)
+        annotation_params - list of tuples (number of causal variants, population variance of effect size)
 
         """
         if not 0 < pve < 1:
@@ -114,6 +116,10 @@ class Simulation:
         if annotation_params is None:
             annotation_params = [(end - start, 1) for start, end
                                  in self._annotations()]
+        elif any(p[0] <= 0 for p in annotation_params):
+            raise ValueError('Number of causal variants must be non-negative')
+        elif any(p[1] <= 0 for p in annotation_params):
+            raise ValueError('Effect size variance must be non-negative')
 
         self.theta = numpy.zeros(self.p)
         for (num, scale), (start, end) in zip(annotation_params, self._annotations()):
