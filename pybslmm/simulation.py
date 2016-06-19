@@ -1,18 +1,33 @@
 """Simulate genotypes and phenotypes
 
 The basic generative model is based on Zhou et al, PLoS Genet 2013 and de los
-Campos et al. PLoS Genet 2015. The key features of this model are:
+Campos et al. PLoS Genet 2015. The outline of the generative model is:
+
+1. Sample minor allele frequencies f ~ U(min_maf, max_maf)
+2. (Optional) Partition the genome into annotations
+3. Sample effects b ~ N(0, scale) according to annotation
+4. Compute genetic variance as V[X b] = \sum_j 2 f_j (1 - f_j) b_j^2 and
+   remaining variance components from target PVE
+5. Sample dosages i.i.d. x_i ~ Binomial(2, f)
+
+The key features of this model are:
 
 1. Dosages are not normalized to variance one, and the population variance of
    dosages is included in the genetic variance. This is opposed to normalizing
    dosages to variance one so they drop out of the genetic variance.
-
-2. SNP effects are sampled from N(0, 1) and the true genetic variance is used
+2. The actual genetic variance (based on MAF and effect size) is used
    to determine the residual variance. This is opposed to using the expected
    genetic variance (in the one-component case, the PVE by construction).
 
 We additionally implement the simCC algorithm from Golan et al, PNAS 2015 to
-quickly sample case-control genotypes.
+quickly sample ascertained case-control genotypes. The basic idea is to sample
+from the conditional distribution of remaining genotypes given phenotype and
+the current genotypes:
+
+p(x_1, ..., x_j | y) \propto p(y | x_1, ..., x_j) p(x_1, ..., x_j)
+p(x_1, ..., x_j) = p(x_j | x_1, ..., x_{j-1})
+p(l | x_1, ..., x_j) = N(x_{1..j} b, V[y] - V[x_{j..p} b])
+p(y | l) = p(l < t), y = 0; p(l > t), y = 1
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
