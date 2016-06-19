@@ -92,12 +92,12 @@ def estimate(y, grm, K=None):
 
     This provides a nonstreaming implementation as a sanity check.
 
+    y - phenotype vector
+    grm - (k, n * (n - 1) / 2, 1) ndarray of upper-triangular GRM entries
+    K - prevalence of case-control phenotype
+
     """
-    index = numpy.triu_indices(grm.shape[0], 1)
-    if len(grm.shape) == 2:
-        G = grm[index].reshape(-1, 1)
-    else:
-        raise ValueError('Incorrect dimension of GRM: {}'.format(grm.shape))
+    index = numpy.triu_indices(y.shape[0], 1)
     if K is None:
         c = 1
         prm = numpy.outer(y, y)[index].reshape(-1, 1)
@@ -107,25 +107,21 @@ def estimate(y, grm, K=None):
         P = numpy.mean(y)
         c = K ** 2 * (1 - K) ** 2 / (z ** 2 * P * (1 - P))
         prm = numpy.outer(y - P, y - P)[index].reshape(-1, 1) / (P * (1 - P))
-    return c * scipy.linalg.lstsq(G, prm)[0]
+    return c * scipy.linalg.lstsq(grm, prm)[0]
 
-def grm(x):
-    """Return the GRM estimated from SNPs in x"""
-    w = x - numpy.mean(x, axis=0)
-    w /= numpy.std(w, axis=0)
-    return numpy.inner(w, w) / w.shape[1]
+def _estimate_grm(x):
+    """Return upper triangular entries of the GRM estimated from x"""
+    x -= numpy.mean(x, axis=0)
+    x /= numpy.std(x, axis=0)
+    grm = numpy.inner(x, x)[numpy.triu_indices(x.shape[0], 1)].reshape(-1, 1)
+    grm /= x.shape[1]
+    return grm
 
-def partitioned_grm(x, a):
-    """Return the GRMs estimated on partitions of X, according to annotation a"""
-    return numpy.array([grm(x[:,a == i]) for i in range(1 + max(a))])
+def grm(x, a):
+    """Return matrix of GRM entries per partition of x
 
-if __name__ == '__main__':
-    import pickle
-    import sys
+    x - dosage matrix
+    a - SNP annotations
 
-    with open(sys.argv[1], 'rb') as f:
-        x, y, a, theta = pickle.load(f)
-    n, p = x.shape
-    a = a.astype('int32')
-    pve = _naive_estimate(y, _partitioned_grm(x, a), 0.01)
-    print(pve)
+    """
+    return numpy.column_stack([_estimate_grm(x[:,a == i]) for i in range(1 + max(a))])
