@@ -8,7 +8,6 @@ for the second.
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
-import contextlib
 import os
 import os.path
 import pickle
@@ -24,27 +23,6 @@ import pybslmm.model
 from .simulation import *
 from .model import fit
 import pybslmm.simulation
-
-@contextlib.contextmanager
-def simulated_data(n, p, m, K, P, pve, seed):
-    """Context manager around a simulated dataset.
-
-    Return the data if it exists, or run the simulation, write the data, then
-    return it if it doesn't
-
-    """
-    key = 'simulation-{}-{}-{}-{}-{}-{}-{}.pkl'.format(n, p, m, K, P, pve, seed)
-    if not os.path.exists(key):
-        numpy.random.seed(seed)
-        s = pybslmm.simulation.Simulation(p=p, K=K, pve=pve, m=m)
-        a = s.sample_annotations()
-        x, y = s.sample_gaussian(n=n)
-        with open(key, 'wb') as f:
-            pickle.dump((x, y, a, s.theta), f)
-        yield x, y, a, s.theta
-    else:
-        with open(key, 'rb') as f:
-            yield pickle.load(f)
 
 def prc(y, p):
     for thresh in sorted(p):

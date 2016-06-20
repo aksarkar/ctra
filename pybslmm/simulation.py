@@ -32,6 +32,8 @@ p(y | l) = p(l < t), y = 0; p(l > t), y = 1
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
+import contextlib
+
 import numpy
 import scipy.stats
 
@@ -248,3 +250,25 @@ class Simulation:
             x[case_target - samples:case_target] = self.sample_genotypes_given_pheno(samples, K, True)
             case_target -= samples
         return x, y
+
+@contextlib.contextmanager
+def simulation(p, pve, annotation_params, seed):
+    """Context manager to cache the simulation generative model.
+
+    If a simulation with the specified hyperparameters is not cached, sample
+    the remaining parameters and write the resulting model out.
+
+    The genome is divided into two equal-sized annotations by default.
+
+    """
+    key = 'simulation-{}-{}-{}-{}.pkl'.format(p, pve, annotation_params, seed)
+    if not os.path.exists(key):
+        s = pybslmm.simulation.Simulation(p=p, pve=pve, seed=seed)
+        s.sample_annotations(proportion=numpy.repeat(0.5, 2))
+        s.sample_effects(annotation_params)
+        with open(key, 'wb') as f:
+            pickle.dump(s, f)
+        yield s
+    else:
+        with open(key, 'rb') as f:
+            yield pickle.load(f)
