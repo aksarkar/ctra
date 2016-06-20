@@ -77,15 +77,30 @@ def evaluate(datafile=None, seed=0, pve=0.5, m=100):
         print(elbo, baseline, comparison)
         print(baseline, comparison, pi, tau)
 
-def evaluate_pcgc(n=2000, p=10000, m=None, K=None, P=0.5, pve=0.5, seed=0):
-    """Estimate PVE using PCGC regression.
+def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
+    """Use PCGC to compute "heritability enrichment" under different architectures
 
-    Sanity check re-implementation of simCC from Golan et al PNAS 2015.
+    Two equal-sized components, with:
+    1. Twice as many causal variants in first component
+    2. Double variance of causal effects in first component
 
     """
-    s = pybslmm.simulation.Simulation(p=p, pve=pve, seed=seed)
-    if K is None:
+    def trial(seed, annotation_params, n=n, p=p, pve=pve):
+        """Return enrichment of PVE in two component model"""
+        s = pybslmm.simulation.Simulation(p=p, seed=seed)
+        s.sample_annotations(proportion=numpy.repeat(0.5, 2))
+        s.sample_effects(pve=pve, annotation_params=annotation_params)
         x, y = s.sample_gaussian(n=n)
-    else:
-        x, y = s.sample_case_control(n=n, K=K, P=P)
-    return pybslmm.pcgc.estimate(y, pybslmm.pcgc.grm(x), K=K)[0][0]
+        pve = pybslmm.pcgc.estimate(y, pybslmm.pcgc.grm(x, s.annot))
+        return pve
+
+    def dist(num_trials, annotation_params):
+        estimates = numpy.array([trial(seed, annotation_params)
+                           for seed in range(num_trials)])
+        pve = estimates.mean(axis=0)
+        se = estimates.std(axis=0)
+        enrichment = pve / (pve.sum() * 0.5)
+        return pve, se, enrichment
+
+    print('double_num_causal', dist(50, annotation_params=[(200, 1), (100, 1)]))
+    print('double_causal_effect', dist(50, annotation_params=[(100, 2), (100, 1)]))
