@@ -33,6 +33,8 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import contextlib
+import pickle
+import os.path
 
 import numpy
 import scipy.stats
@@ -263,9 +265,9 @@ def simulation(p, pve, annotation_params, seed):
     """
     key = 'simulation-{}-{}-{}-{}.pkl'.format(p, pve, annotation_params, seed)
     if not os.path.exists(key):
-        s = pybslmm.simulation.Simulation(p=p, pve=pve, seed=seed)
+        s = Simulation(p=p, seed=seed)
         s.sample_annotations(proportion=numpy.repeat(0.5, 2))
-        s.sample_effects(annotation_params)
+        s.sample_effects(pve=pve, annotation_params=annotation_params)
         with open(key, 'wb') as f:
             pickle.dump(s, f)
         yield s

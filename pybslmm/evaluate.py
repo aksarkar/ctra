@@ -8,8 +8,6 @@ for the second.
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
-import os
-import os.path
 import pickle
 import sys
 

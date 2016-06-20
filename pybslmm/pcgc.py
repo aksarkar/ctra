@@ -90,7 +90,8 @@ def _jacknife(pheno_var, numerator, denominator):
 def estimate(y, grm, K=None):
     """Naive estimate of PVE (without fixed effects).
 
-    This provides a nonstreaming implementation as a sanity check.
+    This provides a nonstreaming implementation as a sanity check. If K is
+    None, assume y is Gaussian and do not perform correction for ascertainment.
 
     y - phenotype vector
     grm - (k, n * (n - 1) / 2, 1) ndarray of upper-triangular GRM entries
