@@ -60,3 +60,6 @@ target/
 
 # Local locate database
 locate.db
+
+# Cached datasets (for testing)
+*.pkl
