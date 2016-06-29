@@ -6,12 +6,16 @@ problem. Our inference task is to estimate the posterior distribution of the
 parameters pi (probability each SNP is causal) and tau (precision of causal
 effects).
 
-The inference requires integrating over latent variables z (causal indicator)
-and theta (effect size). Our strategy is to fit a variational approximation to
-the posterior p(theta, z | x, y) and perform stochastic optimization to find
-the MAP estimates. We find the variational approximation by performing an inner
-stochastic optimization loop, maximizing the evidence lower bound given the
-current values of (pi, tau).
+The inference requires integrating an intractable posterior over the
+hyperparameters. Our strategy is to use importance sampling to perform the
+integration, where the importance weights are the model evidence. We estimate
+the importance weights by fitting a variational approximation to the
+intractable posterior p(theta, z | x, y).
+
+We cannot write an analytical solution for the variational approximation, so we
+take a doubly stochastic approach, using Monte Carlo integration to estimate
+intractable expectations (re-parameterizing integrals as sums) and drawing
+samples (due to the non-conjugate prior) to estimate the gradient.
 
 In our stochastic optimization, we use the sample mean of of the individual
 sample likelihoods across the random samples eta as a control variate, since
