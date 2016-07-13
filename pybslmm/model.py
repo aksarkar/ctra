@@ -57,10 +57,16 @@ def _clip(a, eps=1e-8):
     return numpy.clip(a, eps, 1 - eps)
 
 class Model:
+    """Class providing the implementation of the optimizer
+
+    This is intended to provide a pickle-able object to re-use the Theano
+    compiled function across hyperparameter samples.
+
+    """
     def __init__(self, X_, y_, a_, llik=logit, minibatch_n=100,
                  max_precision=1e5, learning_rate=None, b1=0.9, b2=0.999,
                  e=1e-8):
-        """Return the compiled Theano function which takes a gradient step
+        """Compile the Theano function which takes a gradient step
 
         llik - data likelihood under the variational approximation
         max_precision - maximum value of gamma
@@ -144,7 +150,7 @@ class Model:
             adam_updates[m] = new_m
             adam_updates[v] = new_v
         self.vb_step = _F(inputs=[epoch, pi, tau], outputs=elbo,
-                          updates=adam_updates, allow_input_downcast=True)
+                          updates=adam_updates)
 
         # Importance samples for hyperparameters. We draw samples from a
         # uniform proposal distribution (grid search) so the proposal
@@ -153,8 +159,8 @@ class Model:
         log_tau_proposal = numpy.linspace(-2, 2, 16).astype(_real)
         logit_pi_prior = scipy.stats.norm()
         log_tau_prior = scipy.stats.lognorm(s=1)
-        self.pi = _clip(_grid(logit_pi_proposal, logit_pi_proposal))
-        self.tau = _clip(_grid(log_tau_proposal, log_tau_proposal))
+        self.logit_pi = _clip(_grid(logit_pi_proposal, logit_pi_proposal)).astype(_real)
+        self.log_tau = _clip(_grid(log_tau_proposal, log_tau_proposal)).astype(_real)
 
     def sgvb(self, task):
         """Return optimum ELBO and variational parameters which achieve it
@@ -164,8 +170,8 @@ class Model:
         reduce sensitivity to stochasticity.
 
         """
-        pi = self.pi[task // self.pi.shape[0]]
-        tau = self.tau[task % self.pi.shape[0]]
+        pi = scipy.special.expit(self.logit_pi[task // self.logit_pi.shape[0]])
+        tau = numpy.exp(self.log_tau[task % self.logit_pi.shape[0]])
         delta = 1
         t = 1
         curr_elbo = self.vb_step(t, pi, tau)
@@ -173,6 +179,7 @@ class Model:
             t += 1
             new_elbo = self.vb_step(t, pi, tau)
             if not t % 1000:
+                print(new_elbo, file=sys.stderr)
                 delta = new_elbo - curr_elbo
                 if delta > 0:
                     curr_elbo = new_elbo
