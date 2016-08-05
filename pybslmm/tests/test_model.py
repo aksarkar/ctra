@@ -23,4 +23,4 @@ def test_one_task(fix_environment):
         y_train, y_test = y[::2], y[1::2]
         a = s.annot
         model = pybslmm.model.Model(x, y, a)
-        elbo, alpha, beta = model.sgvb(100)
+        alpha, beta, pi, tau = model.sgvb()

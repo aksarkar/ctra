@@ -81,7 +81,7 @@ class Model:
         y = _S(y_.astype(_real))
         a = _S(a_.astype('int8'))
         n, p = X_.shape
-        m = 1 + T.max(a_)
+        self.m = 1 + max(a_)
 
         # Variational parameters
         alpha_raw = _S(_Z(p))
@@ -152,17 +152,12 @@ class Model:
         self.vb_step = _F(inputs=[epoch, pi, tau], outputs=elbo,
                           updates=adam_updates)
 
-        # Importance samples for hyperparameters. We draw samples from a
-        # uniform proposal distribution (grid search) so the proposal
-        # probability drops out of the weight.
-        logit_pi_proposal = numpy.linspace(-3, 2, 10).astype(_real)
-        log_tau_proposal = numpy.linspace(-2, 2, 16).astype(_real)
-        logit_pi_prior = scipy.stats.norm()
-        log_tau_prior = scipy.stats.lognorm(s=1)
-        self.logit_pi = _clip(_grid(logit_pi_proposal, logit_pi_proposal)).astype(_real)
-        self.log_tau = _clip(_grid(log_tau_proposal, log_tau_proposal)).astype(_real)
+        # Hyperparameter proposal distribution for Bayesian optimization using
+        # random search
+        self.logit_pi_proposal = scipy.stats.norm(loc=-3)
+        self.tau_proposal = scipy.stats.lognorm(s=1)
 
-    def sgvb(self, task):
+    def sgvb(self):
         """Return optimum ELBO and variational parameters which achieve it
 
         Use Adaptive estimation to tune the learning rate and converge when
@@ -170,8 +165,8 @@ class Model:
         reduce sensitivity to stochasticity.
 
         """
-        pi = scipy.special.expit(self.logit_pi[task // self.logit_pi.shape[0]])
-        tau = numpy.exp(self.log_tau[task % self.logit_pi.shape[0]])
+        pi = scipy.special.expit(self.logit_pi_proposal.rvs(size=self.m)).astype(_real)
+        tau = self.tau_proposal.rvs(size=self.m).astype(_real)
         delta = 1
         t = 1
         curr_elbo = self.vb_step(t, pi, tau)
@@ -179,13 +174,10 @@ class Model:
             t += 1
             new_elbo = self.vb_step(t, pi, tau)
             if not t % 1000:
-                print(new_elbo, file=sys.stderr)
                 delta = new_elbo - curr_elbo
                 if delta > 0:
                     curr_elbo = new_elbo
-        return curr_elbo, self.alpha.eval(), self.beta.get_value()
-        with open('{}.pkl'.format(task), 'wb') as f:
-            pickle.dump((elbo, alpha, beta), f)
+        return self.alpha.eval(), self.beta.get_value(), pi, tau
 
 def fit(X, y, a, eps=1e-8, **kwargs):
     """Return the posterior distributions P(theta, z | x, y, a) and P(pi, tau | x,
@@ -193,7 +185,6 @@ y, a)"""
     model = Model(X, y, a)
     with open('work.pkl', 'wb') as f:
         pickle.dump(model, f)
-    tasks = model.pi.shape[0] * model.tau.shape[0]
     with drmaa.Session() as s:
         j = s.createJobTemplate()
         j.remoteCommand = 'python'
