@@ -30,6 +30,16 @@ def auprc(y, p):
     delta = numpy.diff(points[:,0], axis=0)
     return points[1:,1].dot(delta)
 
+def evaluate_gaussian_vb(n=2000, p=10000, pve=0.5, seed=0):
+    annotation_params = [(100, 1), (50, 1)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_gaussian(n=n)
+        x_train, x_test = x[::2], x[1::2]
+        y_train, y_test = y[::2], y[1::2]
+        a = s.annot
+        elbo, alpha, beta = ctra.model.fit_gaussian(x_train, y_train, a, pi=1, tau=0.5, sigma2=0.5, alpha=None, beta=None)
+        print(numpy.std(y_test - X_test.dot(alpha * beta)))
+
 def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:

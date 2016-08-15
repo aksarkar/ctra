@@ -58,6 +58,55 @@ def _grid(x, y=None):
 def _clip(a, eps=1e-8):
     return numpy.clip(a, eps, 1 - eps)
 
+def fit_gaussian(X, y, a, pi, tau, sigma2, alpha, beta):
+    """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
+Bayesian Anal (2012)
+
+    Generalizing this algorithm to the multi-annotation case is trivial since
+    the local updates just refer to the shared hyperparameter.
+
+    """
+    X = numpy.matrix(X)
+    n, p = X.shape
+    y = numpy.matrix(y)
+    a = numpy.matrix(a)
+    pi_deref = numpy.choose(a, pi)
+    tau_deref = numpy.choose(a, tau)
+    # Initial configuration
+    if alpha is None:
+        alpha = R.uniform(size=p)
+        alpha /= alpha.sum()
+    if beta is None:
+        beta = R.normal(size=p)
+    # Precompute things
+    xty = X.T * y
+    xtx_jj = numpy.einsum('ij,ji->j', X, X)
+    # Assume sigma2 fixed
+    s = sigma2 / (xtx_kk + tau_deref)
+    eta = X.dot(alpha * beta)
+    logpi = numpy.log(pi_deref)
+    # Coordinate ascent
+    L = numpy.log
+    elbo = -Inf
+    converged = False
+    while not converged:
+        alpha_ = alpha
+        beta_ = beta
+        for j in range(p):
+            theta_j = alpha[j] * beta[j]
+            beta[j] = s[j] / sigma2 * (xy[j] + xtx_jj[j] * theta_j - x[:,j].T * eta)
+            ssr = beta[j] * beta[j] / s[j]
+            alpha[j] = scipy.special.logit(logpi + .5 * (L(s / sigma2) + ssr))
+        elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
+                 + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + 1 / gamma))).sum()
+                 - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
+        if elbo_ > elbo:
+            print(elbo_, file=sys.stderr)
+            alpha, beta = alpha_, beta_
+        elif numpy.isclose(alpha_, alpha).all() and numpy.isclose(beta_, beta).all():
+            converged = True
+    return elbo, alpha, beta
+
 class LogisticModel:
     """Class providing the implementation of the optimizer
 
