@@ -1,8 +1,8 @@
 import numpy
 import pytest
 
-import pybslmm.pcgc
-import pybslmm.simulation
+import ctra.pcgc
+import ctra.simulation
 
 def _estimate(simulation, pheno, **kwargs):
     simulation.sample_effects(pve=0.5, **kwargs)
@@ -14,8 +14,8 @@ def _estimate(simulation, pheno, **kwargs):
         x, y = getattr(simulation, 'sample_{}'.format(pheno))(n=1000, K=K, P=0.5)
     else:
         raise ValueError('Invalid phenotype: {}'.format(pheno))
-    grm = pybslmm.pcgc.grm(x, simulation.annot)
-    h = pybslmm.pcgc.estimate(y, grm, K=K)
+    grm = ctra.pcgc.grm(x, simulation.annot)
+    h = ctra.pcgc.estimate(y, grm, K=K)
     return h.sum()
 
 def _sampling_dist(trial_fn):
@@ -26,7 +26,7 @@ def _sampling_dist(trial_fn):
 
 def _test(p, pheno, sample_annotations=False, **kwargs):
     def trial(seed):
-        s = pybslmm.simulation.Simulation(p=p, seed=seed)
+        s = ctra.simulation.Simulation(p=p, seed=seed)
         if sample_annotations:
             s.sample_annotations(proportion=numpy.repeat(0.5, 2))
         return _estimate(s, pheno, **kwargs)

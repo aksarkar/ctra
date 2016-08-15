@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-import pybslmm.model
-import pybslmm.simulation
+import ctra.model
+import ctra.simulation
 
 @pytest.fixture
 def fix_environment():
@@ -17,10 +17,10 @@ def test_one_task(fix_environment):
     pve=0.5
     seed=0
     annotation_params = [(100, 1), (50, 1)]
-    with pybslmm.simulation.simulation(p, pve, annotation_params, seed) as s:
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_case_control(n=n, K=K, P=P)
         x_train, x_test = x[::2], x[1::2]
         y_train, y_test = y[::2], y[1::2]
         a = s.annot
-        model = pybslmm.model.Model(x, y, a)
+        model = ctra.model.Model(x, y, a)
         alpha, beta, pi, tau = model.sgvb()

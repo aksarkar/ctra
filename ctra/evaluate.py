@@ -12,10 +12,11 @@ import pickle
 import sys
 
 import numpy
+import scipy.special
 
-import pybslmm.pcgc
-import pybslmm.model
-import pybslmm.simulation
+import ctra.pcgc
+import ctra.model
+import ctra.simulation
 
 def prc(y, p):
     """Precision-recall curve"""
@@ -31,14 +32,13 @@ def auprc(y, p):
 
 def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
-    with pybslmm.simulation.simulation(p, pve, annotation_params, seed) as s:
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_case_control(n=n, K=K, P=P)
         x_train, x_test = x[::2], x[1::2]
         y_train, y_test = y[::2], y[1::2]
         a = s.annot
-        model = pybslmm.model.Model(x, y, a)
-        alpha, beta, pi, tau = model.sgvb()
-        baseline = auprc(y_test, x_test.dot(pybslmm.pcgc.logit_regression(x_train, y_train).x))
+        alpha, beta, pi, tau = ctra.model.fit(x_train, y_train, a)
+        baseline = auprc(y_test, x_test.dot(ctra.pcgc.logit_regression(x_train, y_train).x))
         comparison = auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta)))
         print(baseline, comparison)
 
@@ -52,11 +52,11 @@ def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
     """
     def trial(seed, annotation_params, n=n, p=p, pve=pve):
         """Return enrichment of PVE in two component model"""
-        s = pybslmm.simulation.Simulation(p=p, seed=seed)
+        s = ctra.simulation.Simulation(p=p, seed=seed)
         s.sample_annotations(proportion=numpy.repeat(0.5, 2))
         s.sample_effects(pve=pve, annotation_params=annotation_params)
         x, y = s.sample_gaussian(n=n)
-        pve = pybslmm.pcgc.estimate(y, pybslmm.pcgc.grm(x, s.annot))
+        pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot))
         return pve
 
     def dist(num_trials, annotation_params):

@@ -38,6 +38,8 @@ import scipy.stats
 import theano
 import theano.tensor as T
 
+import ctra.pcgc
+
 _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
@@ -56,7 +58,7 @@ def _grid(x, y=None):
 def _clip(a, eps=1e-8):
     return numpy.clip(a, eps, 1 - eps)
 
-class Model:
+class LogisticModel:
     """Class providing the implementation of the optimizer
 
     This is intended to provide a pickle-able object to re-use the Theano
@@ -177,25 +179,33 @@ class Model:
                 delta = new_elbo - curr_elbo
                 if delta > 0:
                     curr_elbo = new_elbo
-        return self.alpha.eval(), self.beta.get_value(), pi, tau
+        self.pi = pi
+        self.tau = tau
+        self.alpha = self.alpha.eval()
+        self.beta = self.beta.get_value()
 
-def fit(X, y, a, eps=1e-8, **kwargs):
+    def loss(X, y):
+        """Return exponential loss of the model on data (X, y)"""
+        return numpy.exp(y.dot(X.dot(alpha * beta))).sum()
+
+def fit(X, y, a, tasks=10, eps=1e-8):
     """Return the posterior distributions P(theta, z | x, y, a) and P(pi, tau | x,
 y, a)"""
+    n, p = X.shape
     model = Model(X, y, a)
     with open('work.pkl', 'wb') as f:
         pickle.dump(model, f)
     with drmaa.Session() as s:
         j = s.createJobTemplate()
         j.remoteCommand = 'python'
-        j.args = ['-m', 'pybslmm.model']
+        j.args = ['-m', 'ctra.model']
         ids = s.runBulkJobs(j, 1, tasks, 1)
         s.synchronize(ids)
     log_weights = numpy.zeros(shape=tasks)
     alpha = numpy.zeros(shape=(tasks, p))
     beta = numpy.zeros(shape=(tasks, p))
     for i in range(tasks):
-        with open('{}.pkl'.format(task), 'rb') as f:
+        with open('{}.pkl'.format(i + 1), 'rb') as f:
             log_weights[i], alpha[i], beta[i] = pickle.load(f)
         log_weights[i] += logit_pi_prior.logpdf(scipy.special.logit(pi_)).sum()
         log_weights[i] += tau_prior.logpdf(tau_).sum()
@@ -206,6 +216,6 @@ if __name__ == '__main__':
     task = int(os.environ['SGE_TASK_ID'])
     with open('work.pkl', 'rb') as f:
         model = pickle.load(f)
-    elbo, alpha, beta = model.sgvb(task)
+    alpha, beta, pi, tau = model.sgvb()
     with open('{}.pkl'.format(task), 'wb') as f:
-        pickle.dump((elbo, alpha, beta), f)
+        pickle.dump((alpha, beta, pi, tau), f)

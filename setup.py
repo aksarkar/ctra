@@ -1,10 +1,10 @@
 import setuptools
 
 setuptools.setup(
-    name='pybslmm',
-    description='Python implementation of Bayesian Sparse Linear Mixed Models',
-    url='https://github.mit.edu/aksarkar/pybslmm',
+    name='ctra',
+    description='Complex Trait Regulatory Architectures',
     version='0.3',
+    url='https://github.mit.edu/aksarkar/ctra',
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
     license='BSD',
