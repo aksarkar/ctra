@@ -247,35 +247,39 @@ def importance_sampling(X, y, a):
     numpy.seterrcall(debug_on_err)
     numpy.seterr(all='warn')
     n, p = X.shape
-    # Fix the residual variance to its moment estimate
-    pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a)).sum()
-    sigma2 = 1 - pve
     # Propose pi_0, pi_1, h_0. This induces a proposal for h_1, tau_0, tau_1
     # following Guan et al. Ann Appl Stat 2011, Carbonetto et al. Bayesian Anal
     # 2012
     var_x = X.var(axis=0).sum()
     logit_pi_proposal = numpy.linspace(-5, 0, 5)
-    h_0_proposal = numpy.linspace(0.05, pve - 0.05, 10)
-    proposals = list(itertools.product(logit_pi_proposal, logit_pi_proposal, h_0_proposal))
+    h_0_proposal = numpy.linspace(0.05, .5, 10)
+    sigma2_proposal = numpy.linspace(5, 15, 10)
+    proposals = list(itertools.product(logit_pi_proposal, h_0_proposal, sigma2_proposal))
     m = len(proposals)
+
     # Hyperpriors needed to compute importance weights
     logit_pi_prior = scipy.stats.norm(-5, 0.6).logpdf
     # Re-parameterize uniform prior on (expected) PVE in terms of tau
     tau_prior = lambda tau, h: -numpy.log(tau) - numpy.log(1 - h)
+    # Jeffrey's prior on scale
+    sigma2_prior = lambda sigma2: -2 * numpy.log(sigma2)
+
     # Perform importance sampling, using ELBO instead of the marginal
     # likelihood
     log_weights = numpy.zeros(shape=m)
     alpha = numpy.zeros(shape=(m, p))
     beta = numpy.zeros(shape=(m, p))
-    pi = numpy.zeros(shape=(m, 2))
-    tau = numpy.zeros(shape=(m, 2))
-    for i, (logit_pi_0, logit_pi_1, h_0) in enumerate(proposals):
-        h = numpy.array([h_0, pve - h_0])
-        pi[i] = numpy.array([scipy.special.expit(logit_pi) for logit_pi in (logit_pi_0, logit_pi_1)])
+    pi = numpy.zeros(shape=(m, 1))
+    tau = numpy.zeros(shape=(m, 1))
+    sigma2 = numpy.zeros(shape=(m, 1))
+    for i, (logit_pi, h, s) in enumerate(proposals):
+        pi[i] = _expit(logit_pi)
         tau[i] = h / ((1 - h) * pi[i] * var_x)
-        log_weights[i], alpha[i], beta[i] = fit_gaussian(X, y, a, pi=pi[i], tau=tau[i], sigma2=sigma2)
-        log_weights[i] += logit_pi_prior(logit_pi_0) + logit_pi_prior(logit_pi_1)
+        sigma2[i] = s
+        log_weights[i], alpha[i], beta[i] = fit_gaussian(X, y, a, pi=pi[i], tau=tau[i], sigma2=sigma2[i])
+        log_weights[i] += logit_pi_prior(_logit(pi[i])).sum()
         log_weights[i] += tau_prior(tau[i], h).sum()
+        log_weights[i] += sigma2_prior(sigma2[i])
     # Scale the log importance weights before normalizing to avoid numerical
     # problems
     log_weights -= max(log_weights)
