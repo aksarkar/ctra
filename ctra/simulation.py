@@ -149,13 +149,14 @@ class Simulation:
         x = R.binomial(2, self.maf, size=(n, self.p)) - self.x_mean
         return x
 
-    def compute_liabilities(self, x):
+    def compute_liabilities(self, x, normalize=False):
         """Return normalized vector of liabilities"""
         if self.theta is None:
             raise ValueError('Need to sample theta first')
         genetic_value = x.dot(self.theta)
         genetic_value += numpy.sqrt(self.residual_var) * R.normal(size=x.shape[0])
-        genetic_value /= numpy.sqrt(self.pheno_var)
+        if normalize:
+            genetic_value /= numpy.sqrt(self.pheno_var)
         return genetic_value
 
     def sample_gaussian(self, n):
