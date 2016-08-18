@@ -13,6 +13,7 @@ import sys
 
 import numpy
 import scipy.special
+import sklearn.linear_model
 
 import ctra.pcgc
 import ctra.model
@@ -37,8 +38,32 @@ def evaluate_gaussian_vb(n=2000, p=10000, pve=0.5, seed=0):
         x_train, x_test = x[::2], x[1::2]
         y_train, y_test = y[::2], y[1::2]
         a = s.annot
-        elbo, alpha, beta = ctra.model.fit_gaussian(x_train, y_train, a, pi=1, tau=0.5, sigma2=0.5, alpha=None, beta=None)
-        print(numpy.std(y_test - X_test.dot(alpha * beta)))
+        elbo, alpha, beta = ctra.model.fit_gaussian(x_train, y_train, a,
+                                                    pi=numpy.array([.1, .05]),
+                                                    tau=numpy.array([1, 1]),
+                                                    sigma2=0.5, alpha=None,
+                                                    beta=None)
+        baseline = numpy.std(y_test - sklearn.linear_model.ElasticNet().fit(x_train, y_train).predict(x_test))
+        comparison = numpy.std(y_test - x_test.dot(alpha * beta))
+        print(baseline, comparison)
+
+def evaluate_gaussian_is(n=2000, p=10000, pve=0.5, seed=0):
+    annotation_params = [(100, 1), (50, 1)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_gaussian(n=n)
+        x_train, x_test = x[::2], x[1::2]
+        y_train, y_test = y[::2], y[1::2]
+        a = s.annot
+        alpha, beta, pi, tau = ctra.model.importance_sampling(x_train, y_train, a)
+        rmse_null = numpy.std(y_test - numpy.mean(y_train))
+        rmse_opt = numpy.std(y_test - x_test.dot(s.theta))
+        rmse_enet = numpy.std(y_test - sklearn.linear_model.ElasticNet().fit(x_train, y_train).predict(x_test))
+        rmse_is = numpy.std(y_test - x_test.dot(alpha * beta))
+        print('RMSE (elasticnet) =', rmse_enet)
+        print('RPG (elasticnet) =', (rmse_null - rmse_enet) / (rmse_null - rmse_opt))
+        print('RMSE (IS) =', rmse_is)
+        print('RPG (IS) =', (rmse_null - rmse_is) / (rmse_null - rmse_opt))
+        print('Posterior mean pi={}, tau={}'.format(pi, tau))
 
 def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
@@ -71,7 +96,7 @@ def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
 
     def dist(num_trials, annotation_params):
         estimates = numpy.array([trial(seed, annotation_params)
-                           for seed in range(num_trials)])
+                                 for seed in range(num_trials)])
         pve = estimates.mean(axis=0)
         se = estimates.std(axis=0)
         enrichment = pve / (pve.sum() * 0.5)

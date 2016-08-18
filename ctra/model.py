@@ -26,6 +26,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import collections
 import drmaa
+import itertools
 import pickle
 import os
 import sys
@@ -45,20 +46,7 @@ _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
 _Z = lambda n: numpy.zeros(n).astype(_real)
 
-def logit(y, eta):
-    """Return E_q[ln p(y | eta)] assuming a logit link."""
-    F = y * eta - T.nnet.softplus(eta)
-    return T.mean(T.sum(F, axis=1)) - T.mean(F)
-
-def _grid(x, y=None):
-    if y is None:
-        y = x
-    return numpy.dstack(numpy.meshgrid(x, y)).reshape(-1, 2)
-
-def _clip(a, eps=1e-8):
-    return numpy.clip(a, eps, 1 - eps)
-
-def fit_gaussian(X, y, a, pi, tau, sigma2, alpha, beta):
+def fit_gaussian(X, y, a, pi, tau, sigma2, alpha=None, beta=None):
     """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
 Bayesian Anal (2012)
 
@@ -66,11 +54,11 @@ Bayesian Anal (2012)
     the local updates just refer to the shared hyperparameter.
 
     """
-    X = numpy.matrix(X)
+    print('VB: pi={}, tau={}, sigma2={}'.format(pi, tau, sigma2), file=sys.stderr)
     n, p = X.shape
-    y = numpy.matrix(y)
-    a = numpy.matrix(a)
+    y = y.reshape(-1, 1)
     pi_deref = numpy.choose(a, pi)
+    logit_pi = scipy.special.logit(pi_deref)
     tau_deref = numpy.choose(a, tau)
     # Initial configuration
     if alpha is None:
@@ -79,33 +67,42 @@ Bayesian Anal (2012)
     if beta is None:
         beta = R.normal(size=p)
     # Precompute things
-    xty = X.T * y
-    xtx_jj = numpy.einsum('ij,ji->j', X, X)
+    xty = X.T.dot(y)
+    xtx_jj = numpy.einsum('ij,ji->i', X.T, X)
     # Assume sigma2 fixed
-    s = sigma2 / (xtx_kk + tau_deref)
-    eta = X.dot(alpha * beta)
-    logpi = numpy.log(pi_deref)
+    s = sigma2 / (xtx_jj + tau_deref)
+    eta = X.dot(alpha * beta).reshape(-1, 1)
     # Coordinate ascent
     L = numpy.log
-    elbo = -Inf
+    elbo = float('-inf')
     converged = False
     while not converged:
         alpha_ = alpha
         beta_ = beta
+        eta_ = eta
         for j in range(p):
+            xj = X[:, j].reshape(-1, 1)
             theta_j = alpha[j] * beta[j]
-            beta[j] = s[j] / sigma2 * (xy[j] + xtx_jj[j] * theta_j - x[:,j].T * eta)
+            eta -= xj * theta_j
+            beta[j] = s[j] / sigma2 * (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum())
             ssr = beta[j] * beta[j] / s[j]
-            alpha[j] = scipy.special.logit(logpi + .5 * (L(s / sigma2) + ssr))
-        elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
-                 + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + 1 / gamma))).sum()
-                 - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
+            alpha[j] = scipy.special.expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
+            eta += xj * alpha[j] * beta[j]
+            numpy.clip(alpha_, 1e-4, 1 - 1e-4, alpha_)
+        elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma2 - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
+            + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + s))).sum()
+            - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
         if elbo_ > elbo:
-            print(elbo_, file=sys.stderr)
-            alpha, beta = alpha_, beta_
+            alpha, beta, elbo = alpha_, beta_, elbo_
         elif numpy.isclose(alpha_, alpha).all() and numpy.isclose(beta_, beta).all():
+            print('ELBO={}'.format(elbo), file=sys.stderr)
             converged = True
     return elbo, alpha, beta
+
+def logit(y, eta):
+    """Return E_q[ln p(y | eta)] assuming a logit link."""
+    F = y * eta - T.nnet.softplus(eta)
+    return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
 class LogisticModel:
     """Class providing the implementation of the optimizer
@@ -237,34 +234,46 @@ class LogisticModel:
         """Return exponential loss of the model on data (X, y)"""
         return numpy.exp(y.dot(X.dot(alpha * beta))).sum()
 
-def fit(X, y, a, tasks=10, eps=1e-8):
-    """Return the posterior distributions P(theta, z | x, y, a) and P(pi, tau | x,
-y, a)"""
+def debug_on_err(*args):
+    print('Entering debug')
+    import pdb; pdb.set_trace()
+
+def importance_sampling(X, y, a):
+    """Return the posterior mean estimates of the hyperparameters"""
+    numpy.seterrcall(debug_on_err)
+    numpy.seterr(all='warn')
     n, p = X.shape
-    model = Model(X, y, a)
-    with open('work.pkl', 'wb') as f:
-        pickle.dump(model, f)
-    with drmaa.Session() as s:
-        j = s.createJobTemplate()
-        j.remoteCommand = 'python'
-        j.args = ['-m', 'ctra.model']
-        ids = s.runBulkJobs(j, 1, tasks, 1)
-        s.synchronize(ids)
-    log_weights = numpy.zeros(shape=tasks)
-    alpha = numpy.zeros(shape=(tasks, p))
-    beta = numpy.zeros(shape=(tasks, p))
-    for i in range(tasks):
-        with open('{}.pkl'.format(i + 1), 'rb') as f:
-            log_weights[i], alpha[i], beta[i] = pickle.load(f)
-        log_weights[i] += logit_pi_prior.logpdf(scipy.special.logit(pi_)).sum()
-        log_weights[i] += tau_prior.logpdf(tau_).sum()
+    # Fix the residual variance to its moment estimate
+    pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a)).sum()
+    sigma2 = 1 - pve
+    # Propose pi_0, pi_1, h_0. This induces a proposal for h_1, tau_0, tau_1
+    # following Guan et al. Ann Appl Stat 2011, Carbonetto et al. Bayesian Anal
+    # 2012
+    var_x = X.var(axis=0).sum()
+    logit_pi_proposal = numpy.linspace(-5, 0, 5)
+    h_0_proposal = numpy.linspace(0.05, pve - 0.05, 10)
+    proposals = list(itertools.product(logit_pi_proposal, logit_pi_proposal, h_0_proposal))
+    m = len(proposals)
+    # Hyperpriors needed to compute importance weights
+    logit_pi_prior = scipy.stats.norm(-5, 0.6).logpdf
+    # Re-parameterize uniform prior on (expected) PVE in terms of tau
+    tau_prior = lambda tau, h: -numpy.log(tau) - numpy.log(1 - h)
+    # Perform importance sampling, using ELBO instead of the marginal
+    # likelihood
+    log_weights = numpy.zeros(shape=m)
+    alpha = numpy.zeros(shape=(m, p))
+    beta = numpy.zeros(shape=(m, p))
+    pi = numpy.zeros(shape=(m, 2))
+    tau = numpy.zeros(shape=(m, 2))
+    for i, (logit_pi_0, logit_pi_1, h_0) in enumerate(proposals):
+        h = numpy.array([h_0, pve - h_0])
+        pi[i] = numpy.array([scipy.special.expit(logit_pi) for logit_pi in (logit_pi_0, logit_pi_1)])
+        tau[i] = h / ((1 - h) * pi[i] * var_x)
+        log_weights[i], alpha[i], beta[i] = fit_gaussian(X, y, a, pi=pi[i], tau=tau[i], sigma2=sigma2)
+        log_weights[i] += logit_pi_prior(logit_pi_0) + logit_pi_prior(logit_pi_1)
+        log_weights[i] += tau_prior(tau[i], h).sum()
+    # Scale the log importance weights before normalizing to avoid numerical
+    # problems
+    log_weights -= max(log_weights)
     normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
     return [normalized_weights.dot(x) for x in (alpha, beta, pi, tau)]
-
-if __name__ == '__main__':
-    task = int(os.environ['SGE_TASK_ID'])
-    with open('work.pkl', 'rb') as f:
-        model = pickle.load(f)
-    alpha, beta, pi, tau = model.sgvb()
-    with open('{}.pkl'.format(task), 'wb') as f:
-        pickle.dump((alpha, beta, pi, tau), f)
