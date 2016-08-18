@@ -25,11 +25,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import collections
-import drmaa
 import itertools
-import pickle
-import os
-import sys
 
 import numpy
 import numpy.random as R
@@ -39,87 +35,20 @@ import scipy.stats
 import theano
 import theano.tensor as T
 
-import ctra.pcgc
-
 _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
 _Z = lambda n: numpy.zeros(n).astype(_real)
-# We need to change base since we're going to be interpreting the value of pi,
-# logit(pi)
-_expit = lambda x: scipy.special.expit(x * numpy.log(10))
-_logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
-def fit_gaussian(X, y, a, pi, tau, sigma2, alpha=None, beta=None):
-    """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
-Bayesian Anal (2012)
-
-    Generalizing this algorithm to the multi-annotation case is trivial since
-    the local updates just refer to the shared hyperparameter.
-
-    """
-    print('VB: pi={}, tau={}, sigma2={}'.format(pi, tau, sigma2), file=sys.stderr)
-    n, p = X.shape
-    y = y.reshape(-1, 1)
-    pi_deref = numpy.choose(a, pi)
-    logit_pi = _logit(pi_deref)
-    tau_deref = numpy.choose(a, tau)
-    # Initial configuration
-    if alpha is None:
-        alpha = R.uniform(size=p)
-        alpha /= alpha.sum()
-    if beta is None:
-        beta = R.normal(size=p)
-    # Precompute things
-    xty = X.T.dot(y)
-    xtx_jj = numpy.einsum('ij,ji->i', X.T, X)
-    # Assume sigma2 fixed
-    s = sigma2 / (xtx_jj + tau_deref)
-    eta = X.dot(alpha * beta).reshape(-1, 1)
-    # Coordinate ascent
-    L = numpy.log
-    elbo = float('-inf')
-    converged = False
-    while not converged:
-        alpha_ = alpha
-        beta_ = beta
-        eta_ = eta
-        for j in range(p):
-            xj = X[:, j].reshape(-1, 1)
-            theta_j = alpha[j] * beta[j]
-            eta -= xj * theta_j
-            beta[j] = s[j] / sigma2 * (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum())
-            ssr = beta[j] * beta[j] / s[j]
-            alpha[j] = _expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
-            eta += xj * alpha[j] * beta[j]
-            numpy.clip(alpha, 1e-4, 1 - 1e-4, alpha)
-        elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma2 - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
-            + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + s))).sum()
-            - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
-        if elbo_ > 0:
-            import pdb; pdb.set_trace()
-        if elbo_ > elbo:
-            alpha, beta, elbo = alpha_, beta_, elbo_
-        elif numpy.isclose(alpha_, alpha).all() and numpy.isclose(beta_, beta).all():
-            print('ELBO={}'.format(elbo), file=sys.stderr)
-            converged = True
-    return elbo, alpha, beta
-
-def logit(y, eta):
-    """Return E_q[ln p(y | eta)] assuming a logit link."""
-    F = y * eta - T.nnet.softplus(eta)
-    return T.mean(T.sum(F, axis=1)) - T.mean(F)
-
-class LogisticModel:
+class Model:
     """Class providing the implementation of the optimizer
 
     This is intended to provide a pickle-able object to re-use the Theano
     compiled function across hyperparameter samples.
 
     """
-    def __init__(self, X_, y_, a_, llik=logit, minibatch_n=100,
-                 max_precision=1e5, learning_rate=None, b1=0.9, b2=0.999,
-                 e=1e-8):
+    def __init__(self, X_, y_, a_, minibatch_n=100, max_precision=1e5,
+                 learning_rate=None, b1=0.9, b2=0.999, e=1e-8, **kwargs):
         """Compile the Theano function which takes a gradient step
 
         llik - data likelihood under the variational approximation
@@ -240,13 +169,9 @@ class LogisticModel:
         """Return exponential loss of the model on data (X, y)"""
         return numpy.exp(y.dot(X.dot(alpha * beta))).sum()
 
-def debug_on_err(*args):
-    print('Entering debug')
-    import pdb; pdb.set_trace()
 
 def importance_sampling(X, y, a):
     """Return the posterior mean estimates of the hyperparameters"""
-    numpy.seterrcall(debug_on_err)
     numpy.seterr(all='warn')
     n, p = X.shape
     # Propose pi_0, pi_1, h_0. This induces a proposal for h_1, tau_0, tau_1
@@ -255,7 +180,6 @@ def importance_sampling(X, y, a):
     var_x = X.var(axis=0).sum()
     logit_pi_proposal = numpy.linspace(-5, 0, 5)
     h_0_proposal = numpy.linspace(0.05, .5, 10)
-    sigma2_proposal = numpy.linspace(5, 15, 10)
     proposals = list(itertools.product(logit_pi_proposal, h_0_proposal, sigma2_proposal))
     m = len(proposals)
 
@@ -263,8 +187,6 @@ def importance_sampling(X, y, a):
     logit_pi_prior = scipy.stats.norm(-5, 0.6).logpdf
     # Re-parameterize uniform prior on (expected) PVE in terms of tau
     tau_prior = lambda tau, h: -numpy.log(tau) - numpy.log(1 - h)
-    # Jeffrey's prior on scale
-    sigma2_prior = lambda sigma2: -2 * numpy.log(sigma2)
 
     # Perform importance sampling, using ELBO instead of the marginal
     # likelihood
@@ -278,10 +200,8 @@ def importance_sampling(X, y, a):
         pi[i] = _expit(logit_pi)
         tau[i] = h / ((1 - h) * pi[i] * var_x)
         sigma2[i] = s
-        log_weights[i], alpha[i], beta[i] = fit_gaussian(X, y, a, pi=pi[i], tau=tau[i], sigma2=sigma2[i])
         log_weights[i] += logit_pi_prior(_logit(pi[i])).sum()
         log_weights[i] += tau_prior(tau[i], h).sum()
-        log_weights[i] += sigma2_prior(sigma2[i])
     # Scale the log importance weights before normalizing to avoid numerical
     # problems
     log_weights -= max(log_weights)

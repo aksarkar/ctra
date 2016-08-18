@@ -31,41 +31,6 @@ def auprc(y, p):
     delta = numpy.diff(points[:,0], axis=0)
     return points[1:,1].dot(delta)
 
-def evaluate_gaussian_vb(n=2000, p=10000, pve=0.5, seed=0):
-    annotation_params = [(100, 1), (50, 1)]
-    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
-        x, y = s.sample_gaussian(n=n)
-        x_train, x_test = x[::2], x[1::2]
-        y_train, y_test = y[::2], y[1::2]
-        a = numpy.zeros(p, dtype='int32')
-        elbo, alpha, beta = ctra.model.fit_gaussian(x_train, y_train, a,
-                                                    pi=numpy.array([ 0.00315231]),
-                                                    tau=numpy.array([ 0.01657064]),
-                                                    sigma2=numpy.array([ 13.88888889]),
-                                                    alpha=None,
-                                                    beta=None)
-        baseline = numpy.std(y_test - sklearn.linear_model.ElasticNet().fit(x_train, y_train).predict(x_test))
-        comparison = numpy.std(y_test - x_test.dot(alpha * beta))
-        print(baseline, comparison)
-
-def evaluate_gaussian_is(n=2000, p=10000, pve=0.5, seed=0):
-    annotation_params = [(100, 1), (50, 1)]
-    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
-        x, y = s.sample_gaussian(n=n)
-        x_train, x_test = x[::2], x[1::2]
-        y_train, y_test = y[::2], y[1::2]
-        a = numpy.zeros(p, dtype='int32')
-        alpha, beta, pi, tau = ctra.model.importance_sampling(x_train, y_train, a)
-        rmse_null = numpy.std(y_test - numpy.mean(y_train))
-        rmse_opt = numpy.std(y_test - x_test.dot(s.theta))
-        rmse_lasso = numpy.std(y_test - sklearn.linear_model.Lasso().fit(x_train, y_train).predict(x_test))
-        rmse_is = numpy.std(y_test - x_test.dot(alpha * beta))
-        print('RMSE (lasso) =', rmse_lasso)
-        print('RPG (lasso) =', (rmse_null - rmse_lasso) / (rmse_null - rmse_opt))
-        print('RMSE (IS) =', rmse_is)
-        print('RPG (IS) =', (rmse_null - rmse_is) / (rmse_null - rmse_opt))
-        print('Posterior mean pi={}, tau={}'.format(pi, tau))
-
 def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
