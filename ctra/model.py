@@ -45,6 +45,10 @@ _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
 _Z = lambda n: numpy.zeros(n).astype(_real)
+# We need to change base since we're going to be interpreting the value of pi,
+# logit(pi)
+_expit = lambda x: scipy.special.expit(x * numpy.log(10))
+_logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 def fit_gaussian(X, y, a, pi, tau, sigma2, alpha=None, beta=None):
     """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
@@ -58,7 +62,7 @@ Bayesian Anal (2012)
     n, p = X.shape
     y = y.reshape(-1, 1)
     pi_deref = numpy.choose(a, pi)
-    logit_pi = scipy.special.logit(pi_deref)
+    logit_pi = _logit(pi_deref)
     tau_deref = numpy.choose(a, tau)
     # Initial configuration
     if alpha is None:
@@ -86,7 +90,7 @@ Bayesian Anal (2012)
             eta -= xj * theta_j
             beta[j] = s[j] / sigma2 * (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum())
             ssr = beta[j] * beta[j] / s[j]
-            alpha[j] = scipy.special.expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
+            alpha[j] = _expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
             eta += xj * alpha[j] * beta[j]
             numpy.clip(alpha_, 1e-4, 1 - 1e-4, alpha_)
         elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma2 - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
@@ -213,7 +217,7 @@ class LogisticModel:
         reduce sensitivity to stochasticity.
 
         """
-        pi = scipy.special.expit(self.logit_pi_proposal.rvs(size=self.m)).astype(_real)
+        pi = _expit(self.logit_pi_proposal.rvs(size=self.m)).astype(_real)
         tau = self.tau_proposal.rvs(size=self.m).astype(_real)
         delta = 1
         t = 1
