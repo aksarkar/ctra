@@ -92,10 +92,12 @@ Bayesian Anal (2012)
             ssr = beta[j] * beta[j] / s[j]
             alpha[j] = _expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
             eta += xj * alpha[j] * beta[j]
-            numpy.clip(alpha_, 1e-4, 1 - 1e-4, alpha_)
+            numpy.clip(alpha, 1e-4, 1 - 1e-4, alpha)
         elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma2 - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
             + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + s))).sum()
             - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
+        if elbo_ > 0:
+            import pdb; pdb.set_trace()
         if elbo_ > elbo:
             alpha, beta, elbo = alpha_, beta_, elbo_
         elif numpy.isclose(alpha_, alpha).all() and numpy.isclose(beta_, beta).all():
