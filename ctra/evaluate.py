@@ -31,17 +31,15 @@ def auprc(y, p):
     delta = numpy.diff(points[:,0], axis=0)
     return points[1:,1].dot(delta)
 
-def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
+def evaluate_sgvb(n=2000, p=1000, K=.01, P=.5, pve=0.25, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_case_control(n=n, K=K, P=P)
         x_train, x_test = x[::2], x[1::2]
         y_train, y_test = y[::2], y[1::2]
-        a = s.annot
-        alpha, beta, pi, tau = ctra.model.fit(x_train, y_train, a)
-        baseline = auprc(y_test, x_test.dot(ctra.pcgc.logit_regression(x_train, y_train).x))
-        comparison = auprc(y_test, scipy.special.expit(x_test.dot(alpha * beta)))
-        print(baseline, comparison)
+        a = numpy.zeros(p, dtype='int8')
+        m = ctra.model.LogisticModel(x, y, a, K).fit()
+        print('Posterior mean pi =', m.pi)
 
 def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
     """Use PCGC to compute "heritability enrichment" under different architectures
