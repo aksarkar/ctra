@@ -25,7 +25,11 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import collections
+import drmaa
 import itertools
+import pickle
+import os
+import sys
 
 import numpy
 import numpy.random as R
@@ -161,7 +165,7 @@ class Model:
         converged = False
         t = 1
         curr_elbo = self.vb_step(epoch=t, **hyperparams)
-        print('ELBO =', curr_elbo, '\tIncluded variables =', self.alpha.sum().eval())
+        print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
         while delta > 0:
             t += 1
             new_elbo = self.vb_step(epoch=t, **hyperparams)
@@ -169,8 +173,8 @@ class Model:
                 delta = new_elbo - curr_elbo
                 if delta > 0:
                     curr_elbo = new_elbo
-                    print('ELBO =', curr_elbo, '\tIncluded variables =', self.alpha.sum().eval())
-        print('ELBO =', curr_elbo, '\tIncluded variables =', self.alpha.sum().eval())
+                    print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
+        print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
         return curr_elbo
 
     def fit(self):
@@ -220,3 +224,69 @@ class LogisticModel(Model):
         """Return E_q[ln p(y | eta)] assuming a logit link."""
         F = y * eta - T.nnet.softplus(eta)
         return T.mean(T.sum(F, axis=1)) - T.mean(F)
+
+class GaussianModel(Model):
+    def __init__(self, X, y, a):
+        self.X = X
+        self.y = y
+        self.a = a
+
+    def _log_weight(self):
+        """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
+    Bayesian Anal (2012)
+
+        Generalizing this algorithm to the multi-annotation case is trivial since
+        the local updates just refer to the shared hyperparameter.
+
+        """
+        print('VB: pi={}, tau={}, sigma2={}'.format(pi, tau, sigma2), file=sys.stderr)
+        X = self.X
+        y = self.y
+        a = self.a
+        n, p = X.shape
+        y = y.reshape(-1, 1)
+        pi_deref = numpy.choose(a, pi)
+        logit_pi = _logit(pi_deref)
+        tau_deref = numpy.choose(a, tau)
+        # Initial configuration
+        if alpha is None:
+            alpha = R.uniform(size=p)
+            alpha /= alpha.sum()
+        if beta is None:
+            beta = R.normal(size=p)
+        # Precompute things
+        xty = X.T.dot(y)
+        xtx_jj = numpy.einsum('ij,ji->i', X.T, X)
+        # Assume sigma2 fixed
+        s = sigma2 / (xtx_jj + tau_deref)
+        eta = X.dot(alpha * beta).reshape(-1, 1)
+        # Coordinate ascent
+        L = numpy.log
+        elbo = float('-inf')
+        converged = False
+        while not converged:
+            print('ELBO={:.3g}\tVars={:.0g}'.format(elbo, alpha.sum()))
+            alpha_ = alpha
+            beta_ = beta
+            eta_ = eta
+            for j in range(p):
+                xj = X[:, j].reshape(-1, 1)
+                theta_j = alpha[j] * beta[j]
+                eta -= xj * theta_j
+                beta[j] = s[j] / sigma2 * (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum())
+                ssr = beta[j] * beta[j] / s[j]
+                alpha[j] = _expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
+                eta += xj * alpha[j] * beta[j]
+                numpy.clip(alpha, 1e-4, 1 - 1e-4, alpha)
+            elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma2 - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
+                + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + s))).sum()
+                - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
+            if elbo_ > 0:
+                import pdb; pdb.set_trace()
+            if elbo_ > elbo:
+                print('ELBO={:.3g}\tVars={:.0g}'.format(elbo, alpha.sum()))
+                alpha, beta, elbo = alpha_, beta_, elbo_
+            elif numpy.isclose(alpha_, alpha).all() and numpy.isclose(beta_, beta).all():
+                print('ELBO={:.3g}\tVars={:.0g}'.format(elbo, alpha.sum()))
+                converged = True
+        return elbo, alpha, beta

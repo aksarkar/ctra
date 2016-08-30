@@ -31,7 +31,17 @@ def auprc(y, p):
     delta = numpy.diff(points[:,0], axis=0)
     return points[1:,1].dot(delta)
 
-def evaluate_sgvb(n=2000, p=1000, K=.01, P=.5, pve=0.25, seed=0):
+def evaluate_gaussian_is(n=2000, p=10000, pve=0.5, seed=0):
+    annotation_params = [(100, 1), (50, 1)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_gaussian(n=n)
+        x_train, x_test = x[::2], x[1::2]
+        y_train, y_test = y[::2], y[1::2]
+        a = numpy.zeros(p, dtype='int32')
+        m = ctra.model.GaussianModel(x_train, y_train, a).fit()
+        print('pi={:.3g}', m.pi)
+
+def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_case_control(n=n, K=K, P=P)
@@ -39,7 +49,7 @@ def evaluate_sgvb(n=2000, p=1000, K=.01, P=.5, pve=0.25, seed=0):
         y_train, y_test = y[::2], y[1::2]
         a = numpy.zeros(p, dtype='int8')
         m = ctra.model.LogisticModel(x, y, a, K).fit()
-        print('Posterior mean pi =', m.pi)
+        print('pi={:.3g}', m.pi)
 
 def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
     """Use PCGC to compute "heritability enrichment" under different architectures
