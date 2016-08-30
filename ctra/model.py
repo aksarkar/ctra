@@ -35,10 +35,16 @@ import scipy.stats
 import theano
 import theano.tensor as T
 
+import ctra.pcgc
+
 _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
 _Z = lambda n: numpy.zeros(n).astype(_real)
+# We need to change base since we're going to be interpreting the value of pi,
+# logit(pi)
+_expit = lambda x: scipy.special.expit(x * numpy.log(10))
+_logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 class Model:
     """Class providing the implementation of the optimizer
@@ -59,12 +65,15 @@ class Model:
         e - tolerance (Adam)
 
         """
+        print('Building the Theano graph')
         # Observed data
         X = _S(X_.astype(_real))
         y = _S(y_.astype(_real))
         a = _S(a_.astype('int8'))
         n, p = X_.shape
+        self.p = p
         self.m = 1 + max(a_)
+        self.var_x = X_.var(axis=0).sum()
 
         # Variational parameters
         alpha_raw = _S(_Z(p))
@@ -72,21 +81,21 @@ class Model:
         beta = _S(_Z(p))
         gamma_raw = _S(_Z(p))
         gamma = max_precision * T.nnet.sigmoid(gamma_raw)
+        self.alpha_raw = alpha_raw
         self.alpha = alpha
-        self.beta = beta
         params = [alpha_raw, beta, gamma_raw]
 
         # Hyperparameters
-        pi = T.vector()
+        pi = T.vector(name='pi')
         pi_deref = T.basic.choose(a, pi)
-        tau = T.vector()
+        tau = T.vector(name='tau')
         tau_deref = T.basic.choose(a, tau)
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
         # permutation which is balanced in expectation.
         perm = _S(R.permutation(n).astype('int32'))
-        epoch = T.iscalar()
+        epoch = T.iscalar(name='epoch')
         sample_minibatch = epoch % (n // minibatch_n)
         index = perm[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]
         X_s = X[index]
@@ -109,7 +118,7 @@ class Model:
 
         # Objective function
         elbo = (
-            llik(y_s, eta)
+            self._llik(y_s, eta)
             + .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
         )
@@ -132,15 +141,14 @@ class Model:
             adam_updates[p] = T.cast(p + a_t * new_m / (T.sqrt(new_v) + e), _real)
             adam_updates[m] = new_m
             adam_updates[v] = new_v
+        print('Compiling the Theano function')
         self.vb_step = _F(inputs=[epoch, pi, tau], outputs=elbo,
                           updates=adam_updates)
 
-        # Hyperparameter proposal distribution for Bayesian optimization using
-        # random search
-        self.logit_pi_proposal = scipy.stats.norm(loc=-3)
-        self.tau_proposal = scipy.stats.lognorm(s=1)
+    def _llik(self, *args):
+        raise NotImplementedError
 
-    def sgvb(self):
+    def _log_weight(self, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it
 
         Use Adaptive estimation to tune the learning rate and converge when
@@ -148,62 +156,67 @@ class Model:
         reduce sensitivity to stochasticity.
 
         """
-        pi = _expit(self.logit_pi_proposal.rvs(size=self.m)).astype(_real)
-        tau = self.tau_proposal.rvs(size=self.m).astype(_real)
         delta = 1
+        print('Starting SGD with hyperparameters = {}'.format(hyperparams))
+        converged = False
         t = 1
-        curr_elbo = self.vb_step(t, pi, tau)
+        curr_elbo = self.vb_step(epoch=t, **hyperparams)
+        print('ELBO =', curr_elbo, '\tIncluded variables =', self.alpha.sum().eval())
         while delta > 0:
             t += 1
-            new_elbo = self.vb_step(t, pi, tau)
+            new_elbo = self.vb_step(epoch=t, **hyperparams)
             if not t % 1000:
                 delta = new_elbo - curr_elbo
                 if delta > 0:
                     curr_elbo = new_elbo
-        self.pi = pi
-        self.tau = tau
-        self.alpha = self.alpha.eval()
-        self.beta = self.beta.get_value()
+                    print('ELBO =', curr_elbo, '\tIncluded variables =', self.alpha.sum().eval())
+        print('ELBO =', curr_elbo, '\tIncluded variables =', self.alpha.sum().eval())
+        return curr_elbo
 
-    def loss(X, y):
-        """Return exponential loss of the model on data (X, y)"""
-        return numpy.exp(y.dot(X.dot(alpha * beta))).sum()
+    def fit(self):
+        """Return the posterior mean estimates of the hyperparameters"""
+        numpy.seterr(all='warn')
+        # Propose pi_0, pi_1. This induces a proposal for tau_0, tau_1
+        # following Guan et al. Ann Appl Stat 2011; Carbonetto et al. Bayesian
+        # Anal 2012
+        logit_pi_proposal = numpy.linspace(-5, 0, 10)
+        proposals = logit_pi_proposal
+        m = len(proposals)
 
+        # Hyperpriors needed to compute importance weights
+        logit_pi_prior = scipy.stats.norm(-5, 0.6).logpdf
+        # Re-parameterize uniform prior on (expected) PVE in terms of tau
+        tau_prior = lambda tau, h: -numpy.log(tau) - numpy.log(1 - h)
 
-def importance_sampling(X, y, a):
-    """Return the posterior mean estimates of the hyperparameters"""
-    numpy.seterr(all='warn')
-    n, p = X.shape
-    # Propose pi_0, pi_1, h_0. This induces a proposal for h_1, tau_0, tau_1
-    # following Guan et al. Ann Appl Stat 2011, Carbonetto et al. Bayesian Anal
-    # 2012
-    var_x = X.var(axis=0).sum()
-    logit_pi_proposal = numpy.linspace(-5, 0, 5)
-    h_0_proposal = numpy.linspace(0.05, .5, 10)
-    proposals = list(itertools.product(logit_pi_proposal, h_0_proposal, sigma2_proposal))
-    m = len(proposals)
+        # Perform importance sampling, using ELBO instead of the marginal
+        # likelihood
+        log_weights = numpy.zeros(shape=m)
+        pi = numpy.zeros(shape=(m, 1), dtype=_real)
+        for i, logit_pi in enumerate(proposals):
+            # Re-initialize alpha, otherwise everything breaks
+            self.alpha_raw.set_value(_Z(self.p))
+            pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
+            tau = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
+            log_weights[i] = self._log_weight(pi=pi[i], tau=tau[0])
 
-    # Hyperpriors needed to compute importance weights
-    logit_pi_prior = scipy.stats.norm(-5, 0.6).logpdf
-    # Re-parameterize uniform prior on (expected) PVE in terms of tau
-    tau_prior = lambda tau, h: -numpy.log(tau) - numpy.log(1 - h)
+        # Scale the log importance weights before normalizing to avoid numerical
+        # problems
+        log_weights -= max(log_weights)
+        normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
+        print('Weights =', normalized_weights)
 
-    # Perform importance sampling, using ELBO instead of the marginal
-    # likelihood
-    log_weights = numpy.zeros(shape=m)
-    alpha = numpy.zeros(shape=(m, p))
-    beta = numpy.zeros(shape=(m, p))
-    pi = numpy.zeros(shape=(m, 1))
-    tau = numpy.zeros(shape=(m, 1))
-    sigma2 = numpy.zeros(shape=(m, 1))
-    for i, (logit_pi, h, s) in enumerate(proposals):
-        pi[i] = _expit(logit_pi)
-        tau[i] = h / ((1 - h) * pi[i] * var_x)
-        sigma2[i] = s
-        log_weights[i] += logit_pi_prior(_logit(pi[i])).sum()
-        log_weights[i] += tau_prior(tau[i], h).sum()
-    # Scale the log importance weights before normalizing to avoid numerical
-    # problems
-    log_weights -= max(log_weights)
-    normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-    return [normalized_weights.dot(x) for x in (alpha, beta, pi, tau)]
+        self.pi = normalized_weights.dot(pi)
+        return self
+
+    def predict(self, x):
+        return _expit(x.dot(self.alpha * self.beta))
+
+class LogisticModel(Model):
+    def __init__(self, X, y, a, K, **kwargs):
+        super().__init__(X, y, a, **kwargs)
+        self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
+
+    def _llik(self, y, eta):
+        """Return E_q[ln p(y | eta)] assuming a logit link."""
+        F = y * eta - T.nnet.softplus(eta)
+        return T.mean(T.sum(F, axis=1)) - T.mean(F)
