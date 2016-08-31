@@ -162,6 +162,8 @@ class Model:
         """
         delta = 1
         print('Starting SGD with hyperparameters = {}'.format(hyperparams))
+        # Re-initialize alpha, otherwise everything breaks
+        self.alpha_raw.set_value(_Z(self.p))
         converged = False
         t = 1
         curr_elbo = self.vb_step(epoch=t, **hyperparams)
@@ -197,8 +199,6 @@ class Model:
         log_weights = numpy.zeros(shape=m)
         pi = numpy.zeros(shape=(m, 1), dtype=_real)
         for i, logit_pi in enumerate(proposals):
-            # Re-initialize alpha, otherwise everything breaks
-            self.alpha_raw.set_value(_Z(self.p))
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             tau = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
             log_weights[i] = self._log_weight(pi=pi[i], tau=tau[0])
