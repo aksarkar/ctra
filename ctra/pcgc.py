@@ -98,6 +98,9 @@ def estimate(y, grm, K=None):
     K - prevalence of case-control phenotype
 
     """
+    y = numpy.copy(y)
+    y -= y.mean()
+    y /= y.std()
     index = numpy.triu_indices(y.shape[0], 1)
     if K is None:
         c = 1
