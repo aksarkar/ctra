@@ -178,7 +178,7 @@ class Model:
                     curr_elbo = new_elbo
                     print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
         print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
-        return curr_elbo
+        return curr_elbo, alpha, beta
 
     def fit(self):
         """Return the posterior mean estimates of the hyperparameters"""
@@ -189,14 +189,26 @@ class Model:
         proposals = logit_pi_proposal
         m = len(proposals)
 
+        # Find the best initialization
+        alpha = None
+        beta = None
+        pi = numpy.zeros(shape=(m, 1), dtype=_real)
+        tau = numpy.zeros(shape=(m, 1), dtype=_real)
+        best_elbo = float('-inf')
+        print('Finding best initialization')
+        for i, logit_pi in enumerate(proposals):
+            pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
+            tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
+            elbo_, alpha_, beta_= self._log_weight(pi=pi[i], tau=tau[i])
+            if elbo_ > best_elbo:
+                alpha, beta = alpha_, beta_
+
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
         log_weights = numpy.zeros(shape=m)
-        pi = numpy.zeros(shape=(m, 1), dtype=_real)
+        print('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
-            pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
-            tau = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
-            log_weights[i] = self._log_weight(pi=pi[i], tau=tau[0])
+            log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i], alpha=alpha, beta=beta)
 
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
@@ -227,7 +239,7 @@ class GaussianModel(Model):
         self.var_x = X.var(axis=0).sum()
         self.pve = numpy.array([[0.25]])
 
-    def _log_weight(self, pi, tau, atol=1e-4):
+    def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
     Bayesian Anal (2012)
 
@@ -244,9 +256,11 @@ class GaussianModel(Model):
         logit_pi = _logit(pi_deref)
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
-        alpha = R.uniform(size=p)
-        alpha /= alpha.sum()
-        beta = R.normal(size=p)
+        if alpha is None:
+            alpha = 0.5 * numpy.ones(p)
+            alpha /= alpha.sum()
+        if beta is None:
+            beta = R.normal(size=p)
         sigma2 = y.var()
         print({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x})
         # Precompute things
@@ -290,4 +304,4 @@ class GaussianModel(Model):
                 converged = True
             elif numpy.isclose(alpha_, alpha, atol=atol).all() and numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all():
                 converged = True
-        return elbo
+        return elbo, alpha, beta
