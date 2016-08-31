@@ -41,6 +41,7 @@ import theano.tensor as T
 
 import ctra.pcgc
 
+numpy.seterr(all='warn')
 _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
@@ -181,18 +182,12 @@ class Model:
 
     def fit(self):
         """Return the posterior mean estimates of the hyperparameters"""
-        numpy.seterr(all='warn')
         # Propose pi_0, pi_1. This induces a proposal for tau_0, tau_1
         # following Guan et al. Ann Appl Stat 2011; Carbonetto et al. Bayesian
         # Anal 2012
         logit_pi_proposal = numpy.linspace(-5, 0, 10)
         proposals = logit_pi_proposal
         m = len(proposals)
-
-        # Hyperpriors needed to compute importance weights
-        logit_pi_prior = scipy.stats.norm(-5, 0.6).logpdf
-        # Re-parameterize uniform prior on (expected) PVE in terms of tau
-        tau_prior = lambda tau, h: -numpy.log(tau) - numpy.log(1 - h)
 
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
@@ -208,7 +203,6 @@ class Model:
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
         print('Weights =', normalized_weights)
-
         self.pi = normalized_weights.dot(pi)
         return self
 
@@ -230,8 +224,10 @@ class GaussianModel(Model):
         self.X = X
         self.y = y
         self.a = a
+        self.var_x = X.var(axis=0).sum()
+        self.pve = numpy.array([[0.25]])
 
-    def _log_weight(self):
+    def _log_weight(self, pi, tau, atol=1e-4):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
     Bayesian Anal (2012)
 
@@ -239,7 +235,6 @@ class GaussianModel(Model):
         the local updates just refer to the shared hyperparameter.
 
         """
-        print('VB: pi={}, tau={}, sigma2={}'.format(pi, tau, sigma2), file=sys.stderr)
         X = self.X
         y = self.y
         a = self.a
@@ -249,44 +244,50 @@ class GaussianModel(Model):
         logit_pi = _logit(pi_deref)
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
-        if alpha is None:
-            alpha = R.uniform(size=p)
-            alpha /= alpha.sum()
-        if beta is None:
-            beta = R.normal(size=p)
+        alpha = R.uniform(size=p)
+        alpha /= alpha.sum()
+        beta = R.normal(size=p)
+        sigma2 = y.var()
+        print({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x})
         # Precompute things
+        eps = numpy.finfo(float).eps
         xty = X.T.dot(y)
         xtx_jj = numpy.einsum('ij,ji->i', X.T, X)
-        # Assume sigma2 fixed
-        s = sigma2 / (xtx_jj + tau_deref)
+        gamma = (xtx_jj + tau_deref) / sigma2
         eta = X.dot(alpha * beta).reshape(-1, 1)
         # Coordinate ascent
         L = numpy.log
         elbo = float('-inf')
         converged = False
+        reverse = False
+        print('{:>8s} {:>8s} {:>8s}'.format('ELBO', 'sigma2', 'Vars'), file=sys.stderr)
         while not converged:
-            print('ELBO={:.3g}\tVars={:.0g}'.format(elbo, alpha.sum()))
-            alpha_ = alpha
-            beta_ = beta
-            eta_ = eta
+            alpha_ = alpha.copy()
+            beta_ = beta.copy()
+            elbo_ = elbo
             for j in range(p):
                 xj = X[:, j].reshape(-1, 1)
                 theta_j = alpha[j] * beta[j]
-                eta -= xj * theta_j
-                beta[j] = s[j] / sigma2 * (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum())
-                ssr = beta[j] * beta[j] / s[j]
-                alpha[j] = _expit(logit_pi[j] + .5 * (L(s[j] / sigma2) + ssr))
-                eta += xj * alpha[j] * beta[j]
-                numpy.clip(alpha, 1e-4, 1 - 1e-4, alpha)
-            elbo_ = (-.5 * (n * L(2 * numpy.pi * sigma2) + numpy.square(y - eta).sum() / sigma2 - (xtx_jj * alpha * (s + (1 - alpha) * beta ** 2)).sum())
-                + .5 * (alpha * (1 + L(tau_deref) + L(s) - L(sigma2) - tau_deref / sigma2 * (numpy.square(beta) + s))).sum()
-                - (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
-            if elbo_ > 0:
-                import pdb; pdb.set_trace()
-            if elbo_ > elbo:
-                print('ELBO={:.3g}\tVars={:.0g}'.format(elbo, alpha.sum()))
-                alpha, beta, elbo = alpha_, beta_, elbo_
-            elif numpy.isclose(alpha_, alpha).all() and numpy.isclose(beta_, beta).all():
-                print('ELBO={:.3g}\tVars={:.0g}'.format(elbo, alpha.sum()))
+                beta[j] = (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum()) / (gamma[j] * sigma2)
+                ssr = beta[j] * beta[j] * gamma[j]
+                alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(sigma2) - L(gamma[j]))), eps, 1 - eps)
+                eta += xj * (alpha[j] * beta[j] - theta_j)
+            sigma2 = (numpy.square(y - eta).sum() +
+                      (xtx_jj * alpha * (1 / gamma + (1 - alpha) * beta ** 2)).sum() +
+                      (alpha.dot(tau_deref * (1 / gamma + numpy.square(beta))))) / (n + alpha.sum())
+            gamma = (xtx_jj + tau_deref) / sigma2
+            elbo = (-.5 * (n * L(2 * numpy.pi * sigma2) +
+                            numpy.square(y - eta).sum() / sigma2 +
+                            (xtx_jj * alpha * (1 / gamma + (1 - alpha) * beta ** 2)).sum() / sigma2) +
+                     .5 * (alpha * (1 + L(tau_deref) - L(gamma) - L(sigma2) -
+                                    tau_deref / sigma2 * (numpy.square(beta) + 1 / gamma))).sum() -
+                     (alpha * L(alpha / pi_deref) +
+                      (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
+            print('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()), file=sys.stderr)
+            if elbo > 0:
+                raise ValueError('ELBO must be non-positive')
+            if elbo < elbo_:
                 converged = True
-        return elbo, alpha, beta
+            elif numpy.isclose(alpha_, alpha, atol=atol).all() and numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all():
+                converged = True
+        return elbo
