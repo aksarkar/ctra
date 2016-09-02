@@ -35,11 +35,8 @@ def evaluate_gaussian_is(n=2000, p=10000, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_gaussian(n=n)
-        x_train, x_test = x[::2], x[1::2]
-        y_train, y_test = y[::2], y[1::2]
-        a = numpy.zeros(p, dtype='int32')
-        m = ctra.model.GaussianModel(x_train, y_train, a).fit()
-        print(m.pi)
+        m = ctra.model.GaussianModel(x, y, s.annot).fit()
+        print(annotation_params, m.pve, m.pi)
 
 def test_known_data():
     with open('genotypes.txt') as f:
