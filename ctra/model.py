@@ -239,7 +239,7 @@ class GaussianModel(Model):
         self.var_x = X.var(axis=0).sum()
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a))
 
-    def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4):
+    def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4, **hyperparams):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
     Bayesian Anal (2012)
 

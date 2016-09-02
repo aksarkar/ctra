@@ -98,11 +98,11 @@ def estimate(y, grm, K=None):
     K - prevalence of case-control phenotype
 
     """
-    y = numpy.copy(y)
-    y -= y.mean()
-    y /= y.std()
     index = numpy.triu_indices(y.shape[0], 1)
     if K is None:
+        y = numpy.copy(y)
+        y -= y.mean()
+        y /= y.std()
         c = 1
         prm = numpy.outer(y, y)[index].reshape(-1, 1)
     else:
@@ -111,7 +111,7 @@ def estimate(y, grm, K=None):
         P = numpy.mean(y)
         c = K ** 2 * (1 - K) ** 2 / (z ** 2 * P * (1 - P))
         prm = numpy.outer(y - P, y - P)[index].reshape(-1, 1) / (P * (1 - P))
-    return c * scipy.linalg.lstsq(grm, prm)[0]
+    return c * scipy.linalg.lstsq(grm, prm)[0].ravel()
 
 def _estimate_grm(x):
     """Return upper triangular entries of the GRM estimated from x"""
