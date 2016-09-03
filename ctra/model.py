@@ -46,6 +46,8 @@ _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
 _Z = lambda n: numpy.zeros(n).astype(_real)
+_N = lambda n: R.normal(size=n).astype(_real)
+
 # We need to change base since we're going to be interpreting the value of pi,
 # logit(pi)
 _expit = lambda x: scipy.special.expit(x * numpy.log(10))
@@ -58,8 +60,8 @@ class Model:
     compiled function across hyperparameter samples.
 
     """
-    def __init__(self, X_, y_, a_, minibatch_n=100, max_precision=1e5,
-                 learning_rate=None, b1=0.9, b2=0.999, e=1e-8, **kwargs):
+    def __init__(self, X_, y_, a_, minibatch_n=None, learning_rate=None, b1=0.9,
+                 b2=0.999, e=1e-8, **kwargs):
         """Compile the Theano function which takes a gradient step
 
         llik - data likelihood under the variational approximation
@@ -72,23 +74,11 @@ class Model:
         """
         print('Building the Theano graph')
         # Observed data
+        n, p = X_.shape
         X = _S(X_.astype(_real))
         y = _S(y_.astype(_real))
         a = _S(a_.astype('int8'))
-        n, p = X_.shape
-        self.p = p
-        self.m = 1 + max(a_)
         self.var_x = X_.var(axis=0).sum()
-
-        # Variational parameters
-        alpha_raw = _S(_Z(p))
-        alpha = T.nnet.sigmoid(alpha_raw)
-        beta = _S(_Z(p))
-        gamma_raw = _S(_Z(p))
-        gamma = max_precision * T.nnet.sigmoid(gamma_raw)
-        self.alpha_raw = alpha_raw
-        self.alpha = alpha
-        params = [alpha_raw, beta, gamma_raw]
 
         # Hyperparameters
         pi = T.vector(name='pi')
@@ -96,15 +86,28 @@ class Model:
         tau = T.vector(name='tau')
         tau_deref = T.basic.choose(a, tau)
 
+        # Variational parameters
+        alpha_raw = _S(_Z(p))
+        alpha = T.nnet.sigmoid(alpha_raw)
+        beta = _S(_N(p))
+        gamma_raw = _S(_Z(p))
+        gamma = 10 * T.nnet.sigmoid(gamma_raw)
+        params = [alpha_raw, beta, gamma_raw]
+
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
         # permutation which is balanced in expectation.
-        perm = _S(R.permutation(n).astype('int32'))
         epoch = T.iscalar(name='epoch')
-        sample_minibatch = epoch % (n // minibatch_n)
-        index = perm[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]
-        X_s = X[index]
-        y_s = y[index]
+        if minibatch_n is not None:
+            perm = _S(R.permutation(n).astype('int32'))
+            sample_minibatch = epoch % (n // minibatch_n)
+            index = perm[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]
+            X_s = X[index]
+            y_s = y[index]
+        else:
+            minibatch_n = n
+            X_s = X
+            y_s = y
 
         # Variational approximation (re-parameterize eta = X theta). This is a
         # "Gaussian reconstruction" in that we characterize its expectation and
@@ -116,120 +119,122 @@ class Model:
         # gradient, the global mean of the reconstruction is constant and drops
         # out, so we only need to keep the global variance.
         mu = T.dot(X_s, alpha * beta)
-        nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) + T.sqr(beta))
+        nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
         random = T.shared_randomstreams.RandomStreams(seed=0)
-        eta_raw = random.normal(size=(10, minibatch_n))
+        eta_raw = random.normal(size=(1, minibatch_n))
         eta = mu + T.sqrt(nu) * eta_raw
 
         # Objective function
         elbo = (
-            self._llik(y_s, eta)
+            # The log likelihood is for the minibatch, but we need to scale up
+            # to the full dataset size
+            self._llik(y_s, eta) * (n // minibatch_n)
             + .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
         )
+        import pdb; pdb.set_trace()
 
-        # Maximize ELBO using stochastic gradient ascent
-        #
-        # Adaptive estimation (Kingma & Welling arxiv:1412.6980) tunes the learning
-        # rate based on exponentially weighted moving averages of the first and
-        # second moments of the gradient.
-        if learning_rate is None:
-            learning_rate = 0.5 / n
+        print('Compiling the Theano functions')
+        self._randomize = _F(inputs=[], outputs=[],
+                             updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
+
         grad = T.grad(elbo, params)
-        M = [_S(_Z(p)) for param in params]
-        V = [_S(_Z(p)) for param in params]
-        a_t = learning_rate * T.sqrt(1 - T.pow(b2, epoch)) / (1 - T.pow(b1, epoch))
-        adam_updates = collections.OrderedDict()
-        for p, g, m, v in zip(params, grad, M, V):
-            new_m = b1 * m + (1 - b1) * g
-            new_v = b2 * v + (1 - b2) * T.sqr(g)
-            adam_updates[p] = T.cast(p + a_t * new_m / (T.sqrt(new_v) + e), _real)
-            adam_updates[m] = new_m
-            adam_updates[v] = new_v
-        print('Compiling the Theano function')
-        self.vb_step = _F(inputs=[epoch, pi, tau], outputs=elbo,
-                          updates=adam_updates)
+        num_vars = alpha.sum()
+        mean_prec = gamma.mean()
+        max_effect = abs(alpha * beta).max()
+        if learning_rate is None:
+            learning_rate = numpy.array(1e-3 / minibatch_n, dtype=_real)
+        self.vb_step = _F(inputs=[epoch, pi, tau],
+                          outputs=[elbo, num_vars, mean_prec, max_effect],
+                          updates=[(p_, p_ + learning_rate * g)
+                                   for p_, g in zip(params, grad)])
+
+        self._opt = _F(inputs=[epoch, pi, tau], outputs=[elbo, alpha, beta])
 
     def _llik(self, *args):
         raise NotImplementedError
 
-    def _log_weight(self, **hyperparams):
-        """Return optimum ELBO and variational parameters which achieve it
-
-        Use Adaptive estimation to tune the learning rate and converge when
-        change in ELBO changes sign. Poll ELBO every thousand iterations to
-        reduce sensitivity to stochasticity.
-
-        """
-        delta = 1
-        print('Starting SGD with hyperparameters = {}'.format(hyperparams))
-        # Re-initialize alpha, otherwise everything breaks
-        self.alpha_raw.set_value(_Z(self.p))
+    def _log_weight(self, alpha=None, beta=None, **hyperparams):
+        """Return optimum ELBO and variational parameters which achieve it."""
+        print(hyperparams)
+        # Re-initialize, otherwise everything breaks
+        self._randomize()
         converged = False
-        t = 1
-        curr_elbo = self.vb_step(epoch=t, **hyperparams)
-        print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
-        while delta > 0:
+        t = 0
+        elbo = float('-inf')
+        while not converged:
             t += 1
-            new_elbo = self.vb_step(epoch=t, **hyperparams)
-            if not t % 1000:
-                delta = new_elbo - curr_elbo
-                if delta > 0:
-                    curr_elbo = new_elbo
-                    print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
-        print('ELBO={:.3g}\tVars={:.0g}'.format(curr_elbo, self.alpha.sum().eval()))
-        return curr_elbo, alpha, beta
+            elbo_, num_vars_, mean_prec, max_effect = self.vb_step(epoch=t, **hyperparams)
+            if not t % 10000:
+                print(elbo_, num_vars_, mean_prec, max_effect)
+                if t > 100000 and elbo_ < elbo:
+                    converged = True
+                else:
+                    elbo = elbo_
+        return self._opt(epoch=t, **hyperparams)
 
-    def fit(self):
+    def fit(self, **kwargs):
         """Return the posterior mean estimates of the hyperparameters"""
         # Propose pi_0, pi_1. This induces a proposal for tau_0, tau_1
         # following Guan et al. Ann Appl Stat 2011; Carbonetto et al. Bayesian
         # Anal 2012
-        logit_pi_proposal = numpy.linspace(-5, 0, 10)
-        proposals = logit_pi_proposal
-        m = len(proposals)
+        proposals = list(itertools.product(*[numpy.arange(-3, 0, 0.5)
+                                             for a in self.pve]))
 
         # Find the best initialization
         alpha = None
         beta = None
-        pi = numpy.zeros(shape=(m, 1), dtype=_real)
-        tau = numpy.zeros(shape=(m, 1), dtype=_real)
+        pi = numpy.zeros(shape=(len(proposals), self.pve.shape[0]), dtype=_real)
+        tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
         print('Finding best initialization')
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
-            elbo_, alpha_, beta_= self._log_weight(pi=pi[i], tau=tau[i])
+            elbo_, alpha_, beta_= self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
             if elbo_ > best_elbo:
                 alpha, beta = alpha_, beta_
 
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
-        log_weights = numpy.zeros(shape=m)
+        log_weights = numpy.zeros(shape=len(proposals))
         print('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
-            log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i], alpha=alpha, beta=beta)
+            log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i],
+                                                  alpha=alpha, beta=beta, **kwargs)
 
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-        print('Weights =', normalized_weights)
+        print('Weights =', normalized_weights, file=sys.stderr)
         self.pi = normalized_weights.dot(pi)
         return self
-
-    def predict(self, x):
-        return _expit(x.dot(self.alpha * self.beta))
 
 class LogisticModel(Model):
     def __init__(self, X, y, a, K, **kwargs):
         super().__init__(X, y, a, **kwargs)
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
+        print({'pve': self.pve})
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta)] assuming a logit link."""
-        F = y * eta - T.nnet.softplus(eta)
-        return T.mean(T.sum(F, axis=1)) - T.mean(F)
+        F = y * (eta) - T.nnet.softplus(eta)
+        return T.mean(T.sum(F, axis=1))
+
+class ProbitModel(Model):
+    def __init__(self, X, y, a, K, **kwargs):
+        super().__init__(X, y, a, **kwargs)
+        self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
+        print({'pve': self.pve})
+
+    def _cdf(eta):
+        return .5 * (1 + T.erf(eta / T.sqrt(2)))
+
+    def _llik(self, y, eta):
+        """Return E_q[ln p(y | eta)] assuming a logit link."""
+        F = y * T.log(_cdf(eta)) + (1 - y) * T.log(1 - _cdf(eta))
+        return T.mean(T.sum(F, axis=1))
 
 class GaussianModel(Model):
     def __init__(self, X, y, a, K=None):
