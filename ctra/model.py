@@ -232,12 +232,12 @@ class LogisticModel(Model):
         return T.mean(T.sum(F, axis=1)) - T.mean(F)
 
 class GaussianModel(Model):
-    def __init__(self, X, y, a):
+    def __init__(self, X, y, a, K=None):
         self.X = X
         self.y = y
         self.a = a
         self.var_x = X.var(axis=0).sum()
-        self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a))
+        self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
 
     def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4, **hyperparams):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,

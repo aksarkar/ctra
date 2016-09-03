@@ -38,24 +38,44 @@ def evaluate_gaussian_is(n=2000, p=10000, pve=0.5, seed=0):
         m = ctra.model.GaussianModel(x, y, s.annot).fit()
         print(annotation_params, m.pve, m.pi)
 
+def evaluate_gaussian_equal_prop(n=2000, p=1000, pve=0.25, seed=0):
+    annotation_params = [(100, 1), (100, 0.5)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_gaussian(n=n)
+        m = ctra.model.GaussianModel(x, y, s.annot).fit()
+        print(annotation_params, m.pve, m.pi)
+
+def evaluate_gaussian_binary(n=2000, p=1000, pve=0.25, K=0.01, P=0.5, seed=0):
+    annotation_params = [(100, 1), (50, 1)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_case_control(n=n, K=K, P=P)
+        m = ctra.model.GaussianModel(x, y, s.annot, K=K).fit(atol=1e-2)
+        print(annotation_params, m.pve, m.pi)
+
+def evaluate_gaussian_binary_equal_prop(n=2000, p=1000, pve=0.25, K=0.01, P=0.5, seed=0):
+    annotation_params = [(100, 1), (100, 0.5)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_case_control(n=n, K=K, P=P)
+        m = ctra.model.GaussianModel(x, y, s.annot, K=K).fit(atol=1e-2)
+        print(annotation_params, m.pve, m.pi)
+
 def test_known_data():
     with open('genotypes.txt') as f:
         x = numpy.loadtxt(f, delimiter=',')
     with open('phenotype.txt') as f:
         y = numpy.loadtxt(f)
+    w = (y > 0).astype('int')
     a = numpy.zeros(x.shape[1], dtype='int8')
     m = ctra.model.GaussianModel(x, y, a).fit()
     print(m.pi)
 
-def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
+def evaluate_sgvb(n=2000, p=1000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_case_control(n=n, K=K, P=P)
-        x_train, x_test = x[::2], x[1::2]
-        y_train, y_test = y[::2], y[1::2]
         a = numpy.zeros(p, dtype='int8')
         m = ctra.model.LogisticModel(x, y, a, K).fit()
-        print('pi={:.3g}', m.pi)
+        print('pi={:.3g}'.format(m.pi))
 
 def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
     """Use PCGC to compute "heritability enrichment" under different architectures
