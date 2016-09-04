@@ -86,7 +86,7 @@ class Model:
         alpha = T.nnet.sigmoid(alpha_raw)
         beta = _S(_N(p))
         gamma_raw = _S(_Z(p))
-        gamma = 10 * T.nnet.sigmoid(gamma_raw)
+        gamma = 1e5 * T.nnet.sigmoid(gamma_raw)
         params = [alpha_raw, beta, gamma_raw]
 
         # We need to perform inference on minibatches of samples for speed. Rather
