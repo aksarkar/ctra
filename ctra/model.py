@@ -24,18 +24,12 @@ its expectation is 0.
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
-import collections
-import drmaa
 import itertools
-import pickle
-import os
 import sys
 
 import numpy
-import numpy.random as R
 import scipy.misc
 import scipy.special
-import scipy.stats
 import theano
 import theano.tensor as T
 
@@ -46,7 +40,8 @@ _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
 _Z = lambda n: numpy.zeros(n).astype(_real)
-_N = lambda n: R.normal(size=n).astype(_real)
+_R = numpy.random
+_N = lambda n: _R.normal(size=n).astype(_real)
 
 # We need to change base since we're going to be interpreting the value of pi,
 # logit(pi)
@@ -99,7 +94,7 @@ class Model:
         # permutation which is balanced in expectation.
         epoch = T.iscalar(name='epoch')
         if minibatch_n is not None:
-            perm = _S(R.permutation(n).astype('int32'))
+            perm = _S(_R.permutation(n).astype('int32'))
             sample_minibatch = epoch % (n // minibatch_n)
             index = perm[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]
             X_s = X[index]
@@ -121,7 +116,7 @@ class Model:
         mu = T.dot(X_s, alpha * beta)
         nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
         random = T.shared_randomstreams.RandomStreams(seed=0)
-        eta_raw = random.normal(size=(1, minibatch_n))
+        eta_raw = _S(_R.normal(size=(100, minibatch_n)))
         eta = mu + T.sqrt(nu) * eta_raw
 
         # Objective function
@@ -265,7 +260,7 @@ class GaussianModel(Model):
             alpha = 0.5 * numpy.ones(p)
             alpha /= alpha.sum()
         if beta is None:
-            beta = R.normal(size=p)
+            beta = _R.normal(size=p)
         sigma2 = y.var()
         print({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x})
         # Precompute things
