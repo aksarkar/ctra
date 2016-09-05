@@ -55,8 +55,8 @@ class Model:
     compiled function across hyperparameter samples.
 
     """
-    def __init__(self, X_, y_, a_, minibatch_n=None, learning_rate=None, b1=0.9,
-                 b2=0.999, e=1e-8, **kwargs):
+    def __init__(self, X_, y_, a_, minibatch_n=None, learning_rate=None,
+                 **kwargs):
         """Compile the Theano function which takes a gradient step
 
         llik - data likelihood under the variational approximation
@@ -110,9 +110,7 @@ class Model:
         #
         # We need to take the gradient of an intractable integral, so we re-write
         # it as a Monte Carlo integral which is differentiable, following Kingma &
-        # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114). When we take the
-        # gradient, the global mean of the reconstruction is constant and drops
-        # out, so we only need to keep the global variance.
+        # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114).
         mu = T.dot(X_s, alpha * beta)
         nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
         random = T.shared_randomstreams.RandomStreams(seed=0)
@@ -127,7 +125,6 @@ class Model:
             + .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
         )
-        import pdb; pdb.set_trace()
 
         print('Compiling the Theano functions')
         self._randomize = _F(inputs=[], outputs=[],
@@ -214,7 +211,7 @@ class LogisticModel(Model):
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta)] assuming a logit link."""
-        F = y * (eta) - T.nnet.softplus(eta)
+        F = y * eta - T.nnet.softplus(eta)
         return T.mean(T.sum(F, axis=1))
 
 class ProbitModel(Model):
