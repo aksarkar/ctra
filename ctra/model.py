@@ -131,13 +131,10 @@ class Model:
                              updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
 
         grad = T.grad(elbo, params)
-        num_vars = alpha.sum()
-        mean_prec = gamma.mean()
-        max_effect = abs(alpha * beta).max()
         if learning_rate is None:
-            learning_rate = numpy.array(1e-3 / minibatch_n, dtype=_real)
+            learning_rate = numpy.array(1e-1 / minibatch_n, dtype=_real)
         self.vb_step = _F(inputs=[epoch, pi, tau],
-                          outputs=[elbo, num_vars, mean_prec, max_effect],
+                          outputs=elbo,
                           updates=[(p_, p_ + learning_rate * g)
                                    for p_, g in zip(params, grad)])
 
@@ -146,23 +143,29 @@ class Model:
     def _llik(self, *args):
         raise NotImplementedError
 
-    def _log_weight(self, alpha=None, beta=None, **hyperparams):
+    def _log_weight(self, alpha=None, beta=None, weight=0.5, poll_iters=100,
+                    min_iters=100000, atol=2, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it."""
         print(hyperparams)
         # Re-initialize, otherwise everything breaks
         self._randomize()
         converged = False
         t = 0
-        elbo = float('-inf')
+        ewma = 0
         while not converged:
             t += 1
-            elbo_, num_vars_, mean_prec, max_effect = self.vb_step(epoch=t, **hyperparams)
-            if not t % 10000:
-                print(elbo_, num_vars_, mean_prec, max_effect)
-                if t > 100000 and elbo_ < elbo:
+            elbo = self.vb_step(epoch=t, **hyperparams)
+            if t < poll_iters:
+                ewma += elbo / poll_iters
+            if not t % poll_iters:
+                ewma_ = ewma
+                ewma_ *= (1 - weight)
+                ewma_ += weight * elbo
+                print(t, ewma)
+                if t > min_iters and numpy.isclose(ewma, ewma_, atol=atol):
                     converged = True
                 else:
-                    elbo = elbo_
+                    ewma = ewma_
         return self._opt(epoch=t, **hyperparams)
 
     def fit(self, **kwargs):
