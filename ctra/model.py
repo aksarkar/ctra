@@ -60,18 +60,8 @@ class Model:
 
     """
     def __init__(self, X_, y_, a_, minibatch_n=None, learning_rate=None,
-                 **kwargs):
-        """Compile the Theano function which takes a gradient step
-
-        llik - data likelihood under the variational approximation
-        max_precision - maximum value of gamma
-        learning_rate - initial gradient ascent step size (used for Adam)
-        b1 - first moment exponential decay (Adam)
-        b2 - second moment exponential decay (Adam)
-        e - tolerance (Adam)
-
-        """
-        print('Building the Theano graph')
+                 *params, **kwargs):
+        """Compile the Theano function which takes a gradient step"""
         logging.debug('Building the Theano graph')
         # Observed data
         n, p = X_.shape
@@ -93,7 +83,9 @@ class Model:
         beta = _S(_N(p))
         gamma_raw = _S(_Z(p))
         gamma = 1e5 * T.nnet.sigmoid(gamma_raw)
-        params = [alpha_raw, beta, gamma_raw]
+
+        self.params = [alpha_raw, beta, gamma_raw]
+        self.params.extend(params)
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
@@ -131,6 +123,7 @@ class Model:
             + .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
         )
+        self._elbo = elbo
 
         logging.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[], outputs=[],
@@ -141,7 +134,7 @@ class Model:
                               updates=[(alpha_raw, a), (beta, b)],
                               allow_input_downcast=True)
 
-        grad = T.grad(elbo, params)
+        grad = T.grad(elbo, self.params)
         if learning_rate is None:
             learning_rate = numpy.array(5e-2 / minibatch_n, dtype=_real)
         logging.debug('Minibatch size = {}'.format(minibatch_n))
@@ -149,9 +142,9 @@ class Model:
         self.vb_step = _F(inputs=[epoch, pi, tau],
                           outputs=elbo,
                           updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * g, _real))
-                                   for p_, g in zip(params, grad)])
+                                   for p_, g in zip(self.params, grad)])
 
-        self._opt = _F(inputs=[epoch, pi, tau], outputs=[elbo, alpha, beta])
+        self._opt = _F(inputs=[pi, tau], outputs=[alpha, beta] + params)
 
     def _llik(self, *args):
         raise NotImplementedError
@@ -183,7 +176,8 @@ class Model:
                     converged = True
                 else:
                     ewma_ = ewma
-        return self._opt(epoch=t, **hyperparams)
+                    alpha, beta = self._opt(**hyperparams)
+        return ewma, alpha, beta
 
     def fit(self, **kwargs):
         """Return the posterior mean estimates of the hyperparameters"""
@@ -225,12 +219,19 @@ class Model:
 
 class LogisticModel(Model):
     def __init__(self, X, y, a, K, **kwargs):
-        super().__init__(X, y, a, **kwargs)
+        # This needs to be instantiated before building the rest of the Theano
+        # graph since self._llik refers to it
+        self._bias = _S(_Z(1))
+        super().__init__(X, y, a, params=[self._bias], **kwargs)
+        # Now add terms to ELBO for the bias: q(bias) ~ N(bias; theta_0,
+        # 2.5^2), q(theta_0) ~ N(0, 2.5^2)
+        self._elbo += self._bias / 2.5
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
+        logging.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _llik(self, y, eta):
-        """Return E_q[ln p(y | eta)] assuming a logit link."""
-        F = y * eta - T.nnet.softplus(eta)
+        """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
+        F = y * (eta + self._bias) - T.nnet.softplus(eta + self._bias)
         return T.mean(T.sum(F, axis=1))
 
 class ProbitModel(Model):
@@ -253,6 +254,7 @@ class GaussianModel(Model):
         self.a = a
         self.var_x = X.var(axis=0).sum()
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
+        logging.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4, **hyperparams):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
