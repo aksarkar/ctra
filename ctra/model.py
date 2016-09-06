@@ -135,6 +135,11 @@ class Model:
         logging.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[], outputs=[],
                              updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
+        a = T.vector()
+        b = T.vector()
+        self._initialize = _F(inputs=[a, b], outputs=[],
+                              updates=[(alpha_raw, a), (beta, b)],
+                              allow_input_downcast=True)
 
         grad = T.grad(elbo, params)
         if learning_rate is None:
@@ -156,7 +161,10 @@ class Model:
         """Return optimum ELBO and variational parameters which achieve it."""
         logging.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
-        self._randomize()
+        if alpha is None:
+            self._randomize()
+        else:
+            self._initialize(scipy.special.expit(alpha), beta)
         converged = False
         t = 0
         ewma = 0
