@@ -25,6 +25,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import itertools
+import logging
 import sys
 
 import numpy
@@ -35,7 +36,10 @@ import theano.tensor as T
 
 import ctra.pcgc
 
-numpy.seterr(all='warn')
+logging.basicConfig(format='[%(asctime)s] %(message)s', level=logging.DEBUG)
+numpy.seterrcall(lambda err, flag: logging.warn(err))
+numpy.seterr(all='call')
+
 _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
@@ -68,6 +72,7 @@ class Model:
 
         """
         print('Building the Theano graph')
+        logging.debug('Building the Theano graph')
         # Observed data
         n, p = X_.shape
         X = _S(X_.astype(_real))
@@ -126,13 +131,15 @@ class Model:
             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
         )
 
-        print('Compiling the Theano functions')
+        logging.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[], outputs=[],
                              updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
 
         grad = T.grad(elbo, params)
         if learning_rate is None:
             learning_rate = numpy.array(1e-1 / minibatch_n, dtype=_real)
+        logging.debug('Minibatch size = {}'.format(minibatch_n))
+        logging.debug('Initial learning rate = {}'.format(learning_rate))
         self.vb_step = _F(inputs=[epoch, pi, tau],
                           outputs=elbo,
                           updates=[(p_, p_ + learning_rate * g)
@@ -146,7 +153,7 @@ class Model:
     def _log_weight(self, alpha=None, beta=None, weight=0.5, poll_iters=100,
                     min_iters=100000, atol=2, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it."""
-        print(hyperparams)
+        logging.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
         self._randomize()
         converged = False
@@ -161,8 +168,8 @@ class Model:
                 ewma_ = ewma
                 ewma_ *= (1 - weight)
                 ewma_ += weight * elbo
-                print(t, ewma)
                 if t > min_iters and numpy.isclose(ewma, ewma_, atol=atol):
+                logging.debug('Iteration = {}, EWMA = {}'.format(t, ewma))
                     converged = True
                 else:
                     ewma = ewma_
@@ -182,7 +189,7 @@ class Model:
         pi = numpy.zeros(shape=(len(proposals), self.pve.shape[0]), dtype=_real)
         tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
-        print('Finding best initialization')
+        logging.info('Finding best initialization')
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
@@ -193,7 +200,7 @@ class Model:
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
         log_weights = numpy.zeros(shape=len(proposals))
-        print('Performing importance sampling')
+        logging.info('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
             log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i],
                                                   alpha=alpha, beta=beta, **kwargs)
@@ -202,7 +209,7 @@ class Model:
         # problems
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-        print('Weights =', normalized_weights, file=sys.stderr)
+        logging.info('Importance Weights = {}'.format(normalized_weights))
         self.pi = normalized_weights.dot(pi)
         return self
 
@@ -210,7 +217,6 @@ class LogisticModel(Model):
     def __init__(self, X, y, a, K, **kwargs):
         super().__init__(X, y, a, **kwargs)
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
-        print({'pve': self.pve})
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta)] assuming a logit link."""
@@ -221,7 +227,6 @@ class ProbitModel(Model):
     def __init__(self, X, y, a, K, **kwargs):
         super().__init__(X, y, a, **kwargs)
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
-        print({'pve': self.pve})
 
     def _cdf(eta):
         return .5 * (1 + T.erf(eta / T.sqrt(2)))
@@ -262,7 +267,7 @@ class GaussianModel(Model):
         if beta is None:
             beta = _R.normal(size=p)
         sigma2 = y.var()
-        print({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x})
+        logging.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x}))
         # Precompute things
         eps = numpy.finfo(float).eps
         xty = X.T.dot(y)
@@ -274,7 +279,7 @@ class GaussianModel(Model):
         elbo = float('-inf')
         converged = False
         reverse = False
-        print('{:>8s} {:>8s} {:>8s}'.format('ELBO', 'sigma2', 'Vars'), file=sys.stderr)
+        logging.debug('{:>8s} {:>8s} {:>8s}'.format('ELBO', 'sigma2', 'Vars'))
         while not converged:
             alpha_ = alpha.copy()
             beta_ = beta.copy()
@@ -297,7 +302,7 @@ class GaussianModel(Model):
                                     tau_deref / sigma2 * (numpy.square(beta) + 1 / gamma))).sum() -
                      (alpha * L(alpha / pi_deref) +
                       (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
-            print('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()), file=sys.stderr)
+            logging.debug('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()))
             if elbo > 0:
                 raise ValueError('ELBO must be non-positive')
             if elbo < elbo_:
