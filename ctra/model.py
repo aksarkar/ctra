@@ -168,20 +168,21 @@ class Model:
         converged = False
         t = 0
         ewma = 0
+        ewma_ = ewma
         while not converged:
             t += 1
             elbo = self.vb_step(epoch=t, **hyperparams)
             if t < poll_iters:
                 ewma += elbo / poll_iters
+            else:
+                ewma *= (1 - weight)
+                ewma += weight * elbo
             if not t % poll_iters:
-                ewma_ = ewma
-                ewma_ *= (1 - weight)
-                ewma_ += weight * elbo
-                if t > min_iters and numpy.isclose(ewma, ewma_, atol=atol):
                 logging.debug('Iteration = {}, EWMA = {}'.format(t, ewma))
+                if ewma_ < 0 and ewma < ewma_:
                     converged = True
                 else:
-                    ewma = ewma_
+                    ewma_ = ewma
         return self._opt(epoch=t, **hyperparams)
 
     def fit(self, **kwargs):
