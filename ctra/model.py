@@ -143,12 +143,12 @@ class Model:
 
         grad = T.grad(elbo, params)
         if learning_rate is None:
-            learning_rate = numpy.array(1e-1 / minibatch_n, dtype=_real)
+            learning_rate = numpy.array(5e-2 / minibatch_n, dtype=_real)
         logging.debug('Minibatch size = {}'.format(minibatch_n))
         logging.debug('Initial learning rate = {}'.format(learning_rate))
         self.vb_step = _F(inputs=[epoch, pi, tau],
                           outputs=elbo,
-                          updates=[(p_, p_ + learning_rate * g)
+                          updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * g, _real))
                                    for p_, g in zip(params, grad)])
 
         self._opt = _F(inputs=[epoch, pi, tau], outputs=[elbo, alpha, beta])
