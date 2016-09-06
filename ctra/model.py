@@ -88,7 +88,8 @@ class Model:
 
         # Variational parameters
         alpha_raw = _S(_Z(p))
-        alpha = T.nnet.sigmoid(alpha_raw)
+        eps = numpy.finfo(_real).eps
+        alpha = T.cast(T.clip(T.nnet.sigmoid(alpha_raw), eps, 1 - eps), _real)
         beta = _S(_N(p))
         gamma_raw = _S(_Z(p))
         gamma = 1e5 * T.nnet.sigmoid(gamma_raw)
