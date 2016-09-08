@@ -121,6 +121,11 @@ class Model:
         )
         self._elbo = elbo
 
+        eta_mean = T.addbroadcast(T.mean(eta, keepdims=True), (True))
+        control = [self._llik(y_s, eta_mean) * g
+                   for g in T.grad(T.mean(-T.sqr(eta_mean - mu) / T.sqrt(nu)),
+                                   self.params)]
+
         logging.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[], outputs=[],
                              updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
@@ -137,16 +142,17 @@ class Model:
         logging.debug('Initial learning rate = {}'.format(learning_rate))
         self.vb_step = _F(inputs=[epoch, pi, tau],
                           outputs=elbo,
-                          updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * g, _real))
-                                   for p_, g in zip(self.params, grad)])
+                          updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
+                                   for p_, g, cv in zip(self.params, grad, control)])
 
-        self._opt = _F(inputs=[pi, tau], outputs=[alpha, beta] + params)
+        self._opt = _F(inputs=[pi, tau], outputs=[alpha, beta])
+        logging.debug('Finished initializing')
 
     def _llik(self, *args):
         raise NotImplementedError
 
     def _log_weight(self, alpha=None, beta=None, weight=0.5, poll_iters=100,
-                    min_iters=100000, atol=2, **hyperparams):
+                    min_iters=100000, atol=1, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it."""
         logging.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
@@ -161,6 +167,7 @@ class Model:
         while not converged:
             t += 1
             elbo = self.vb_step(epoch=t, **hyperparams)
+            assert numpy.isfinite(elbo)
             if t < poll_iters:
                 ewma += elbo / poll_iters
             else:
@@ -168,7 +175,7 @@ class Model:
                 ewma += weight * elbo
             if not t % poll_iters:
                 logging.debug('Iteration = {}, EWMA = {}'.format(t, ewma))
-                if ewma_ < 0 and ewma < ewma_:
+                if ewma_ < 0 and (ewma < ewma_ or numpy.isclose(ewma, ewma_, atol=atol)):
                     converged = True
                 else:
                     ewma_ = ewma

@@ -60,7 +60,7 @@ def evaluate_sgvb_one_component(n=500, p=1000, K=.01, P=.5, pve=0.5, seed=0):
         x, y = s.sample_case_control(n=n, K=K, P=P)
         a = numpy.zeros(p, dtype='int8')
         m = ctra.model.LogisticModel(x, y, a, K, learning_rate=1e-4, minibatch_n=100, stoch_samples=1)
-        m.fit(poll_iters=1000, weight=.1)
+        m.fit(poll_iters=10000, weight=.1)
         print(m.pi)
 
 def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
