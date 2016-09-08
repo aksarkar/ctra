@@ -54,13 +54,21 @@ def evaluate_gaussian_binary_equal_prop(n=2000, p=10000, pve=0.25, K=0.01, P=0.5
         m = ctra.model.GaussianModel(x, y, s.annot, K=K).fit(atol=1e-2)
         print(annotation_params, m.pve, m.pi)
 
+def evaluate_sgvb_one_component(n=500, p=1000, K=.01, P=.5, pve=0.5, seed=0):
+    annotation_params = [(50, 1), (50, 1)]
+    with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
+        x, y = s.sample_case_control(n=n, K=K, P=P)
+        a = numpy.zeros(p, dtype='int8')
+        m = ctra.model.LogisticModel(x, y, a, K, learning_rate=1e-4, minibatch_n=100, stoch_samples=1)
+        m.fit(poll_iters=1000, weight=.1)
+        print(m.pi)
+
 def evaluate_sgvb(n=2000, p=10000, K=.01, P=.5, pve=0.5, seed=0):
     annotation_params = [(100, 1), (50, 1)]
     with ctra.simulation.simulation(p, pve, annotation_params, seed) as s:
         x, y = s.sample_case_control(n=n, K=K, P=P)
-        a = numpy.zeros(p, dtype='int8')
-        m = ctra.model.LogisticModel(x, y, a, K, learning_rate=1e-4, minibatch_n=1)
-        m.fit(min_iters=10000, poll_iters=10000, weight=.1)
+        m = ctra.model.LogisticModel(x, y, s.annot, K, learning_rate=1e-4, minibatch_n=1)
+        m.fit(poll_iters=10000, weight=.1)
         print(m.pi)
 
 def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.5):
