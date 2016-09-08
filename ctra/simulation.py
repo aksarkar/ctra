@@ -32,6 +32,7 @@ p(y | l) = p(l < t), y = 0; p(l > t), y = 1
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
+import logging
 import contextlib
 import pickle
 import os.path
@@ -67,6 +68,7 @@ class Simulation:
         seed - random seed
 
         """
+        logging.info('Initializing simulation')
         R.seed(seed)
         self.p = p
         self.maf = R.uniform(min_maf, max_maf, size=self.p)
@@ -125,6 +127,7 @@ class Simulation:
         elif any(p[1] <= 0 for p in annotation_params):
             raise ValueError('Effect size variance must be non-negative')
 
+        logging.info('Sampling SNP parameters')
         self.theta = numpy.zeros(self.p)
         for (num, scale), (start, end) in zip(annotation_params, self._annotations()):
             self.theta[start:end][:num] = R.normal(scale=scale, size=num)
@@ -176,6 +179,7 @@ class Simulation:
         P - target proportion of cases
 
         """
+        logging.info('Sampling individuals conditioned on phenotype')
         case_target = int(n * P)
         remaining_cases = case_target
         x = numpy.zeros(shape=(n, self.p), dtype='float64')

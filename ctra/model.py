@@ -36,10 +36,6 @@ import theano.tensor as T
 
 import ctra.pcgc
 
-logging.basicConfig(format='[%(asctime)s] %(message)s', level=logging.DEBUG)
-numpy.seterrcall(lambda err, flag: logging.warn(err))
-numpy.seterr(all='call')
-
 _real = theano.config.floatX
 _F = theano.function
 _S = lambda x: theano.shared(x, borrow=True)
