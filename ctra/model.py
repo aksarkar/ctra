@@ -217,17 +217,18 @@ class LogisticModel(Model):
     def __init__(self, X, y, a, K, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        self._bias = _S(_Z(1))
-        super().__init__(X, y, a, params=[self._bias], **kwargs)
+        _bias = theano.shared(numpy.array([0], dtype=_real))
+        self.bias = T.addbroadcast(_bias, 0)
+        super().__init__(X, y, a, params=[self.bias], **kwargs)
         # Now add terms to ELBO for the bias: q(bias) ~ N(bias; theta_0,
         # 2.5^2), q(theta_0) ~ N(0, 2.5^2)
-        self._elbo += self._bias / 2.5
+        self._elbo += self.bias / 2.5
         self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
         logging.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
-        F = y * (eta + self._bias) - T.nnet.softplus(eta + self._bias)
+        F = y * (eta + self.bias) - T.nnet.softplus(eta + self.bias)
         return T.mean(T.sum(F, axis=1))
 
 class ProbitModel(Model):
