@@ -43,6 +43,8 @@ import scipy.stats
 R = numpy.random
 _N = scipy.stats.norm()
 
+logger = logging.getLogger(__name__)
+
 def _multinomial(pmf):
     """Sample from multiple multinomial distributions in parallel. This is needed
 to sample from individual-specific genotype conditional probabilities.
@@ -271,7 +273,7 @@ def simulation(p, pve, annotation_params, seed):
     key = 'simulation-{}-{}-{}-{}.pkl'.format(p, pve, annotation_params, seed)
     if not os.path.exists(key):
         s = Simulation(p=p, seed=seed)
-        s.sample_annotations(proportion=numpy.repeat(0.5, 2))
+        s.sample_annotations(proportion=numpy.ones(len(annotation_params)) / len(annotation_params))
         s.sample_effects(pve=pve, annotation_params=annotation_params)
         with open(key, 'wb') as f:
             pickle.dump(s, f)
