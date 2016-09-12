@@ -124,7 +124,7 @@ class Simulation:
         if annotation_params is None:
             annotation_params = [(end - start, 1) for start, end
                                  in self._annotations()]
-        elif any(p[0] <= 0 for p in annotation_params):
+        elif any(p[0] < 0 for p in annotation_params):
             raise ValueError('Number of causal variants must be non-negative')
         elif any(p[1] <= 0 for p in annotation_params):
             raise ValueError('Effect size variance must be non-negative')
