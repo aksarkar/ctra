@@ -15,11 +15,9 @@ intractable posterior p(theta, z | x, y).
 We cannot write an analytical solution for the variational approximation, so we
 take a doubly stochastic approach, using Monte Carlo integration to estimate
 intractable expectations (re-parameterizing integrals as sums) and drawing
-samples (due to the non-conjugate prior) to estimate the gradient.
-
-In our stochastic optimization, we use the sample mean of of the individual
-sample likelihoods across the random samples eta as a control variate, since
-its expectation is 0.
+samples (due to the non-conjugate prior) to estimate the gradient. We
+additionally use a control variate to reduce the variance of the gradient
+estimator.
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
@@ -35,6 +33,8 @@ import theano
 import theano.tensor as T
 
 import ctra.pcgc
+
+logger = logging.getLogger(__name__)
 
 _real = theano.config.floatX
 _F = theano.function
@@ -58,7 +58,7 @@ class Model:
     def __init__(self, X_, y_, a_, minibatch_n=None, learning_rate=None,
                  *params, **kwargs):
         """Compile the Theano function which takes a gradient step"""
-        logging.debug('Building the Theano graph')
+        logger.debug('Building the Theano graph')
         # Observed data
         n, p = X_.shape
         X = _S(X_.astype(_real))
@@ -126,7 +126,7 @@ class Model:
                    for g in T.grad(T.mean(-T.sqr(eta_mean - mu) / T.sqrt(nu)),
                                    self.params)]
 
-        logging.debug('Compiling the Theano functions')
+        logger.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[], outputs=[],
                              updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
         a = T.vector()
@@ -138,23 +138,23 @@ class Model:
         grad = T.grad(elbo, self.params)
         if learning_rate is None:
             learning_rate = numpy.array(5e-2 / minibatch_n, dtype=_real)
-        logging.debug('Minibatch size = {}'.format(minibatch_n))
-        logging.debug('Initial learning rate = {}'.format(learning_rate))
+        logger.debug('Minibatch size = {}'.format(minibatch_n))
+        logger.debug('Initial learning rate = {}'.format(learning_rate))
         self.vb_step = _F(inputs=[epoch, pi, tau],
                           outputs=elbo,
                           updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
                                    for p_, g, cv in zip(self.params, grad, control)])
 
         self._opt = _F(inputs=[pi, tau], outputs=[alpha, beta])
-        logging.debug('Finished initializing')
+        logger.debug('Finished initializing')
 
     def _llik(self, *args):
         raise NotImplementedError
 
-    def _log_weight(self, alpha=None, beta=None, weight=0.5, poll_iters=100,
+    def _log_weight(self, alpha=None, beta=None, weight=0.5, poll_iters=1000,
                     min_iters=100000, atol=1, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it."""
-        logging.debug('Starting SGD given {}'.format(hyperparams))
+        logger.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
         if alpha is None:
             self._randomize()
@@ -174,7 +174,7 @@ class Model:
                 ewma *= (1 - weight)
                 ewma += weight * elbo
             if not t % poll_iters:
-                logging.debug('Iteration = {}, EWMA = {}'.format(t, ewma))
+                logger.debug('Iteration = {}, EWMA = {}'.format(t, ewma))
                 if ewma_ < 0 and (ewma < ewma_ or numpy.isclose(ewma, ewma_, atol=atol)):
                     converged = True
                 else:
@@ -196,7 +196,7 @@ class Model:
         pi = numpy.zeros(shape=(len(proposals), self.pve.shape[0]), dtype=_real)
         tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
-        logging.info('Finding best initialization')
+        logger.info('Finding best initialization')
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
@@ -207,7 +207,7 @@ class Model:
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
         log_weights = numpy.zeros(shape=len(proposals))
-        logging.info('Performing importance sampling')
+        logger.info('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
             log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i],
                                                   alpha=alpha, beta=beta, **kwargs)
@@ -216,7 +216,7 @@ class Model:
         # problems
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-        logging.info('Importance Weights = {}'.format(normalized_weights))
+        logger.info('Importance Weights = {}'.format(normalized_weights))
         self.pi = normalized_weights.dot(pi)
         return self
 
@@ -230,8 +230,8 @@ class LogisticModel(Model):
         # Now add terms to ELBO for the bias: q(bias) ~ N(bias; theta_0,
         # 2.5^2), q(theta_0) ~ N(0, 2.5^2)
         self._elbo += self.bias / 2.5
-        logging.info('Fixing parameters {}'.format({'pve': self.pve}))
         self.pve = pve
+        logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
@@ -257,8 +257,8 @@ class GaussianModel(Model):
         self.y = y
         self.a = a
         self.var_x = X.var(axis=0).sum()
-        logging.info('Fixing parameters {}'.format({'pve': self.pve}))
         self.pve = pve
+        logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4, **hyperparams):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
@@ -283,7 +283,7 @@ class GaussianModel(Model):
         if beta is None:
             beta = _R.normal(size=p)
         sigma2 = y.var()
-        logging.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x}))
+        logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x}))
         # Precompute things
         eps = numpy.finfo(float).eps
         xty = X.T.dot(y)
@@ -295,7 +295,7 @@ class GaussianModel(Model):
         elbo = float('-inf')
         converged = False
         reverse = False
-        logging.debug('{:>8s} {:>8s} {:>8s}'.format('ELBO', 'sigma2', 'Vars'))
+        logger.debug('{:>8s} {:>8s} {:>8s}'.format('ELBO', 'sigma2', 'Vars'))
         while not converged:
             alpha_ = alpha.copy()
             beta_ = beta.copy()
@@ -318,7 +318,7 @@ class GaussianModel(Model):
                                     tau_deref / sigma2 * (numpy.square(beta) + 1 / gamma))).sum() -
                      (alpha * L(alpha / pi_deref) +
                       (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
-            logging.debug('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()))
+            logger.debug('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()))
             if elbo > 0:
                 raise ValueError('ELBO must be non-positive')
             if elbo < elbo_:
