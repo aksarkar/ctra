@@ -221,7 +221,7 @@ class Model:
         return self
 
 class LogisticModel(Model):
-    def __init__(self, X, y, a, K, **kwargs):
+    def __init__(self, X, y, a, K, pve, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
         _bias = theano.shared(numpy.array([0], dtype=_real))
@@ -230,8 +230,8 @@ class LogisticModel(Model):
         # Now add terms to ELBO for the bias: q(bias) ~ N(bias; theta_0,
         # 2.5^2), q(theta_0) ~ N(0, 2.5^2)
         self._elbo += self.bias / 2.5
-        self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
         logging.info('Fixing parameters {}'.format({'pve': self.pve}))
+        self.pve = pve
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
@@ -252,13 +252,13 @@ class ProbitModel(Model):
         return T.mean(T.sum(F, axis=1))
 
 class GaussianModel(Model):
-    def __init__(self, X, y, a, K=None):
+    def __init__(self, X, y, a, pve):
         self.X = X
         self.y = y
         self.a = a
         self.var_x = X.var(axis=0).sum()
-        self.pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(X, a), K)
         logging.info('Fixing parameters {}'.format({'pve': self.pve}))
+        self.pve = pve
 
     def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4, **hyperparams):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
