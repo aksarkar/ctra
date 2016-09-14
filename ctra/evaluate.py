@@ -35,7 +35,9 @@ def evaluate():
     parser.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     parser.add_argument('-n', '--num-samples', type=int, help='Number of samples', default=1000)
     parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=10000)
-    parser.add_argument('-v', '--pve', type=float, help='Proportion of variance explained', default=0.25)
+    parser.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', default=0.25)
+    parser.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
+    parser.add_argument('--min-pve', type=float, help='Minimum PVE', default=1e-4)
     parser.add_argument('-K', '--prevalence', type=float, help='Binary phenotype case prevalence (assume Gaussian if omitted)', default=None)
     parser.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     parser.add_argument('-m', '--model', choices=['pcgc', 'gaussian', 'logistic'], help='Type of model to fit')
@@ -63,7 +65,7 @@ def evaluate():
     elif not 0 <= args.study_prop <= 1:
         raise _A('Case study proportion must be in [0, 1]')
     if args.prevalence is None and args.model == 'logistic':
-        raise _A('Must specify Gaussian model for non-binary phenotypes')
+        raise _A('Prevalence must be specified for logistic model')
     if args.model == 'gaussian' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for Gaussian model')
     if not args.annotation:
@@ -71,10 +73,12 @@ def evaluate():
     else:
         max_ = args.num_variants // len(args.annotation)
         for i, (num, var) in enumerate(args.annotation):
-            if not 0 < num <= max_:
-                raise _A('Annotation {} cannot have more than {} causal variants ({} specified)'.format(i, max_, num))
+            if not 0 <= num <= max_:
+                raise _A('Annotation {} must have between 0 and {} causal variants ({} specified)'.format(i, max_, num))
             if var <= 0:
                 raise _A('Annotation {} must have positive effect size variance'.format(i))
+    if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
+        raise _A('Minimum PVE must be larger than float tolerance')
 
     logging.getLogger('ctra').setLevel(args.log_level)
     logging.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
@@ -84,7 +88,11 @@ def evaluate():
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         else:
             x, y = s.sample_gaussian(n=args.num_samples)
-        pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot), K=args.prevalence)
+        if args.true_pve:
+            pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var for a in range(1 + max(s.annot))])
+        else:
+            pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot), K=args.prevalence)
+        pve = numpy.clip(pve, args.min_pve, 1 - args.min_pve)
         if args.model == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3e')
             return
@@ -96,7 +104,8 @@ def evaluate():
                                          learning_rate=args.learning_rate,
                                          minibatch_n=args.minibatch_size)
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight)
-        numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3e')
+        logging.info('Writing posterior mean pi')
+        numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
 
 def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.25):
     """Use PCGC to compute "heritability enrichment" under different architectures
