@@ -55,8 +55,8 @@ class Model:
     compiled function across hyperparameter samples.
 
     """
-    def __init__(self, X_, y_, a_, minibatch_n=None, learning_rate=None,
-                 *params, **kwargs):
+    def __init__(self, X_, y_, a_, minibatch_n=None, stoch_samples=None,
+                 learning_rate=None, *params, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         logger.debug('Building the Theano graph')
         # Observed data
@@ -108,7 +108,11 @@ class Model:
         mu = T.dot(X_s, alpha * beta)
         nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
         random = T.shared_randomstreams.RandomStreams(seed=0)
-        eta_raw = _S(_R.normal(size=(100, minibatch_n)))
+        if stoch_samples is None and minibatch_n > 10:
+            stoch_samples = 1
+        else:
+            stoch_samples = 10
+        eta_raw = random.normal(size=(stoch_samples, minibatch_n))
         eta = mu + T.sqrt(nu) * eta_raw
 
         # Objective function
@@ -216,7 +220,7 @@ class Model:
         # problems
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-        logger.info('Importance Weights = {}'.format(normalized_weights))
+        logger.debug('Importance Weights = {}'.format(normalized_weights))
         self.pi = normalized_weights.dot(pi)
         return self
 
