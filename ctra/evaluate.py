@@ -18,6 +18,7 @@ import numpy
 
 import ctra.pcgc
 import ctra.model
+import ctra.varbvs
 import ctra.simulation
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ def evaluate():
     annotation = lambda arg: tuple([f(x) for f, x in zip([int, float], arg.split())])
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     parser.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
-    parser.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Data likelihood to fit', required=True)
-    parser.add_argument('-M', '--method', choices=['pcgc', 'coord', 'dsvi'], help='Inference algorithm', required=True)
+    parser.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
+    parser.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi'], help='Method to fit model', required=True)
     parser.add_argument('-n', '--num-samples', type=int, help='Number of samples', default=1000)
     parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=10000)
     parser.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', default=0.25)
@@ -53,6 +54,7 @@ def evaluate():
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     args = parser.parse_args()
 
+    # Check argument values
     if args.num_samples <= 0:
         raise _A('Number of samples must be positive')
     if args.num_variants <= 0:
@@ -70,19 +72,6 @@ def evaluate():
         raise _A('Case study proportion must be in [0, 1]')
     if args.prevalence is None and args.model == 'logistic':
         raise _A('Prevalence must be specified for logistic model')
-    if args.model == 'gaussian' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
-        logger.warn('Ignoring SGD parameters for Gaussian model')
-    if args.model == 'gaussian' and args.method == 'dsvi':
-        raise _A('Method {} not supported for data model {}'.format(args.method, args.model))
-    if not args.annotation:
-        raise _A('Must specify at least one annotation')
-    else:
-        max_ = args.num_variants // len(args.annotation)
-        for i, (num, var) in enumerate(args.annotation):
-            if not 0 <= num <= max_:
-                raise _A('Annotation {} must have between 0 and {} causal variants ({} specified)'.format(i, max_, num))
-            if var <= 0:
-                raise _A('Annotation {} must have positive effect size variance'.format(i))
     if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
         raise _A('Minimum PVE must be larger than float tolerance')
     if args.learning_rate <= 0:
@@ -99,6 +88,22 @@ def evaluate():
         raise _A('Tolerance must be positive')
     if not 0 < args.ewma_weight < 1:
         raise _A('Moving average weight must be in (0, 1)')
+    if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
+        raise _A('Minimum PVE must be larger than float tolerance')
+    max_ = args.num_variants // len(args.annotation)
+    for i, (num, var) in enumerate(args.annotation):
+        if not 0 <= num <= max_:
+            raise _A('Annotation {} must have between 0 and {} causal variants ({} specified)'.format(i, max_, num))
+        if var <= 0:
+            raise _A('Annotation {} must have positive effect size variance'.format(i))
+    # Check if desired method is supported
+    if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
+        logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
+    if args.method == 'dsvi' and args.model == 'gaussian':
+        raise _A('Method dsvi does not support model {}'.format(args.method, args.model))
+    if args.method == 'varbvs' and len(args.annotation) > 1:
+        raise _A('Method varbvs does not support multiple annotations')
+
 
     logging.getLogger('ctra').setLevel(args.log_level)
     logging.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
@@ -115,23 +120,27 @@ def evaluate():
             x, y = s.sample_gaussian(n=args.num_samples)
         if args.write_data:
             with open('genotypes.txt', 'wb') as f:
-                numpy.savetxt(f, x, fmt='%d')
+                numpy.savetxt(f, x, fmt='%.3f')
             with open('phenotypes.txt', 'wb') as f:
-                numpy.savetxt(f, y, fmt='%d')
+                numpy.savetxt(f, y, fmt='%.3f')
             return
         if args.true_pve:
-            pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var for a in range(1 + max(s.annot))])
+            pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
+                               for a in range(1 + max(s.annot))])
         else:
             pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot), K=args.prevalence)
         pve = numpy.clip(pve, args.min_pve, 1 - args.min_pve)
         if args.method == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3e')
             return
-        if args.model == 'gaussian' and args.method == 'coord':
-            m = ctra.model.GaussianModel(x, y, s.annot, pve).fit(atol=args.tolerance)
-        elif args.model == 'logistic' and args.method == 'coord':
-            m = ctra.model.LogitModel(x, y, s.annot, pve).fit(atol=args.tolerance)
-        elif args.model == 'logistic' and args.method == 'dsvi':
+        elif args.method == 'coord':
+            model = (ctra.model.GaussianModel if args.model == 'gaussian' else
+                     ctra.model.LogitModel)
+            m = model(x, y, s.annot, pve).fit(atol=args.tolerance)
+        elif args.method == 'varbvs':
+            m = ctra.varbvs.varbvs(x, y, pve, 'multisnphyper' if args.model ==
+                                   'gaussian' else 'multisnpbinhyper')
+        else:
             m = ctra.model.LogisticModel(x, y, s.annot, K=args.prevalence,
                                          pve=pve,
                                          learning_rate=args.learning_rate,
