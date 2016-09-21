@@ -145,10 +145,9 @@ class Simulation:
     def sample_genotypes_iid(self, n):
         """Return matrix of dosages.
 
-        This implementation generates SNPs in linkage equilibrium
-        (i.i.d). Dosages are centered about the population mean (based on MAF)
-        but not scaled. We keep the variance of genotype in the generative
-        model, following de los Campos et al. PLoS Genet 2015.
+        This implementation generates dosages in linkage equilibrium
+        (i.i.d). We keep the variance of genotype in the generative model,
+        following de los Campos et al. PLoS Genet 2015.
 
         """
         x = R.binomial(2, self.maf, size=(n, self.p)) - self.x_mean
@@ -167,7 +166,9 @@ class Simulation:
     def sample_gaussian(self, n):
         """Return matrix of genotypes and vector of phenotypes"""
         x = self.sample_genotypes_iid(n)
+        x -= x.mean(axis=0)
         y = self.compute_liabilities(x)
+        y -= y.mean(axis=0)
         return x, y
 
     def sample_ascertained_probit(self, n, K, P, batch_size=1000):

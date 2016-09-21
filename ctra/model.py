@@ -296,7 +296,7 @@ class GaussianModel(Model):
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
         if params is None:
-            alpha = 0.5 * numpy.ones(p)
+            alpha = _R.uniform(size=p)
             alpha /= alpha.sum()
             beta = _R.normal(size=p)
             sigma2 = y.var()
