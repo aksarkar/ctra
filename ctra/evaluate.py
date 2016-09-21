@@ -106,31 +106,3 @@ def evaluate():
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight)
         logging.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
-
-def evaluate_pcgc_two_components(n=1000, p=1000, pve=0.25):
-    """Use PCGC to compute "heritability enrichment" under different architectures
-
-    Two equal-sized components, with:
-    1. Twice as many causal variants in first component
-    2. Double variance of causal effects in first component
-
-    """
-    def trial(seed, annotation_params, n=n, p=p, pve=pve):
-        """Return enrichment of PVE in two component model"""
-        s = ctra.simulation.Simulation(p=p, seed=seed)
-        s.sample_annotations(proportion=numpy.repeat(0.5, 2))
-        s.sample_effects(pve=pve, annotation_params=annotation_params)
-        x, y = s.sample_gaussian(n=n)
-        pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot))
-        return pve
-
-    def dist(num_trials, annotation_params):
-        estimates = numpy.array([trial(seed, annotation_params)
-                                 for seed in range(num_trials)])
-        pve = estimates.mean(axis=0)
-        se = estimates.std(axis=0)
-        enrichment = pve / (pve.sum() * 0.5)
-        return pve, se, enrichment
-
-    print('double_num_causal', dist(50, annotation_params=[(200, 1), (100, 1)]))
-    print('double_causal_effect', dist(50, annotation_params=[(100, 2), (100, 1)]))
