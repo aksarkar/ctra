@@ -63,3 +63,5 @@ locate.db
 
 # Cached datasets (for testing)
 *.pkl
+
+results/
