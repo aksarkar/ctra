@@ -155,9 +155,18 @@ class Model:
     def _llik(self, *args):
         raise NotImplementedError
 
-    def _log_weight(self, alpha=None, beta=None, weight=0.5, poll_iters=1000,
+    def _log_weight(self, params=None, weight=0.5, poll_iters=1000,
                     min_iters=100000, atol=1, **hyperparams):
-        """Return optimum ELBO and variational parameters which achieve it."""
+        """Return optimum ELBO and variational parameters which achieve it.
+
+        params - Initial setting of the variational parameters (default: randomize)
+        weight - weight for exponential moving average of ELBO
+        poll_iters - number of iterations before polling objective function
+        min_iters - minimum number of iterations
+        atol - maximum change in objective for convergence
+        hyperparams - pi, tau, etc.
+
+        """
         logger.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
         if alpha is None:
@@ -187,16 +196,21 @@ class Model:
         return ewma, alpha, beta
 
     def fit(self, **kwargs):
-        """Return the posterior mean estimates of the hyperparameters"""
+        """Return the posterior mean estimates of the hyperparameters
+
+        kwargs - algorithm-specific parameters
+
+        """
         # Propose pi_0, pi_1. This induces a proposal for tau_0, tau_1
         # following Guan et al. Ann Appl Stat 2011; Carbonetto et al. Bayesian
         # Anal 2012
         proposals = list(itertools.product(*[numpy.arange(-3, 0, 0.5)
                                              for a in self.pve]))
 
-        # Find the best initialization
-        alpha = None
-        beta = None
+        # Find the best initialization of the variational parameters. In
+        # general we need to warm start different sets of parameters per model,
+        # so in this generic implementation we can't unpack things.
+        params = None
         pi = numpy.zeros(shape=(len(proposals), self.pve.shape[0]), dtype=_real)
         tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
@@ -204,9 +218,9 @@ class Model:
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
-            elbo_, alpha_, beta_= self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
+            elbo_, params_ = self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
             if elbo_ > best_elbo:
-                alpha, beta = alpha_, beta_
+                params = params_
 
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
@@ -214,7 +228,7 @@ class Model:
         logger.info('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
             log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i],
-                                                  alpha=alpha, beta=beta, **kwargs)
+                                                  params=params, **kwargs)
 
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
@@ -264,7 +278,7 @@ class GaussianModel(Model):
         self.pve = pve
         logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
-    def _log_weight(self, pi, tau, alpha=None, beta=None, atol=1e-4, **hyperparams):
+    def _log_weight(self, pi, tau, params=None, atol=1e-4, **hyperparams):
         """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
     Bayesian Anal (2012)
 
@@ -281,12 +295,13 @@ class GaussianModel(Model):
         logit_pi = _logit(pi_deref)
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
-        if alpha is None:
+        if params is None:
             alpha = 0.5 * numpy.ones(p)
             alpha /= alpha.sum()
-        if beta is None:
             beta = _R.normal(size=p)
-        sigma2 = y.var()
+            sigma2 = y.var()
+        else:
+            alpha, beta, sigma2 = params
         logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x}))
         # Precompute things
         eps = numpy.finfo(float).eps
@@ -329,4 +344,102 @@ class GaussianModel(Model):
                 converged = True
             elif numpy.isclose(alpha_, alpha, atol=atol).all() and numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all():
                 converged = True
-        return elbo, alpha, beta
+        return elbo, (alpha, beta, sigma2)
+
+class LogitModel(Model):
+    def __init__(self, X, y, a, pve):
+        self.X = X
+        self.y = y
+        self.a = a
+        self.var_x = X.var(axis=0).sum()
+        self.pve = pve
+        self.eps = numpy.finfo(float).eps
+        logger.info('Fixing parameters {}'.format({'pve': self.pve}))
+    
+    def _update_logistic_var_params(self, zeta):
+        # Variational lower bound to the logistic likelihood (Jaakola & Jordan,
+        # 2000)
+        d = (scipy.special.expit(zeta) - .5) / (zeta + self.eps)
+        bias = (self.y - .5).sum() / d.sum()
+        yhat = self.y - .5 - bias * d
+        xty = self.X.T.dot(yhat)
+        xd = self.X.T.dot(d)
+        xdx = numpy.einsum('ij,ik,kj->j', self.X, numpy.diag(d), self.X) - numpy.square(xd) / d.sum()
+        return d, yhat, xty, xd, xdx
+
+    def _log_weight(self, pi, tau, params=None, atol=1e-4, **hyperparams):
+        """Implement the coordinate ascent algorithm of Carbonetto and Stephens,
+    Bayesian Anal (2012)
+
+        Generalizing this algorithm to the multi-annotation case is trivial since
+        the local updates just refer to the shared hyperparameter.
+
+        """
+        X = self.X
+        y = self.y
+        a = self.a
+        n, p = X.shape
+        y = y.reshape(-1, 1)
+        pi_deref = numpy.choose(a, pi)
+        logit_pi = _logit(pi_deref)
+        tau_deref = numpy.choose(a, tau)
+        # Initial configuration
+        if params is None:
+            alpha = _R.uniform(size=p)
+            alpha /= alpha.sum()
+            beta = _R.normal(size=p)
+            zeta = numpy.ones(n)
+        else:
+            alpha, beta, zeta = params
+        logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau}))
+        # Precompute things
+        eta = X.dot(alpha * beta).reshape(-1, 1)
+        d, yhat, xty, xd, xdx = self._update_logistic_var_params(zeta)
+        gamma = xdx + tau_deref
+        # Coordinate ascent
+        L = numpy.log
+        S = numpy.square
+        elbo = float('-inf')
+        converged = False
+        reverse = False
+        logger.debug('{:>8s} {:>8s}'.format('ELBO', 'Vars'))
+        while not converged:
+            alpha_ = alpha.copy()
+            beta_ = beta.copy()
+            zeta_ = zeta.copy()
+            elbo_ = elbo
+            for j in range(p):
+                xj = X[:, j].reshape(-1, 1)
+                theta_j = alpha[j] * beta[j]
+                beta[j] = (xty[j] + xdx[j] * theta_j + xd[j] * d.T.dot(eta) / d.sum() - xj.T.dot(numpy.diag(d)).dot(eta)) / gamma[j]
+                ssr = beta[j] * beta[j] * gamma[j]
+                alpha[j] = scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j])))
+                eta += xj * (alpha[j] * beta[j] - theta_j)
+            gamma = xdx + tau_deref
+            a = 1 / d.sum()
+            # M step for free parameters zeta
+            bias = a * ((y - 0.5).sum() - d.dot(eta))
+            # V[theta_j] under the variational approximation
+            theta_var = alpha * (1 / gamma + (1 - alpha) * beta ** 2)
+            bias_var = a * (1 + a * (theta_var * S(xd)).sum())
+            theta_bias_covar = -a * xd * theta_var
+            zeta = numpy.sqrt(S(bias + eta).ravel() + bias_var +
+                              numpy.einsum('ij,j,ji->i', X, theta_var, X.T) +
+                              2 * X.dot(theta_bias_covar))
+            d, yhat, xty, xd, xdx = self._update_logistic_var_params(zeta)
+            elbo = (L(a) / 2 + a * S((y - 0.5).sum()) / 2 + L(scipy.special.expit(zeta)).sum() +
+                    numpy.square(d.dot(eta)) / (2 * d.sum()) +
+                    zeta.dot(d * zeta - 1) / 2 + yhat.T.dot(eta) - numpy.einsum('ji,jk,ki', eta, numpy.diag(d), eta) +
+                    -.5 * xdx.dot(theta_var) +
+                     .5 * (alpha * (1 + L(tau_deref) - L(gamma) - tau_deref * (S(beta) + 1 / gamma))).sum() -
+                     (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
+            logger.debug('{:>8.6g} {:>8.0f}'.format(elbo[0], alpha.sum()))
+            if not numpy.isfinite(elbo):
+                raise ValueError('ELBO must be finite')
+            elif elbo > 0:
+                raise ValueError('ELBO must be non-positive')
+            if elbo < elbo_:
+                converged = True
+            elif numpy.isclose(alpha_, alpha, atol=atol).all() and numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all():
+                converged = True
+        return elbo, (alpha, beta, zeta)

@@ -33,6 +33,8 @@ def evaluate():
     annotation = lambda arg: tuple([f(x) for f, x in zip([int, float], arg.split())])
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     parser.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
+    parser.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Data likelihood to fit', required=True)
+    parser.add_argument('-M', '--method', choices=['pcgc', 'coord', 'dsvi'], help='Inference algorithm', required=True)
     parser.add_argument('-n', '--num-samples', type=int, help='Number of samples', default=1000)
     parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=10000)
     parser.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', default=0.25)
@@ -40,11 +42,13 @@ def evaluate():
     parser.add_argument('--min-pve', type=float, help='Minimum PVE', default=1e-4)
     parser.add_argument('-K', '--prevalence', type=float, help='Binary phenotype case prevalence (assume Gaussian if omitted)', default=None)
     parser.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
-    parser.add_argument('-m', '--model', choices=['pcgc', 'gaussian', 'logistic'], help='Type of model to fit')
     parser.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-4)
     parser.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
     parser.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
+    parser.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     parser.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    parser.add_argument('--write-data', action='store_true', help='Write out data', default=False)
+    parser.add_argument('--load-data', action='store_true', help='Load data', default=False)
     parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     args = parser.parse_args()
@@ -59,15 +63,17 @@ def evaluate():
         raise _A('Case prevalence must be specified if case study proportion is specified')
     if args.prevalence is not None and not 0 <= args.prevalence <= 1:
         raise _A('Case prevalence must be in [0, 1]')
-    elif args.study_prop is None:
+    elif args.model == 'logistic' and args.study_prop is None:
         args.study_prop = 0.5
         logger.warn('Assuming study prevalence 0.5')
-    elif not 0 <= args.study_prop <= 1:
+    elif args.study_prop is not None and not 0 <= args.study_prop <= 1:
         raise _A('Case study proportion must be in [0, 1]')
     if args.prevalence is None and args.model == 'logistic':
         raise _A('Prevalence must be specified for logistic model')
     if args.model == 'gaussian' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for Gaussian model')
+    if args.model == 'gaussian' and args.method == 'dsvi':
+        raise _A('Method {} not supported for data model {}'.format(args.method, args.model))
     if not args.annotation:
         raise _A('Must specify at least one annotation')
     else:
@@ -79,26 +85,53 @@ def evaluate():
                 raise _A('Annotation {} must have positive effect size variance'.format(i))
     if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
         raise _A('Minimum PVE must be larger than float tolerance')
+    if args.learning_rate <= 0:
+        raise _A('Learning rate must be positive')
+    if args.learning_rate > 0.05:
+        logging.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
+    if args.minibatch_size <= 0:
+        raise _A('Minibatch size must be positive')
+    if args.minibatch_size > args.num_samples:
+        raise _A('Minibatch size must be no more than the number of samples')
+    if args.poll_iters <= 0:
+        raise _A('Polling interval must be positive')
+    if args.tolerance <= 0:
+        raise _A('Tolerance must be positive')
+    if not 0 < args.ewma_weight < 1:
+        raise _A('Moving average weight must be in (0, 1)')
 
     logging.getLogger('ctra').setLevel(args.log_level)
     logging.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
-        if args.prevalence is not None:
+        if args.load_data:
+            with open('genotypes.txt', 'rb') as f:
+                x = numpy.loadtxt(f)
+            with open('phenotypes.txt', 'rb') as f:
+                y = numpy.loadtxt(f)
+        elif args.prevalence is not None:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         else:
             x, y = s.sample_gaussian(n=args.num_samples)
+        if args.write_data:
+            with open('genotypes.txt', 'wb') as f:
+                numpy.savetxt(f, x, fmt='%d')
+            with open('phenotypes.txt', 'wb') as f:
+                numpy.savetxt(f, y, fmt='%d')
+            return
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var for a in range(1 + max(s.annot))])
         else:
             pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot), K=args.prevalence)
         pve = numpy.clip(pve, args.min_pve, 1 - args.min_pve)
-        if args.model == 'pcgc':
+        if args.method == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3e')
             return
-        elif args.model == 'gaussian':
-            m = ctra.model.GaussianModel(x, y, s.annot, pve).fit()
-        else:
+        if args.model == 'gaussian' and args.method == 'coord':
+            m = ctra.model.GaussianModel(x, y, s.annot, pve).fit(atol=args.tolerance)
+        elif args.model == 'logistic' and args.method == 'coord':
+            m = ctra.model.LogitModel(x, y, s.annot, pve).fit(atol=args.tolerance)
+        elif args.model == 'logistic' and args.method == 'dsvi':
             m = ctra.model.LogisticModel(x, y, s.annot, K=args.prevalence,
                                          pve=pve,
                                          learning_rate=args.learning_rate,
