@@ -11,7 +11,7 @@ BEGIN {
             for (seed=0; seed < 10; seed += 1) {
                 m=int(10 ^ (logp - 2));
                 p = 10^logp; n=10^logn;
-                printf "ctra-evaluate -a %d,1 -n %d -p %d -v 0.2 --true-pve -M coord -m gaussian -s %d -l INFO >gaussian-sample-size-%d-%d-%d.txt\n", m, n, p, seed, n, p, seed
+                printf "ctra-evaluate -a %d,1 -n %d -p %d -v 0.2 --true-pve -M $(METHOD) -m $(MODEL) -s %d >$(word 1, $(MODEL))-sample-size-%d-%d-%d.txt\n", m, n, p, seed, n, p, seed
             }
         }
     }
@@ -19,11 +19,8 @@ BEGIN {
 endef
 export T
 
-joblist.4:
-	awk '$$T' | sed "s/gaussian/logistic -K 0.01/g" >$@
-
 joblist.3:
-	awk '$$T' >$@
+	awk "$$T" >$@
 
 joblist.2:
 	parallel --dry-run ctra-evaluate -a 100,1 -n {1} -p 1000 -v {2} --true-pve -m $(MODEL) -M $(METHOD) -s {3} -l INFO ">" $(word 1, $(MODEL))-one-component-100-{1}-{2}-{3}.txt ::: 250 500 1000 1500 2000 ::: 0.2 0.4 0.6 ::: $$(seq 1 10) >$@
