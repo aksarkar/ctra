@@ -17,10 +17,10 @@ import numpy
 matlab_code = """
 x = dlmread('{data}/genotypes.txt');
 y = dlmread('{data}/phenotype.txt');
-[h theta0] = ndgrid({pve}, -3:.5:0);
+[h theta0] = ndgrid({pve}, -3:.25:0);
 [logw alpha mu s eta] = {function}(x, y, h, theta0);
 w = normalizelogweights(logw);
-sigmoid10(dot(w, theta0))
+dlmwrite('{data}/pi.txt', sigmoid10(dot(w, theta0)));
 """
 
 logger = logging.getLogger(__name__)
@@ -40,10 +40,9 @@ def varbvs(x, y, pve, function):
         with subprocess.Popen(['matlab', '-nodesktop'], stdin=subprocess.PIPE,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE) as p:
             out, err = p.communicate(bytes(matlab_code.format(**matlab_args), 'utf-8'))
-            out = str(out, 'utf-8').split('\n')
-            for line in out:
-                logger.debug(line)
-            if err:
-                print(str(err, 'utf-8'))
-                raise RuntimeError
-            return _result(numpy.array([float(out[-3])]))
+            ret = p.returncode
+        if ret != 0 or err:
+            raise RuntimeError('Matlab process exited with an error')
+        for line in str(out, 'utf-8').split('\n'):
+            logger.debug(line)
+        return _result(numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1))
