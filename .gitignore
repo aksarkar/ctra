@@ -65,3 +65,4 @@ locate.db
 *.pkl
 
 results/
+.rsync-filter
