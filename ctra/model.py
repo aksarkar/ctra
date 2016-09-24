@@ -169,7 +169,7 @@ class Model:
         """
         logger.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
-        if alpha is None:
+        if params is None:
             self._randomize()
         else:
             self._initialize(scipy.special.expit(alpha), beta)
@@ -193,7 +193,7 @@ class Model:
                 else:
                     ewma_ = ewma
                     alpha, beta = self._opt(**hyperparams)
-        return ewma, alpha, beta
+        return ewma, (alpha, beta)
 
     def fit(self, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
