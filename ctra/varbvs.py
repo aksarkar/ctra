@@ -8,20 +8,12 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import collections
 import logging
+import os
 import os.path
 import subprocess
 import tempfile
 
 import numpy
-
-matlab_code = """
-x = dlmread('{data}/genotypes.txt');
-y = dlmread('{data}/phenotype.txt');
-[h theta0] = ndgrid({pve}, -3:.25:0);
-[logw alpha mu s eta] = {function}(x, y, h, theta0);
-w = normalizelogweights(logw);
-dlmwrite('{data}/pi.txt', sigmoid10(dot(w, theta0)));
-"""
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +21,24 @@ _result = collections.namedtuple('result', ['pi'])
 
 def varbvs(x, y, pve, function):
     """Return the output of the Matlab coordinate ascent implementation"""
-    with tempfile.TemporaryDirectory() as data:
+    if 'MCRROOT' not in os.environ:
+        raise RuntimeError('Method varbvs requires environment variable MCRROOT to be set')
+    else:
+        root = os.getenv('MCRROOT')
+    with tempfile.TemporaryDirectory(dir='/local/scratch') as data:
         logger.info('Writing data to temporary file')
         numpy.savetxt(os.path.join(data, 'genotypes.txt'), x, fmt='%.3f')
-        numpy.savetxt(os.path.join(data, 'phenotype.txt'), y, fmt='%.3f')
-        matlab_args = {'data': data,
-                       'function': function,
-                       'pve': pve.ravel()[0]}
+        numpy.savetxt(os.path.join(data, 'phenotypes.txt'), y, fmt='%.3f')
         logger.info('Starting Matlab subprocess')
-        with subprocess.Popen(['matlab', '-nodesktop'], stdin=subprocess.PIPE,
+        with subprocess.Popen(['run_varbvs.sh', root, data,
+                               '{:.3f}'.format(pve.ravel()[0]), function],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE) as p:
-            out, err = p.communicate(bytes(matlab_code.format(**matlab_args), 'utf-8'))
+            out, err = p.communicate()
             ret = p.returncode
         if ret != 0 or err:
+            if err:
+                for line in str(err, 'utf-8').split('\n'):
+                    logger.error(line)
             raise RuntimeError('Matlab process exited with an error')
         for line in str(out, 'utf-8').split('\n'):
             logger.debug(line)
