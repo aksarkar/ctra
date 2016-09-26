@@ -1,4 +1,5 @@
 library(frea)
+library(gridExtra)
 
 panelheight <- 40
 
@@ -103,3 +104,23 @@ ascertainment <- function() {
     dev.off()
 }
 ascertainment()
+
+joint_posterior <- function(weights_file) {
+    weights <- read.table(weights_file, header=F, sep=' ')
+    p0 <- (ggplot(weights, aes(x=V1, y=log10(V3))) +
+          geom_line() +
+          labs(x=expression(pi[0]), y=expression(paste(log[10], p, "(", pi[0], "|", x, ",", pi[1], ")"))) +
+          facet_wrap(~ V2, nrow=1) +
+          theme_nature +
+          theme(panel.margin=unit(3, 'mm')))
+    p1 <- (ggplot(weights, aes(x=V2, y=log10(V3))) +
+          geom_line() +
+          labs(x=expression(pi[1]), y=expression(paste(log[10], p, "(", pi[1], "|", x, ",", pi[0], ")"))) +
+          facet_wrap(~ V1, nrow=1) +
+          theme_nature +
+          theme(panel.margin=unit(3, 'mm')))
+    Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf', height=2 * panelheight, width=7 * panelheight, units='mm')
+    grid.arrange(p0, p1, nrow=2)
+    dev.off()
+}
+joint_posterior('/broad/hptmp/aksarkar/test/weights.txt')
