@@ -3,7 +3,7 @@ METHOD := coord
 PVE := --true-pve
 
 %.txt.gz:
-	awk 'FNR == 1 {split(FILENAME, a, "-"); sub(".txt", "", a[6])} {print a[3], a[4], a[5], a[6], FNR, $$1}' ./$*-*.txt | sort -k1,4n | gzip >$@
+	awk 'FNR == 1 {sub("./$*-", "", FILENAME); sub(".txt", "", FILENAME); gsub("-", " ", FILENAME)} {print FILENAME, FNR, $$1}' ./$*-*.txt | sort -k1,4n | gzip >$@
 
 define ONE_COMPONENT
 BEGIN {
