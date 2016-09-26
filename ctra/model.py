@@ -204,7 +204,7 @@ class Model:
         # Propose pi_0, pi_1. This induces a proposal for tau_0, tau_1
         # following Guan et al. Ann Appl Stat 2011; Carbonetto et al. Bayesian
         # Anal 2012
-        proposals = list(itertools.product(*[numpy.arange(-3, 0, 0.5)
+        proposals = list(itertools.product(*[numpy.arange(-3, 0.5, 0.5)
                                              for a in self.pve]))
 
         # Find the best initialization of the variational parameters. In
