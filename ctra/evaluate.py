@@ -77,11 +77,12 @@ def evaluate():
     if args.learning_rate <= 0:
         raise _A('Learning rate must be positive')
     if args.learning_rate > 0.05:
-        logging.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
+        logger.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
     if args.minibatch_size <= 0:
         raise _A('Minibatch size must be positive')
     if args.minibatch_size > args.num_samples:
-        raise _A('Minibatch size must be no more than the number of samples')
+        logger.warn('Setting minibatch size to sample size')
+        args.minibatch_size = args.num_samples
     if args.poll_iters <= 0:
         raise _A('Polling interval must be positive')
     if args.tolerance <= 0:
@@ -106,7 +107,7 @@ def evaluate():
 
 
     logging.getLogger('ctra').setLevel(args.log_level)
-    logging.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
+    logger.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         if args.load_data:
@@ -146,5 +147,5 @@ def evaluate():
                                          learning_rate=args.learning_rate,
                                          minibatch_n=args.minibatch_size)
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight)
-        logging.info('Writing posterior mean pi')
+        logger.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
