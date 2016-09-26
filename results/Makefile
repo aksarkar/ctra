@@ -19,6 +19,9 @@ BEGIN {
 endef
 export ONE_COMPONENT
 
+joblist.4:
+	parallel --dry-run ctra-evaluate -a 10,1 -n {1} -p 1000 -v 0.2 --true-pve -K {2} -m logistic -M $(METHOD) -s {3} ">" logistic-ascertained-{1}-1000-{2}-{3}.txt ::: 1000 5000 10000 50000 ::: 0.01 0.05 0.1 0.25 0.5 ::: $$(seq 1 10) >$@
+
 joblist.3:
 	awk "$$ONE_COMPONENT" >$@
 
