@@ -49,9 +49,9 @@ def evaluate():
     parser.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     parser.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     parser.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
-    parser.add_argument('--write-data', action='store_true', help='Write out data', default=False)
-    parser.add_argument('--load-data', action='store_true', help='Load data', default=False)
+    parser.add_argument('--write-data', help='Directory to write out data', default=None)
     parser.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
+    parser.add_argument('--load-data', help='Directory to load data', default=None)
     parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     args = parser.parse_args()
@@ -112,19 +112,19 @@ def evaluate():
     logger.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
-        if args.load_data:
-            with open('genotypes.txt', 'rb') as f:
+        if args.load_data is not None:
+            with open(os.path.join(args.load_data, 'genotypes.txt'), 'rb') as f:
                 x = numpy.loadtxt(f)
-            with open('phenotypes.txt', 'rb') as f:
+            with open(os.path.join(args.load_data, 'phenotypes.txt'), 'rb') as f:
                 y = numpy.loadtxt(f)
         elif args.prevalence is not None:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         else:
             x, y = s.sample_gaussian(n=args.num_samples)
-        if args.write_data:
-            with open('genotypes.txt', 'wb') as f:
+        if args.write_data is not None:
+            with open(os.path.join(args.write_data, 'genotypes.txt'), 'wb') as f:
                 numpy.savetxt(f, x, fmt='%.3f')
-            with open('phenotypes.txt', 'wb') as f:
+            with open(os.path.join(args.write_data, 'phenotypes.txt'), 'wb') as f:
                 numpy.savetxt(f, y, fmt='%.3f')
             return
         if args.true_pve:
