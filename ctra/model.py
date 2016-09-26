@@ -274,7 +274,7 @@ class GaussianModel(Model):
         self.X = X
         self.y = y
         self.a = a
-        self.var_x = X.var(axis=0).sum()
+        self.var_x = numpy.array([X[:,a == i].var(axis=0).sum() for i in range(1 + max(a))])
         self.pve = pve
         logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
