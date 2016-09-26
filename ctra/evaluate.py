@@ -12,6 +12,7 @@ import argparse
 import collections
 import logging
 import pprint
+import os.path
 import sys
 
 import numpy
@@ -50,6 +51,7 @@ def evaluate():
     parser.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
     parser.add_argument('--write-data', action='store_true', help='Write out data', default=False)
     parser.add_argument('--load-data', action='store_true', help='Load data', default=False)
+    parser.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     args = parser.parse_args()
@@ -147,5 +149,11 @@ def evaluate():
                                          learning_rate=args.learning_rate,
                                          minibatch_n=args.minibatch_size)
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight)
+        if args.write_weights is not None:
+            logger.info('Writing importance weights:')
+            with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
+                for p, w in zip(m.pi_grid, m.weights):
+                    print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
+                                         w), file=f)
         logger.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')

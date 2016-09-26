@@ -234,7 +234,8 @@ class Model:
         # problems
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-        logger.debug('Importance Weights = {}'.format(normalized_weights))
+        self.weights = normalized_weights
+        self.pi_grid = pi
         self.pi = normalized_weights.dot(pi)
         return self
 

@@ -17,7 +17,7 @@ import numpy
 
 logger = logging.getLogger(__name__)
 
-_result = collections.namedtuple('result', ['pi'])
+_result = collections.namedtuple('result', ['pi', 'weights'])
 
 def varbvs(x, y, pve, function):
     """Return the output of the Matlab coordinate ascent implementation"""
@@ -42,4 +42,5 @@ def varbvs(x, y, pve, function):
             raise RuntimeError('Matlab process exited with an error')
         for line in str(out, 'utf-8').split('\n'):
             logger.debug(line)
-        return _result(numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1))
+        return _result(pi=numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1),
+                       weights=numpy.loadtxt(os.path.join(data, 'weights.txt')))
