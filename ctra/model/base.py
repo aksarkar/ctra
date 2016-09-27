@@ -59,12 +59,14 @@ class ImportanceSampler():
         params = None
         pi = numpy.zeros(shape=(len(proposals), self.pve.shape[0]), dtype=_real)
         tau = numpy.zeros(shape=pi.shape, dtype=_real)
+        logit_pi_prior = scipy.stats.norm(loc=-3).logpdf
         best_elbo = float('-inf')
         logger.info('Finding best initialization')
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
             elbo_, params_ = self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
+            elbo_ += logit_pi_prior(logit_pi).sum()
             if elbo_ > best_elbo:
                 params = params_
 
@@ -75,6 +77,7 @@ class ImportanceSampler():
         for i, logit_pi in enumerate(proposals):
             log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i],
                                                   params=params, **kwargs)
+            log_weights[i] += logit_pi_prior(logit_pi).sum()
 
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
