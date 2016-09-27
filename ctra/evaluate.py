@@ -49,11 +49,13 @@ def evaluate():
     parser.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     parser.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     parser.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
+    parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--write-data', help='Directory to write out data', default=None)
     parser.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     parser.add_argument('--load-data', help='Directory to load data', default=None)
-    parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
-    parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
+    parser.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
+    parser.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     args = parser.parse_args()
 
     # Check argument values
@@ -121,6 +123,12 @@ def evaluate():
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         else:
             x, y = s.sample_gaussian(n=args.num_samples)
+        if args.center or args.normalize:
+            x -= x.mean(axis=0)
+            y -= y.mean()
+        if args.normalize:
+            x /= x.var(axis=0)
+            y /= y.var()
         if args.write_data is not None:
             with open(os.path.join(args.write_data, 'genotypes.txt'), 'wb') as f:
                 numpy.savetxt(f, x, fmt='%.3f')
