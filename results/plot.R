@@ -124,3 +124,25 @@ joint_posterior <- function(weights_file) {
     dev.off()
 }
 joint_posterior('/broad/hptmp/aksarkar/test/weights.txt')
+
+pi_versus_h2 <- function(result_file) {
+    result <- (
+        read.table(gzfile(result_file), header=F, sep=' ') %>%
+        dplyr::select(pve=V3, seed=V4, pi_=V6) %>%
+        dplyr::group_by(pve) %>%
+        dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_)))
+    )
+    p <- (ggplot(result, aes(x=pve, y=pi_hat, ymin=pi_hat - se,
+                             ymax=pi_hat + se)) +
+          labs(x='Heritability', y=expression(paste('Posterior mean ', pi))) +
+          geom_line(size=.25) +
+          geom_linerange(size=.25) +
+          geom_hline(yintercept=0.01, size=I(.1), linetype='dashed') +
+          theme_nature)
+    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf', height=panelheight, width=panelheight, units='mm')
+    print(p)
+    dev.off()
+}
+pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/gaussian-h2.txt.gz')
+pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/normalized-gaussian-h2.txt.gz')
+pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-h2.txt.gz')

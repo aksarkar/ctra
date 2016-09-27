@@ -1,4 +1,4 @@
-MODEL := gaussian
+MODEL := gaussian --center
 METHOD := coord
 PVE := --true-pve
 
@@ -19,6 +19,9 @@ BEGIN {
 }
 endef
 export ONE_COMPONENT
+
+joblist.5:
+	parallel --dry-run "ctra-evaluate -a 10,1 -n 1000 -p 1000 -v {1} --true-pve -m $(MODEL) -M $(METHOD) -s {2} >gaussian-h2-1000-1000-{1}-{2}.txt" ::: 0.005 0.01 0.025 0.05 0.075 0.1 0.5 ::: $$(seq 1 10) >$@
 
 joblist.4:
 	parallel --dry-run ctra-evaluate -a 10,1 -n {1} -p 1000 -v 0.2 $(PVE) -K {2} -m logistic -M $(METHOD) -s {3} ">" logistic-ascertained-{1}-1000-{2}-{3}.txt ::: 1000 5000 10000 50000 ::: 0.01 0.05 0.1 0.25 0.5 ::: $$(seq 1 10) >$@
