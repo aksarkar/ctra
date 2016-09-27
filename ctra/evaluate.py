@@ -17,9 +17,7 @@ import sys
 
 import numpy
 
-import ctra.pcgc
 import ctra.model
-import ctra.varbvs
 import ctra.simulation
 
 logger = logging.getLogger(__name__)
@@ -139,23 +137,25 @@ def evaluate():
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
                                for a in range(1 + max(s.annot))])
         else:
-            pve = ctra.pcgc.estimate(y, ctra.pcgc.grm(x, s.annot), K=args.prevalence)
+            pve = ctra.model.pcgc(y, ctra.model.grm(x, s.annot), K=args.prevalence)
         pve = numpy.clip(pve, args.min_pve, 1 - args.min_pve)
         if args.method == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3e')
             return
         elif args.method == 'coord':
-            model = (ctra.model.GaussianModel if args.model == 'gaussian' else
-                     ctra.model.LogitModel)
+            if args.model == 'gaussian':
+                model = ctra.model.GaussianCoordinateAscent
+            else:
+                model = ctra.model.LogisticCoordinateAscent
             m = model(x, y, s.annot, pve).fit(atol=args.tolerance)
         elif args.method == 'varbvs':
-            m = ctra.varbvs.varbvs(x, y, pve, 'multisnphyper' if args.model ==
-                                   'gaussian' else 'multisnpbinhyper')
+            m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
+                                  'gaussian' else 'multisnpbinhyper')
         else:
-            m = ctra.model.LogisticModel(x, y, s.annot, K=args.prevalence,
-                                         pve=pve,
-                                         learning_rate=args.learning_rate,
-                                         minibatch_n=args.minibatch_size)
+            m = ctra.model.LogisticDSVI(x, y, s.annot, K=args.prevalence,
+                                        pve=pve,
+                                        learning_rate=args.learning_rate,
+                                        minibatch_n=args.minibatch_size)
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
