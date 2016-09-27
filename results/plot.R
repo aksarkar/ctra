@@ -18,7 +18,7 @@ pcgc_example <- function() {
 
 sample_size <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
-               dplyr::select(n=V2, p=V3, seed=V4, pi_=V6) %>%
+               dplyr::select(n=V1, p=V2, seed=V3, pi_=V5) %>%
                dplyr::group_by(n, p) %>%
                dplyr::summarize(se=sqrt(var(pi_)), pi_=mean(pi_)))
     my_plot <- (ggplot(result, aes(x=n/p, y=pi_, ymin=pi_-se, ymax=pi_+se, color=factor(p))) +
@@ -34,8 +34,9 @@ sample_size <- function(result_file) {
     print(my_plot)
     dev.off()
 }
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/gaussian-sample-size.txt.gz')
+
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
 
 
@@ -144,5 +145,6 @@ pi_versus_h2 <- function(result_file) {
     dev.off()
 }
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/gaussian-h2.txt.gz')
+pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/corrected-tau-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/normalized-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-h2.txt.gz')
