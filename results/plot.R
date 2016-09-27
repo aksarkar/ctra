@@ -148,3 +148,24 @@ pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/corrected-tau-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/normalized-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-h2.txt.gz')
+
+pi_prior <- function() {
+    x <- seq(0, 1, length.out=100)
+    params <- data.frame(expand.grid(pve=c(.01, .05, .1),
+                                     nk=c(1e-3, .01, .1)))
+    data <- (params %>%
+             dplyr::mutate(b=exp(nk / pve) * (1 - pve)) %>%
+             dplyr::group_by(pve, nk) %>%
+             do({data.frame(x=x, y=dbeta(x, 1, .$b))}))
+    p <- (ggplot(as.data.frame(data), aes(x=x, y=y, color=factor(nk))) +
+          labs(x=expression(pi), y=expression(f(pi)), color='Size') +
+          geom_line() +
+          facet_wrap(~pve, scales='free', nrow=1) +
+          theme_nature +
+          theme(legend.position='right',
+                panel.margin=unit(4, 'mm')))
+    Cairo(file='test.pdf', type='pdf', width=120, height=40, units='mm')
+    print(p)
+    dev.off()
+}
+pi_prior()
