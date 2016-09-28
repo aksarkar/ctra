@@ -34,7 +34,7 @@ def evaluate():
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     parser.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     parser.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
-    parser.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi'], help='Method to fit model', required=True)
+    parser.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'mcmc', 'dsvi'], help='Method to fit model', required=True)
     parser.add_argument('-n', '--num-samples', type=int, help='Number of samples', default=1000)
     parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=10000)
     parser.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', default=0.25)
@@ -47,6 +47,8 @@ def evaluate():
     parser.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     parser.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     parser.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    parser.add_argument('-B', '--burn-in', type=int, help='Burn in samples for MCMC', default=int(1e5))
+    parser.add_argument('-S', '--mcmc-samples', type=int, help='Number of posterior samples for MCMC', default=int(1e3))
     parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--write-data', help='Directory to write out data', default=None)
@@ -102,11 +104,14 @@ def evaluate():
     # Check if desired method is supported
     if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
-    if args.method == 'dsvi' and args.model == 'gaussian':
-        raise _A('Method dsvi does not support model {}'.format(args.method, args.model))
-    if args.method == 'varbvs' and len(args.annotation) > 1:
-        raise _A('Method varbvs does not support multiple annotations')
-
+    if args.method != 'mcmc' and any(k in args for k in ('burn_in', 'mcmc_samples')):
+        logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
+    if (args.method, args.model) in (('dsvi', 'gaussian'), ('mcmc', 'logistic')):
+        raise _A('Method {} does not support model {}'.format(args.method, args.model))
+    if args.method in ('mcmc', 'varbvs') and len(args.annotation) > 1:
+        raise _A('Method {} does not support multiple annotations'.format(args.method))
+    if args.method == 'mcmc' and args.write_weights is not None:
+        raise logger.warn('Ignoring option --write-weights for method mcmc')
 
     logging.getLogger('ctra').setLevel(args.log_level)
     logger.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
@@ -151,6 +156,9 @@ def evaluate():
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper')
+        elif args.method == 'mcmc':
+            m = ctra.model.varbvs(x, y, pve, 'bvsmcmc', args.burn_in,
+                                  args.mcmc_samples, args.seed)
         else:
             m = ctra.model.LogisticDSVI(x, y, s.annot, K=args.prevalence,
                                         pve=pve,
