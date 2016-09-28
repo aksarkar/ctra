@@ -144,6 +144,7 @@ pi_versus_h2 <- function(result_file) {
     print(p)
     dev.off()
 }
+pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/mcmc-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/corrected-tau-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/normalized-gaussian-h2.txt.gz')
