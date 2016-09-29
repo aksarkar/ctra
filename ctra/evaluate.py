@@ -12,6 +12,7 @@ import argparse
 import collections
 import logging
 import pprint
+import os
 import os.path
 import sys
 
@@ -133,10 +134,14 @@ def evaluate():
             x /= x.var(axis=0)
             y /= y.var()
         if args.write_data is not None:
+            if not os.path.exists(args.write_data):
+                os.mkdir(args.write_data)
             with open(os.path.join(args.write_data, 'genotypes.txt'), 'wb') as f:
                 numpy.savetxt(f, x, fmt='%.3f')
             with open(os.path.join(args.write_data, 'phenotypes.txt'), 'wb') as f:
                 numpy.savetxt(f, y, fmt='%.3f')
+            with open(os.path.join(args.write_data, 'theta.txt'), 'wb') as f:
+                numpy.savetxt(f, s.theta, fmt='%.3f')
             return
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var

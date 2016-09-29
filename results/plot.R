@@ -150,6 +150,7 @@ pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/corrected-tau-gaussi
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/normalized-gaussian-h2.txt.gz')
 pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-h2.txt.gz')
 
+
 pi_prior <- function() {
     x <- seq(0, 1, length.out=100)
     params <- data.frame(expand.grid(pve=c(.01, .05, .1),
@@ -170,3 +171,41 @@ pi_prior <- function() {
     dev.off()
 }
 pi_prior()
+
+gaussian_llik <- function(x, y, t0, t1, sigma, tau) {
+    (sum(dnorm(y, x %*% c(t0, t1), sigma, log=TRUE)) +
+     dnorm(t0, 0, tau, log=TRUE) +
+     dnorm(t1, 0, tau, log=TRUE))
+}
+
+likelihood_contour <- function(genotypes, phenotypes, theta) {
+    X <- as.matrix(read.table(genotypes, header=F, sep=' '))
+    Y <- as.matrix(read.table(phenotypes, header=F))
+    true_theta <- as.matrix(read.table('/broad/hptmp/aksarkar/test/theta.txt'))
+    vx <- var(X %*% true_theta)
+    sigma <- sqrt(var(Y) - vx)
+    pve <- vx / var(Y)
+    scale <- sqrt(pve / (1 - pve) / sum(apply(X, 2, var)))
+    theta0 <- seq(-3, 3, length.out=100)
+    likelihood <- (
+        expand.grid(theta0, theta0) %>%
+        dplyr::select(x=Var1, y=Var2) %>%
+        dplyr::group_by(x, y) %>%
+        dplyr::mutate(z=gaussian_llik(X, Y, x, y, sigma, scale))
+    )
+    p <- (ggplot(likelihood, aes(x=x, y=y, z=z)) +
+          geom_point(data=data.frame(x=true_theta[1, 1],
+                                     y=true_theta[2, 1], z=0)) +
+          stat_contour(geom='path', bins=15) +
+          labs(title=substitute(paste(h^2, '=', pve, ', ', tau, '=', scale),
+                                list(pve=pve, scale=scale)),
+               x=expression(theta[0]), y=expression(theta[1])) +
+          theme_nature +
+          theme(plot.title=element_text()))
+    Cairo(file='llik.pdf', type='pdf', width=40, height=40, units='mm')
+    print(p)
+    dev.off()
+}
+likelihood_contour('/broad/hptmp/aksarkar/test/0.01/genotypes.txt',
+                   '/broad/hptmp/aksarkar/test/0.01/phenotypes.txt',
+                   '/broad/hptmp/aksarkar/test/0.01/theta.txt')
