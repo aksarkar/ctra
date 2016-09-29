@@ -172,40 +172,54 @@ pi_prior <- function() {
 }
 pi_prior()
 
-gaussian_llik <- function(x, y, t0, t1, sigma, tau) {
+gaussian_llik <- function(x, y, t0, t1, sigma, pi_, scale) {
     (sum(dnorm(y, x %*% c(t0, t1), sigma, log=TRUE)) +
-     dnorm(t0, 0, tau, log=TRUE) +
-     dnorm(t1, 0, tau, log=TRUE))
+     dnorm(t0, 0, scale, log=TRUE) +
+     dnorm(t1, 0, scale, log=TRUE) +
+     2 * log(pi_))
 }
 
-likelihood_contour <- function(genotypes, phenotypes, theta) {
-    X <- as.matrix(read.table(genotypes, header=F, sep=' '))
-    Y <- as.matrix(read.table(phenotypes, header=F))
-    true_theta <- as.matrix(read.table('/broad/hptmp/aksarkar/test/theta.txt'))
+likelihood_contour <- function(base) {
+    X <- as.matrix(read.table(paste(base, '/genotypes.txt', sep=''),
+                              header=F, sep=' '))
+    Y <- as.matrix(read.table(paste(base, '/phenotypes.txt', sep=''),
+                              header=F))
+    true_theta <- as.matrix(read.table(paste(base, '/theta.txt', sep='')))
+    theta_ml <- data.frame(as.list(glm(Y ~ X)$coefficients))
     vx <- var(X %*% true_theta)
     sigma <- sqrt(var(Y) - vx)
     pve <- vx / var(Y)
-    scale <- sqrt(pve / (1 - pve) / sum(apply(X, 2, var)))
+    scale <- 1
+    pi_ <- 0.5
     theta0 <- seq(-3, 3, length.out=100)
     likelihood <- (
         expand.grid(theta0, theta0) %>%
         dplyr::select(x=Var1, y=Var2) %>%
         dplyr::group_by(x, y) %>%
-        dplyr::mutate(z=gaussian_llik(X, Y, x, y, sigma, scale))
+        dplyr::mutate(z=gaussian_llik(X, Y, x, y, sigma, pi_, scale))
     )
-    p <- (ggplot(likelihood, aes(x=x, y=y, z=z)) +
+    p <- (ggplot(likelihood, aes(x=x, y=y)) +
+          geom_contour(aes(z=z, color=..level..), bins=15, size=I(.1)) +
           geom_point(data=data.frame(x=true_theta[1, 1],
-                                     y=true_theta[2, 1], z=0)) +
-          stat_contour(geom='path', bins=15) +
-          labs(title=substitute(paste(h^2, '=', pve, ', ', tau, '=', scale),
-                                list(pve=pve, scale=scale)),
+                                     y=true_theta[2, 1]),
+                     size=I(.05)) +
+          geom_point(data=theta_ml, aes(x=XV1, y=XV2), color='red',
+                     size=I(.05), shape=I(4)) +
+          scale_color_gradient(low='#fee8c8', high='#e34a33') +
+          labs(title=substitute(paste(h^2, '=', pve, ', ', tau, '=', prec),
+                                list(pve=pve,
+                                     prec=1/(scale ** 2))),
                x=expression(theta[0]), y=expression(theta[1])) +
+          scale_x_continuous(expand=c(0, 0)) +
+          scale_y_continuous(expand=c(0, 0)) +
           theme_nature +
-          theme(plot.title=element_text()))
-    Cairo(file='llik.pdf', type='pdf', width=40, height=40, units='mm')
+          theme(plot.title=element_text(),
+                plot.margin=unit(rep(2, 4), 'mm')))
+    Cairo(file=paste(base, '/llik.pdf', sep=''), type='pdf', width=40,
+          height=40, units='mm')
     print(p)
     dev.off()
 }
-likelihood_contour('/broad/hptmp/aksarkar/test/0.01/genotypes.txt',
-                   '/broad/hptmp/aksarkar/test/0.01/phenotypes.txt',
-                   '/broad/hptmp/aksarkar/test/0.01/theta.txt')
+likelihood_contour('/broad/hptmp/aksarkar/test/0.01')
+likelihood_contour('/broad/hptmp/aksarkar/test/0.05')
+likelihood_contour('/broad/hptmp/aksarkar/test/0.1')
