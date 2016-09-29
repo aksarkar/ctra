@@ -105,7 +105,7 @@ def evaluate():
     if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
     if args.method != 'mcmc' and any(k in args for k in ('burn_in', 'mcmc_samples')):
-        logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
+        logger.warn('Ignoring MCMC parameters for method {}'.format(args.method))
     if (args.method, args.model) in (('dsvi', 'gaussian'), ('mcmc', 'logistic')):
         raise _A('Method {} does not support model {}'.format(args.method, args.model))
     if args.method in ('mcmc', 'varbvs') and len(args.annotation) > 1:
@@ -114,7 +114,7 @@ def evaluate():
         raise logger.warn('Ignoring option --write-weights for method mcmc')
 
     logging.getLogger('ctra').setLevel(args.log_level)
-    logger.info('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
+    logger.debug('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         if args.load_data is not None:
