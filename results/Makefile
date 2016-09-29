@@ -34,3 +34,6 @@ joblist.1:
 
 joblist:
 	parallel --dry-run ctra-evaluate -a {1},1 -a 100,1 -n 1000 -p 1000 -v {2} $(PVE) -m $(MODEL) -M $(METHOD) -s {3} -l INFO ">" $(MODEL)-equal-effect-{1}-100-{2}-{3}.txt ::: 1 10 50 100 250 500 ::: 0.2 ::: $$(seq 1 10) >$@
+
+clean:
+	rm -f *.txt *.txt.gz
