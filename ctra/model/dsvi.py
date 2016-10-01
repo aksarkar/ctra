@@ -137,7 +137,7 @@ class DSVI(ImportanceSampler):
         raise NotImplementedError
 
     def _log_weight(self, params=None, weight=0.5, poll_iters=1000,
-                    min_iters=100000, atol=1, **hyperparams):
+                    min_iters=100000, atol=1, true_causal=None, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it.
 
         params - Initial setting of the variational parameters (default: randomize)

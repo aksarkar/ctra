@@ -28,7 +28,7 @@ class GaussianCoordinateAscent(CoordinateAscent):
     def __init__(self, X, y, a, pve):
         super().__init__(X, y, a, pve)
 
-    def _log_weight(self, pi, tau, params=None, atol=1e-4, **hyperparams):
+    def _log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
         X = self.X
         y = self.y
         a = self.a
@@ -39,13 +39,20 @@ class GaussianCoordinateAscent(CoordinateAscent):
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
         if params is None:
-            alpha = _R.uniform(size=p)
-            alpha /= alpha.sum()
+            if true_causal is not None:
+                alpha = true_causal
+            else:
+                alpha = _R.uniform(size=p)
+                alpha /= alpha.sum()
             beta = _R.normal(size=p)
             sigma2 = y.var()
         else:
             alpha, beta, sigma2 = params
-        logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau, 'sigma2': sigma2, 'var_x': self.var_x}))
+        logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve,
+                                                                   'pi': pi,
+                                                                   'tau': tau,
+                                                                   'sigma2': sigma2,
+                                                                   'var_x': self.var_x}))
         # Precompute things
         eps = numpy.finfo(float).eps
         xty = X.T.dot(y)
@@ -67,7 +74,8 @@ class GaussianCoordinateAscent(CoordinateAscent):
                 theta_j = alpha[j] * beta[j]
                 beta[j] = (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum()) / (gamma[j] * sigma2)
                 ssr = beta[j] * beta[j] * gamma[j]
-                alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(sigma2) - L(gamma[j]))), eps, 1 - eps)
+                if true_causal is None:
+                    alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(sigma2) - L(gamma[j]))), eps, 1 - eps)
                 eta += xj * (alpha[j] * beta[j] - theta_j)
             sigma2 = (numpy.square(y - eta).sum() +
                       (xtx_jj * alpha * (1 / gamma + (1 - alpha) * beta ** 2)).sum() +
@@ -81,11 +89,15 @@ class GaussianCoordinateAscent(CoordinateAscent):
                      (alpha * L(alpha / pi_deref) +
                       (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
             logger.debug('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()))
-            if elbo > 0:
+            if not numpy.isfinite(elbo):
+                import pdb; pdb.set_trace()
+                raise ValueError('ELBO must be finite')
+            elif elbo > 0:
                 raise ValueError('ELBO must be non-positive')
             if elbo < elbo_:
                 converged = True
-            elif numpy.isclose(alpha_, alpha, atol=atol).all() and numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all():
+            elif (numpy.isclose(alpha_, alpha, atol=atol).all() and
+                  numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all()):
                 converged = True
         return elbo, (alpha, beta, sigma2)
 
@@ -104,7 +116,7 @@ class LogisticCoordinateAscent(CoordinateAscent):
         xdx = numpy.einsum('ij,ik,kj->j', self.X, numpy.diag(d), self.X) - numpy.square(xd) / d.sum()
         return d, yhat, xty, xd, xdx
 
-    def _log_weight(self, pi, tau, params=None, atol=1e-4, **hyperparams):
+    def _log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
         X = self.X
         y = self.y
         a = self.a
@@ -115,8 +127,11 @@ class LogisticCoordinateAscent(CoordinateAscent):
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
         if params is None:
-            alpha = _R.uniform(size=p)
-            alpha /= alpha.sum()
+            if true_causal is not None:
+                alpha = true_causal
+            else:
+                alpha = _R.uniform(size=p)
+                alpha /= alpha.sum()
             beta = _R.normal(size=p)
             zeta = numpy.ones(n)
         else:
@@ -143,7 +158,8 @@ class LogisticCoordinateAscent(CoordinateAscent):
                 theta_j = alpha[j] * beta[j]
                 beta[j] = (xty[j] + xdx[j] * theta_j + xd[j] * d.T.dot(eta) / d.sum() - xj.T.dot(numpy.diag(d)).dot(eta)) / gamma[j]
                 ssr = beta[j] * beta[j] * gamma[j]
-                alpha[j] = scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j])))
+                if true_causal is None:
+                    alpha[j] = scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j])))
                 eta += xj * (alpha[j] * beta[j] - theta_j)
             gamma = xdx + tau_deref
             a = 1 / d.sum()
@@ -170,6 +186,7 @@ class LogisticCoordinateAscent(CoordinateAscent):
                 raise ValueError('ELBO must be non-positive')
             if elbo < elbo_:
                 converged = True
-            elif numpy.isclose(alpha_, alpha, atol=atol).all() and numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all():
+            elif (numpy.isclose(alpha_, alpha, atol=atol).all() and
+                  numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all()):
                 converged = True
         return elbo, (alpha, beta, zeta)

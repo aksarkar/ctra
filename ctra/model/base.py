@@ -43,7 +43,7 @@ class ImportanceSampler():
         self.eps = numpy.finfo(float).eps
         logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
-    def _log_weight(self, params=None, **hyperparams):
+    def _log_weight(self, params=None, true_causal=None, **hyperparams):
         raise NotImplementedError
 
     def fit(self, **kwargs):
@@ -57,6 +57,11 @@ class ImportanceSampler():
         # Anal 2012
         proposals = list(itertools.product(*[numpy.arange(-3, 0.5, 0.5)
                                              for a in self.pve]))
+
+        if 'true_causal' in kwargs:
+            z = kwargs['true_causal']
+            kwargs['true_causal'] = numpy.clip(z.astype(_real), 1e-4, 1 - 1e-4)
+            assert not numpy.isclose(max(kwargs['true_causal']), 1)
 
         # Find the best initialization of the variational parameters. In
         # general we need to warm start different sets of parameters per model,

@@ -40,6 +40,7 @@ def evaluate():
     parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=10000)
     parser.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', default=0.25)
     parser.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
+    parser.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     parser.add_argument('--min-pve', type=float, help='Minimum PVE', default=1e-4)
     parser.add_argument('-K', '--prevalence', type=float, help='Binary phenotype case prevalence (assume Gaussian if omitted)', default=None)
     parser.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
@@ -149,6 +150,9 @@ def evaluate():
         else:
             pve = ctra.model.pcgc(y, ctra.model.grm(x, s.annot), K=args.prevalence)
         pve = numpy.clip(pve, args.min_pve, 1 - args.min_pve)
+        kwargs = {}
+        if args.true_causal:
+            kwargs['true_causal'] = ~numpy.isclose(s.theta, 0)
         if args.method == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3e')
             return
@@ -157,10 +161,10 @@ def evaluate():
                 model = ctra.model.GaussianCoordinateAscent
             else:
                 model = ctra.model.LogisticCoordinateAscent
-            m = model(x, y, s.annot, pve).fit(atol=args.tolerance)
+            m = model(x, y, s.annot, pve).fit(atol=args.tolerance, **kwargs)
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
-                                  'gaussian' else 'multisnpbinhyper')
+                                  'gaussian' else 'multisnpbinhyper', **kwargs)
         elif args.method == 'mcmc':
             m = ctra.model.varbvs(x, y, pve, 'bvsmcmc', args.burn_in,
                                   args.mcmc_samples, args.seed)
@@ -169,7 +173,7 @@ def evaluate():
                                         pve=pve,
                                         learning_rate=args.learning_rate,
                                         minibatch_n=args.minibatch_size)
-            m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight)
+            m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight, **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
             with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
