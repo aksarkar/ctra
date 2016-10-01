@@ -6,7 +6,6 @@ and read it back into a Matlab subprocess.
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
-import collections
 import logging
 import os
 import os.path
@@ -15,9 +14,9 @@ import tempfile
 
 import numpy
 
-logger = logging.getLogger(__name__)
+from .base import result
 
-_result = collections.namedtuple('result', ['pi', 'weights'])
+logger = logging.getLogger(__name__)
 
 def varbvs(x, y, pve, function, *args):
     """Return the output of the Matlab coordinate ascent implementation"""
@@ -49,5 +48,5 @@ def varbvs(x, y, pve, function, *args):
             weights = None
         else:
             weights = numpy.loadtxt(os.path.join(data, 'weights.txt'))
-        return _result(pi=numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1),
-                       weights=weights)
+        return result(pi=numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1),
+                      weights=weights)
