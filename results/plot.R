@@ -1,7 +1,6 @@
-library(frea)
-library(gridExtra)
+devtools::load_all('/broad/compbio/aksarkar/projects/frea-R/')
 
-panelheight <- 40
+panelheight <- 30
 
 pcgc_example <- function() {
     enrichment <- read.delim('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-example.txt', header=F)
@@ -172,54 +171,64 @@ pi_prior <- function() {
 }
 pi_prior()
 
-gaussian_llik <- function(x, y, t0, t1, sigma, pi_, scale) {
-    (sum(dnorm(y, x %*% c(t0, t1), sigma, log=TRUE)) +
+bvs_posterior <- function(x, y, t0, t1, sigma, rho, scale) {
+    (sum(dnorm(y, x[,1:2] %*% c(t0, t1), sigma, log=TRUE)) +
      dnorm(t0, 0, scale, log=TRUE) +
-     dnorm(t1, 0, scale, log=TRUE) +
-     2 * log(pi_))
+     dnorm(t1, 0, scale, log=TRUE))
 }
 
-likelihood_contour <- function(base) {
-    X <- as.matrix(read.table(paste(base, '/genotypes.txt', sep=''),
+posterior_contour <- function(args) {
+    dir_ = args$dir_[1]
+    pi_ = args$pi_[1]
+    X <- as.matrix(read.table(paste(dir_, '/genotypes.txt', sep=''),
                               header=F, sep=' '))
-    Y <- as.matrix(read.table(paste(base, '/phenotypes.txt', sep=''),
+    Y <- as.matrix(read.table(paste(dir_, '/phenotypes.txt', sep=''),
                               header=F))
-    true_theta <- as.matrix(read.table(paste(base, '/theta.txt', sep='')))
+    true_theta <- as.matrix(read.table(paste(dir_, '/theta.txt', sep='')))
     theta_ml <- data.frame(as.list(glm(Y ~ X)$coefficients))
     vx <- var(X %*% true_theta)
     sigma <- sqrt(var(Y) - vx)
     pve <- vx / var(Y)
-    scale <- 1
-    pi_ <- 0.5
-    theta0 <- seq(-3, 3, length.out=100)
-    likelihood <- (
+    tau <- (1 - pve) * pi_ * sum(apply(X, 2, var)) / pve
+    scale <- sqrt(1 / tau)
+    rho <- 1
+    theta0 <- seq(-1, 1, length.out=100)
+    posterior <- (
         expand.grid(theta0, theta0) %>%
         dplyr::select(x=Var1, y=Var2) %>%
         dplyr::group_by(x, y) %>%
-        dplyr::mutate(z=gaussian_llik(X, Y, x, y, sigma, pi_, scale))
+        dplyr::mutate(z=bvs_posterior(X, Y, x, y, sigma, pi_, scale))
     )
-    p <- (ggplot(likelihood, aes(x=x, y=y)) +
-          geom_contour(aes(z=z, color=..level..), bins=15, size=I(.1)) +
+    p <- (ggplot(posterior, aes(x=x, y=y)) +
+          geom_contour(aes(z=z, color=..level..), bins=20, size=I(.1)) +
           geom_point(data=data.frame(x=true_theta[1, 1],
                                      y=true_theta[2, 1]),
-                     size=I(.05)) +
+                     size=I(.5), shape=I(4)) +
           geom_point(data=theta_ml, aes(x=XV1, y=XV2), color='red',
-                     size=I(.05), shape=I(4)) +
+                     size=I(.5), shape=I(4)) +
+          geom_point(data=posterior[which.max(posterior$z),], color='blue',
+                     size=I(.5), shape=I(4)) +
+          geom_hline(yintercept=0, size=I(.1)) +
+          geom_vline(xintercept=0, size=I(.1)) +
           scale_color_gradient(low='#fee8c8', high='#e34a33') +
-          labs(title=substitute(paste(h^2, '=', pve, ', ', tau, '=', prec),
-                                list(pve=pve,
-                                     prec=1/(scale ** 2))),
+          labs(title=substitute(paste(h^2, '=', pve), list(pve=sprintf('%.3f', pve))),
                x=expression(theta[0]), y=expression(theta[1])) +
           scale_x_continuous(expand=c(0, 0)) +
           scale_y_continuous(expand=c(0, 0)) +
           theme_nature +
           theme(plot.title=element_text(),
-                plot.margin=unit(rep(2, 4), 'mm')))
-    Cairo(file=paste(base, '/llik.pdf', sep=''), type='pdf', width=40,
-          height=40, units='mm')
+                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+    Cairo(file=paste(dir_, 'llik.pdf', sep='/'), type='pdf', width=panelheight, height=panelheight, units='mm')
     print(p)
     dev.off()
 }
-likelihood_contour('/broad/hptmp/aksarkar/test/0.01')
-likelihood_contour('/broad/hptmp/aksarkar/test/0.05')
-likelihood_contour('/broad/hptmp/aksarkar/test/0.1')
+
+plot_posterior_contour <- function(root) {
+    pve <- c('0.005', '0.01', '0.025', '0.05')
+    pi_ <- 0.01
+    plots <- (expand.grid(pve, pi_) %>%
+              dplyr::mutate(dir_=paste(root, pve, sep='/'), pi_=Var2) %>%
+              dplyr::group_by(dir_, pi_) %>%
+              dplyr::do(plot=posterior_contour(.)))
+}
+plot_posterior_contour('/broad/hptmp/aksarkar/test')

@@ -37,3 +37,8 @@ joblist:
 
 clean:
 	rm -f *.txt *.txt.gz
+
+gaussian-h2:
+	parallel -j1 ctra-evaluate -a 1,1 -n 1000 -p 100 -v {} --true-pve -M coord -m gaussian -s 1 --write-data {} ::: 0.005 0.01 0.025 0.05
+
+.PHONY: gaussian-h2
