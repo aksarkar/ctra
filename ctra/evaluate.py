@@ -140,11 +140,13 @@ def evaluate():
                 merged = ctra.formats.merge_oxstats([d for _, _, _, d in data])
                 probs = ([float(x) for x in row[5:]] for row in merged)
                 if args.num_samples > len(samples):
-                    logger.warn('Taking {} individuals, but {} were specified'.format(len(samples), args.num_samples))
+                    logger.error('{} individuals present, but {} were specified'.format(len(samples), args.num_samples))
+                    sys.exit(1)
                 x = numpy.array(list(itertools.islice(probs, args.num_variants)))
             p, n = x.shape
             if p < args.num_variants:
-                logger.warn('Taking {} variants, but {} were specified'.format(len(p, args.p)))
+                logger.error('{} variants present, but {} were specified'.format(len(p, args.p)))
+                sys.exit(1)
             x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
             y = s.compute_liabilities(x)
         elif args.prevalence is not None:
