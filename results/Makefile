@@ -1,6 +1,7 @@
 MODEL := gaussian --center
 METHOD := coord
 PVE := --true-pve
+GENO :=
 
 %.txt.gz:
 	awk 'FNR == 1 {sub("./$*-", "", FILENAME); sub(".txt", "", FILENAME); gsub("-", " ", FILENAME)} {print FILENAME, FNR, $$1}' ./$*-*.txt | sort -k1,4n | gzip >$@
@@ -12,7 +13,7 @@ BEGIN {
             for (seed=0; seed < 10; seed += 1) {
                 m=int(10 ^ (logp - 2));
                 p = 10^logp; n=np * p;
-                printf "ctra-evaluate -l DEBUG -a %d,1 -n %d -p %d -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d >$(word 1, $(MODEL))-sample-size-%d-%d-%d.txt\n", m, n, p, seed, n, p, seed
+                printf "ctra-evaluate -a %d,1 -n %d -p %d $(GENO) -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d >$(word 1, $(MODEL))-sample-size-%d-%d-%d.txt\n", m, n, p, seed, n, p, seed
             }
         }
     }

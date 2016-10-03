@@ -10,6 +10,8 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import argparse
 import collections
+import contextlib
+import itertools
 import logging
 import pprint
 import os
@@ -18,6 +20,8 @@ import sys
 
 import numpy
 
+import ctra.algorithms
+import ctra.formats
 import ctra.model
 import ctra.simulation
 
@@ -56,10 +60,12 @@ def evaluate():
     parser.add_argument('--write-data', help='Directory to write out data', default=None)
     parser.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     parser.add_argument('--load-data', help='Directory to load data', default=None)
+    parser.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)')
     parser.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     parser.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     args = parser.parse_args()
 
+
     # Check argument values
     if args.num_samples <= 0:
         raise _A('Number of samples must be positive')
@@ -118,12 +124,29 @@ def evaluate():
     logging.getLogger('ctra').setLevel(args.log_level)
     logger.debug('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
 
+
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         if args.load_data is not None:
             with open(os.path.join(args.load_data, 'genotypes.txt'), 'rb') as f:
                 x = numpy.loadtxt(f)
             with open(os.path.join(args.load_data, 'phenotypes.txt'), 'rb') as f:
                 y = numpy.loadtxt(f)
+        elif args.load_oxstats:
+            logger.debug('Loading OXSTATS datasets')
+            with contextlib.ExitStack() as stack:
+                data = [stack.enter_context(ctra.formats.oxstats_genotypes(*a))
+                        for a in ctra.algorithms.kwise(args.load_oxstats, 2)]
+                samples = list(itertools.chain.from_iterable(s for _, _, s, _ in data))
+                merged = ctra.formats.merge_oxstats([d for _, _, _, d in data])
+                probs = ([float(x) for x in row[5:]] for row in merged)
+                if args.num_samples > len(samples):
+                    logger.warn('Taking {} individuals, but {} were specified'.format(len(samples), args.num_samples))
+                x = numpy.array(list(itertools.islice(probs, args.num_variants)))
+            p, n = x.shape
+            if p < args.num_variants:
+                logger.warn('Taking {} variants, but {} were specified'.format(len(p, args.p)))
+            x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
+            y = s.compute_liabilities(x)
         elif args.prevalence is not None:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         else:
