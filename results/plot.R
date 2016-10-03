@@ -1,6 +1,6 @@
 devtools::load_all('/broad/compbio/aksarkar/projects/frea-R/')
 
-panelheight <- 30
+panelheight <- 40
 
 pcgc_example <- function() {
     enrichment <- read.delim('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-example.txt', header=F)
@@ -34,10 +34,9 @@ sample_size <- function(result_file) {
     dev.off()
 }
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/gaussian-sample-size.txt.gz')
-
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/pcgc-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
-
 
 equal_effect <- function(result_file) {
     equal_effect <- (
