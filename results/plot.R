@@ -231,3 +231,26 @@ plot_posterior_contour <- function(root) {
               dplyr::do(plot=posterior_contour(.)))
 }
 plot_posterior_contour('/broad/hptmp/aksarkar/test')
+
+ep_posterior <- function(root) {
+    x <- as.matrix(read.table(paste(root, 'genotypes.txt', sep='/')))
+    y <- as.matrix(read.table(paste(root, 'phenotypes.txt', sep='/')))
+    vx <- sum(apply(x, 2, var))
+    p0 <- logistic(seq(-3, 0, .25) * log(10))
+    models <- (data.frame(p0=p0) %>%
+               dplyr::mutate(beta=1 / var(y), v=.2 / (1 - .2) / (p0 * vx)) %>%
+               dplyr::rowwise() %>%
+               dplyr::do(logw=do.call(epBVSinternal, c(list(x, y), .))$evidence))
+    logw <- unlist(models$logw)
+    logw <- logw - max(logw)
+    logw <- logw - log(sum(exp(logw)))
+    posterior <- (ggplot(data.frame(p0=p0, logw=logw), aes(x=p0, y=logw)) +
+                  geom_line() +
+                  labs(x=expression(pi), y=expression(ln(p(pi * "|" * x)))) +
+                  theme_nature)
+    Cairo(file=paste(root, 'ep-posterior.pdf', sep='/'), type='pdf',
+          width=panelheight, height=panelheight, units='mm')
+    print(posterior)
+    dev.off()
+}
+ep_posterior('/broad/hptmp/aksarkar/test')
