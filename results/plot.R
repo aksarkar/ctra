@@ -37,6 +37,7 @@ sample_size('/broad/compbio/aksarkar/projects/ctra/results/gaussian-sample-size.
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/pcgc-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
     equal_effect <- (
