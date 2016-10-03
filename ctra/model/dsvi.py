@@ -153,6 +153,7 @@ class DSVI(ImportanceSampler):
         if params is None:
             self._randomize()
         else:
+            alpha, beta = params
             self._initialize(scipy.special.expit(alpha), beta)
         converged = False
         t = 0
