@@ -13,7 +13,9 @@ BEGIN {
             for (seed=0; seed < 10; seed += 1) {
                 m=int(10 ^ (logp - 2));
                 p = 10^logp; n=np * p;
-                printf "ctra-evaluate -a %d,1 -n %d -p %d $(GENO) -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d >$(word 1, $(MODEL))-sample-size-%d-%d-%d.txt\n", m, n, p, seed, n, p, seed
+		if ("$(GENO)" != "" && n < 16120) {
+                    printf "ctra-evaluate -a %d,1 -n %d -p %d $(GENO) -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d >$(word 1, $(MODEL))-sample-size-%d-%d-%d.txt\n", m, n, p, seed, n, p, seed
+		}
             }
         }
     }
