@@ -106,7 +106,7 @@ class Simulation:
             self.annot[start:end] = i
         return self
 
-    def sample_effects(self, pve, annotation_params=None):
+    def sample_effects(self, pve, annotation_params=None, permute=False):
         """Generate SNP effects according to annotations.
 
         Generate residual variance and phenotypic variance based on target
@@ -115,6 +115,7 @@ class Simulation:
 
         pve - total PVE
         annotation_params - list of tuples (number of causal variants, population variance of effect size)
+        permute - Permute the indices of the causal indicator
 
         """
         if not 0 < pve < 1:
@@ -133,6 +134,8 @@ class Simulation:
         self.theta = numpy.zeros(self.p)
         for (num, scale), (start, end) in zip(annotation_params, self._annotations()):
             self.theta[start:end][:num] = R.normal(scale=scale, size=num)
+            if permute:
+                self.theta[start:end] = R.permutation(self.theta[start:end])
 
         # Keep genetic variance as a vector (per-SNP) for quicker case-control
         # sampling: at each step we need the remaining variance. Don't ignore

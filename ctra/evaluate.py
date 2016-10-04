@@ -44,6 +44,7 @@ def evaluate():
     parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=10000)
     parser.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', default=0.25)
     parser.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
+    parser.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
     parser.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     parser.add_argument('--min-pve', type=float, help='Minimum PVE', default=1e-4)
     parser.add_argument('-K', '--prevalence', type=float, help='Binary phenotype case prevalence (assume Gaussian if omitted)', default=None)
@@ -126,6 +127,9 @@ def evaluate():
 
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
+        if args.permute_causal:
+            logger.debug('Generating effects with permuted causal indicator')
+            s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
         if args.load_data is not None:
             with open(os.path.join(args.load_data, 'genotypes.txt'), 'rb') as f:
                 x = numpy.loadtxt(f)
