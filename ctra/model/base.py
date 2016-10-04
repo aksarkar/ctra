@@ -33,13 +33,14 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 # instance methods
 result = collections.namedtuple('result', ['pi', 'weights'])
 
-class ImportanceSampler():
+class ImportanceSampler:
     def __init__(self, X, y, a, pve, **kwargs):
         self.X = X
         self.y = y
         self.a = a
+        self.p = numpy.array(list(collections.Counter(self.a).values()), dtype='int')
         self.pve = pve
-        self.var_x = numpy.array([X[:,a == i].var(axis=0).sum() for i in range(1 + max(a))])
+        self.var_x = X.var(axis=0).sum()
         self.eps = numpy.finfo(float).eps
         logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
@@ -73,7 +74,9 @@ class ImportanceSampler():
         logger.info('Finding best initialization')
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
-            tau[i] = (((1 - self.pve) * pi[i] * self.var_x) / self.pve).astype(_real)
+            induced_pi = (pi[i] * self.p).sum() / self.p.sum()
+            tau[i] = numpy.repeat(((1 - self.pve.sum()) * induced_pi * self.var_x) /
+                                  self.pve.sum(), self.pve.shape[0]).astype(_real)
             elbo_, params_ = self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
             if elbo_ > best_elbo:
                 params = params_
