@@ -69,6 +69,28 @@ equal_effect <- function(result_file) {
 }
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
 
+equal_effect_ratio_prop <- function(result_file) {
+    result <- (read.table(gzfile(result_file), sep=' ') %>%
+               dplyr::select(p=V1, seed=V3, comp=V4, prop=V5) %>%
+               dplyr::group_by(p, seed) %>%
+               dplyr::do(data.frame(p=.$p, ratio=.$prop[2]/.$prop[1])))
+    p <- (ggplot(data=result, aes(x=p / 500, y=ratio, group=p)) +
+          labs(x=expression(pi[1]),
+               y=expression(pi[2] / pi[1])) +
+          geom_boxplot(size=I(.25), outlier.size=.25) +
+          geom_hline(yintercept=2, size=.1, linetype='dashed') +
+          scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          theme_nature +
+          theme(legend.position=c(.6, 1),
+                legend.justification=c(1, 1),
+                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+    Cairo(file=sub('.txt.gz', '-ratio-prop.pdf', result_file), type='pdf',
+          height=panelheight, width=panelheight, units='mm')
+    print(p)
+    dev.off()
+}
+equal_effect_ratio_prop('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
+
 equal_prop <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
                    dplyr::select(p=V1, seed=V2, comp=V3, prop=V4) %>%
