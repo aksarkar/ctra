@@ -2,8 +2,8 @@ devtools::load_all('/broad/compbio/aksarkar/projects/frea-R/')
 
 panelheight <- 40
 
-pcgc_example <- function() {
-    enrichment <- read.delim('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-example.txt', header=F)
+pcgc_example <- function(result_file) {
+    enrichment <- read.delim(result_file, header=F)
     p <- (ggplot(enrichment, aes(x=factor(V1), y=V6, ymin=V6-V7, ymax=V6+V7)) +
           labs(x='Genetic architecture', y='Per-SNP heritability enrichment') +
           geom_pointrange(size=I(.25)) +
@@ -13,7 +13,8 @@ pcgc_example <- function() {
     Cairo(file='pcgc-enrichment-example.pdf', type='pdf', height=panelheight, width=panelheight, units='mm')
     print(p)
     dev.off()
-}()
+}
+pcgc_example('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-example.txt')
 
 sample_size <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
@@ -33,14 +34,12 @@ sample_size <- function(result_file) {
     print(my_plot)
     dev.off()
 }
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/pcgc-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
-    result_file <- '/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz'
     result <- (read.table(gzfile(result_file), se=' ') %>%
                dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5) %>%
                dplyr::group_by(p1, comp) %>%
@@ -96,8 +95,8 @@ equal_prop <- function(result_file) {
 }
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-prop.txt.gz')
 
-ascertainment <- function() {
-    pihat <- (read.table(gzfile('/broad/compbio/aksarkar/projects/ctra/results/logistic-ascertained.txt.gz'), sep=' ') %>%
+ascertainment <- function(result_file) {
+    pihat <- (read.table(gzfile(result_file), sep=' ') %>%
               dplyr::select(n=V1, k=V3, seed=V4, pi_=V6) %>%
               dplyr::group_by(n, k) %>%
               dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_))))
@@ -113,7 +112,7 @@ ascertainment <- function() {
     print(p)
     dev.off()
 }
-ascertainment()
+ascertainment('/broad/compbio/aksarkar/projects/ctra/results/logistic-ascertained.txt.gz')
 
 joint_posterior <- function(weights_file) {
     weights <- read.table(weights_file, header=F, sep=' ')
