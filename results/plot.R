@@ -43,9 +43,8 @@ equal_effect <- function(result_file) {
     result <- (read.table(gzfile(result_file), se=' ') %>%
                dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5) %>%
                dplyr::group_by(p1, comp) %>%
-               dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))) %>%
-               dplyr::filter(pi_hat - se > 0))
-    p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat, ymin=pi_hat - se,
+               dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
+    p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat, ymin=pmax(pi_hat - se, 1e-3),
                                   ymax=pi_hat + se, group=comp,
                                   color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
@@ -57,7 +56,7 @@ equal_effect <- function(result_file) {
                       size=I(.1), linetype='dashed') +
           scale_color_brewer(palette='Dark2') +
           scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
-          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10', oob=scales::squish) +
           theme_nature +
           theme(legend.position=c(.6, 1),
                 legend.justification=c(1, 1),
