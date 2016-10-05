@@ -70,21 +70,31 @@ equal_effect <- function(result_file) {
 }
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
 
-equal_prop <- function() {
-    equal_prop <- (read.table(gzfile('/broad/compbio/aksarkar/projects/ctra/results/equal-prop.txt.gz'), sep=' ') %>%
-                   dplyr::select(tau1=V2, h2=V3, seed=V4, comp=V5, pi_=V6) %>%
-                   dplyr::filter(comp == 1 & h2 == 0.2) %>%
-                   dplyr::group_by(tau1) %>%
-                   dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_))))
-    p <- (ggplot(equal_prop, aes(x=tau1, y=pi_hat, ymin=pi_hat-se, ymax=pi_hat+se)) +
-          labs(x=expression(paste('Relative effect size ', tau[1] / tau[0])), y=expression(paste('Posterior mean ', pi))) +
-          geom_pointrange(size=.25, fatten=1) +
-          geom_hline(yintercept=.1, size=I(.25), linetype='dashed') +
-          theme_nature)
-    Cairo(file='equal-prop.pdf', type='pdf', height=panelheight, width=panelheight, units='mm')
+equal_prop <- function(result_file) {
+    result <- (read.table(gzfile(result_file), sep=' ') %>%
+                   dplyr::select(p=V1, seed=V2, comp=V3, prop=V4) %>%
+                   dplyr::group_by(p, comp) %>%
+                   dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
+    p <- (ggplot(result, aes(x=p/500, y=pi_hat, ymin=pi_hat - se, ymax=pi_hat + se,
+                             group=comp, color=factor(comp))) +
+          labs(x=expression(paste('True ', pi)),
+               y=expression(paste('Posterior mean ', pi)), color='Annotation') +
+          geom_line() +
+          geom_linerange(size=.25, position=position_dodge(width=0.02)) +
+          geom_abline(intercept=0, slope=1, color='black', size=I(.1), linetype='dashed') +
+          scale_color_brewer(palette='Dark2') +
+          scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          theme_nature +
+          theme(legend.position=c(.6, 1),
+                legend.justification=c(1, 1),
+                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
+          height=panelheight, width=panelheight, units='mm')
     print(p)
     dev.off()
-}()
+}
+equal_prop('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-prop.txt.gz')
 
 ascertainment <- function() {
     pihat <- (read.table(gzfile('/broad/compbio/aksarkar/projects/ctra/results/logistic-ascertained.txt.gz'), sep=' ') %>%

@@ -32,8 +32,23 @@ joblist.4:
 joblist.3:
 	awk "$$ONE_COMPONENT" >$@
 
-joblist.1: 
-	parallel --dry-run ctra-evaluate -a 100,{1} -a 100,{2} -n 1000 -p 1000 -v {3} $(PVE) -m $(MODEL) -M $(METHOD) -s {4} -l INFO ">" $(word 1, $(MODEL))-equal-prop-{1}-{2}-{3}-{4}.txt ::: 1 ::: .25 .5 .75 1 ::: 0.2 0.4 0.6 ::: $$(seq 1 10) >$@
+define TWO_COMPONENT_EQUAL_PROP
+BEGIN {
+    for (logp = 0; logp < 3; logp++) {
+        p = 10 ** logp
+        for (seed = 0; seed < 10; seed++) {
+            sink = ">$(word 1, $(METHOD))-$(word 1, $(MODEL))-equal-prop-%d-%d.txt\n"
+            command = "ctra-evaluate -a %d,1 -a %d,2 -n 1000 -p 1000 -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d " sink
+            printf command, p, p, seed, p, seed
+            printf command, 5 * p, 5 * p, seed, 5 * p, seed
+        }
+    }
+}
+endef
+export TWO_COMPONENT_EQUAL_PROP
+
+joblist.1:
+	awk "$$TWO_COMPONENT_EQUAL_PROP" >$@
 
 define TWO_COMPONENT_EQUAL_EFFECT
 BEGIN {
