@@ -40,35 +40,35 @@ sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sampl
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
-    equal_effect <- (
-        read.table(gzfile(result_file), sep=' ') %>%
-        dplyr::select(p1=V1, p2=V2, seed=V4, comp=V5, pi_=V6) %>%
-        dplyr::group_by(p1, p2, comp) %>%
-        dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_)))
-    )
-    p <- (ggplot(equal_effect, aes(x=p1/500, y=pi_hat, ymin=pi_hat - se,
-                                   ymax=pi_hat + se, group=comp,
-                                   color=factor(comp))) +
+    result_file <- '/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz'
+    result <- (read.table(gzfile(result_file), se=' ') %>%
+               dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5) %>%
+               dplyr::group_by(p1, comp) %>%
+               dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))) %>%
+               dplyr::filter(pi_hat - se > 0))
+    p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat, ymin=pi_hat - se,
+                                  ymax=pi_hat + se, group=comp,
+                                  color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
           geom_line() +
-          geom_linerange(size=.25, position=position_dodge(width=0.05)) +
-          scale_x_log10(limits=c(1e-3, 1), breaks=c(1e-3, 1e-2, 1e-1, 1)) +
-          scale_y_log10(limits=c(1e-4, 1), breaks=c(1e-3, 1e-2, 1e-1, 1)) +
-          scale_color_brewer(palette='Dark2') +
-          geom_abline(aes(intercept=intercept, slope=slope, color=factor(comp)),
-                      data=data.frame(comp=c(1, 2), intercept=c(0, -1),
-                                      slope=c(1, 0)),
+          geom_linerange(size=.25, position=position_dodge(width=0.02)) +
+          geom_abline(data=data.frame(comp=c(1, 2), intercept=c(0, log10(2)), slope=c(1, 1)),
+                      aes(slope=slope, intercept=intercept, group=factor(comp), color=factor(comp)),
                       size=I(.1), linetype='dashed') +
+          scale_color_brewer(palette='Dark2') +
+          scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
           theme_nature +
-          theme(legend.position=c(1, .5),
-                legend.justification=c(1, 1)))
+          theme(legend.position=c(.6, 1),
+                legend.justification=c(1, 1),
+                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
     Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
           height=panelheight, width=panelheight, units='mm')
     print(p)
     dev.off()
 }
-equal_effect('/broad/compbio/aksarkar/projects/ctra/results/gaussian-equal-effect.txt.gz')
+equal_effect('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
 
 equal_prop <- function() {
     equal_prop <- (read.table(gzfile('/broad/compbio/aksarkar/projects/ctra/results/equal-prop.txt.gz'), sep=' ') %>%

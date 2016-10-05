@@ -35,8 +35,23 @@ joblist.3:
 joblist.1: 
 	parallel --dry-run ctra-evaluate -a 100,{1} -a 100,{2} -n 1000 -p 1000 -v {3} $(PVE) -m $(MODEL) -M $(METHOD) -s {4} -l INFO ">" $(word 1, $(MODEL))-equal-prop-{1}-{2}-{3}-{4}.txt ::: 1 ::: .25 .5 .75 1 ::: 0.2 0.4 0.6 ::: $$(seq 1 10) >$@
 
+define TWO_COMPONENT_EQUAL_EFFECT
+BEGIN {
+    for (logp = 0; logp < 3; logp++) {
+        p1 = 10 ** logp
+        for (seed = 0; seed < 10; seed++) {
+            sink = ">$(word 1, $(METHOD))-$(word 1, $(MODEL))-equal-effect-%d-%d-%d.txt\n"
+            command = "ctra-evaluate -a %d,1 -a %d,1 -n 1000 -p 1000 -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d " sink
+            printf command, p1, 2 * p1, seed, p1, 2 * p1, seed
+            printf command, 5 * p1, 10 * p1, seed, 5 * p1, 10 * p1, seed
+        }
+    }
+}
+endef
+export TWO_COMPONENT_EQUAL_EFFECT
+
 joblist:
-	parallel --dry-run ctra-evaluate -a {1},1 -a 100,1 -n 1000 -p 1000 -v {2} $(PVE) -m $(MODEL) -M $(METHOD) -s {3} -l INFO ">" $(MODEL)-equal-effect-{1}-100-{2}-{3}.txt ::: 1 10 50 100 250 500 ::: 0.2 ::: $$(seq 1 10) >$@
+	awk "$$TWO_COMPONENT_EQUAL_EFFECT" >$@
 
 clean:
 	rm -f *.txt *.txt.gz
@@ -44,4 +59,7 @@ clean:
 gaussian-h2:
 	parallel -j1 ctra-evaluate -a 1,1 -n 1000 -p 100 -v {} --true-pve -M coord -m gaussian -s 1 --write-data {} ::: 0.005 0.01 0.025 0.05
 
-.PHONY: gaussian-h2
+IL27:
+	parallel -j1 gtool -S --g {}_16.gen.gz --s {}-clean.sample --og {}_IL27.gen.gz --os {}_IL27.sample --start 18510683 --end 38518155 ::: 58C NBS BD CAD CD HT RA T1D T2D
+
+.PHONY: gaussian-h2 IL27
