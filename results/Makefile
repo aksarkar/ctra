@@ -52,13 +52,16 @@ joblist.1:
 
 define TWO_COMPONENT_EQUAL_EFFECT
 BEGIN {
-    for (logp = 0; logp < 3; logp++) {
+    for (logp = 0; logp < 3; logp += 0.5) {
         p1 = 10 ** logp
+        p2 = 3 * p1
+        if (p2 > 500) {
+            continue
+        }
         for (seed = 0; seed < 10; seed++) {
             sink = ">$(word 1, $(METHOD))-$(word 1, $(MODEL))-equal-effect-%d-%d-%d.txt\n"
             command = "ctra-evaluate -a %d,1 -a %d,1 -n 1000 -p 1000 -v 0.2 $(PVE) -M $(METHOD) -m $(MODEL) -s %d " sink
-            printf command, p1, 2 * p1, seed, p1, 2 * p1, seed
-            printf command, 5 * p1, 10 * p1, seed, 5 * p1, 10 * p1, seed
+            printf command, p1, p2, seed, p1, p2, seed
         }
     }
 }

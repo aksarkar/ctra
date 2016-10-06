@@ -73,11 +73,7 @@ class Simulation:
         logging.info('Initializing simulation')
         R.seed(seed)
         self.p = p
-        self.maf = R.uniform(min_maf, max_maf, size=self.p)
-        # Population mean and variance of genotype, according to the binomial
-        # distribution
-        self.x_mean = 2 * self.maf
-        self.x_var = 2 * self.maf * (1 - self.maf)
+        self.sample_mafs(min_maf, max_maf)
         # Should raise an exception if this is used before sampling
         self.theta = None
         # By default, put all SNPs in the same annotation
@@ -92,6 +88,23 @@ class Simulation:
         for end in self.annot_index:
             yield start, end
             start = end
+
+    def sample_mafs(self, min_maf, max_maf):
+        """Sample minor allele frequencies of simulated SNPs.
+
+        This is exposed as a public method to allow for simulations fixing MAF.
+
+        min_maf - minimum MAF of SNPs
+        max_maf - maximum MAF of SNPs
+
+        """
+        logger.debug('Sampling minor allele frequencies')
+        self.maf = R.uniform(min_maf, max_maf, size=self.p)
+        # Population mean and variance of genotype, according to the binomial
+        # distribution
+        self.x_mean = 2 * self.maf
+        self.x_var = 2 * self.maf * (1 - self.maf)
+        return self        
 
     def sample_annotations(self, proportion=None):
         """Generate annotations covering target proportion of SNPs.

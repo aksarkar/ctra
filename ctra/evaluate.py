@@ -47,6 +47,8 @@ def evaluate():
     parser.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
     parser.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     parser.add_argument('--min-pve', type=float, help='Minimum PVE', default=1e-4)
+    parser.add_argument('--min-maf', type=float, help='Minimum MAF', default=None)
+    parser.add_argument('--max-maf', type=float, help='Maximum MAF', default=None)
     parser.add_argument('-K', '--prevalence', type=float, help='Binary phenotype case prevalence (assume Gaussian if omitted)', default=None)
     parser.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     parser.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-4)
@@ -87,6 +89,10 @@ def evaluate():
         raise _A('Prevalence must be specified for logistic model')
     if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
         raise _A('Minimum PVE must be larger than float tolerance')
+    if args.min_maf is not None and (numpy.isclose(args.min_maf, 0) or args.min_maf < 0):
+        raise _A('Minimum MAF must be larger than float tolerance')
+    if args.max_maf is not None and args.max_maf > .5:
+        raise _A('Maximum MAF must be less than or equal to 0.5')
     if args.learning_rate <= 0:
         raise _A('Learning rate must be positive')
     if args.learning_rate > 0.05:
@@ -127,6 +133,12 @@ def evaluate():
 
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
+        if args.min_maf is not None or args.max_maf is not None:
+            if args.min_maf is None:
+                args.min_maf = 0.01
+            if args.max_maf is None:
+                args.max_maf = 0.05
+            s.sample_mafs(args.min_maf, args.max_maf)
         if args.permute_causal:
             logger.debug('Generating effects with permuted causal indicator')
             s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
