@@ -10,7 +10,8 @@ pcgc_example <- function(result_file) {
           geom_hline(yintercept=1, size=I(.25), linetype='dashed') +
           scale_y_continuous(limits=c(0, 2)) +
           theme_nature)
-    Cairo(file='pcgc-enrichment-example.pdf', type='pdf', height=panelheight, width=panelheight, units='mm')
+    Cairo(file='pcgc-enrichment-example.pdf', type='pdf', height=panelheight,
+          width=panelheight, units='mm')
     print(p)
     dev.off()
 }
@@ -21,8 +22,10 @@ sample_size <- function(result_file) {
                dplyr::select(n=V1, p=V2, seed=V3, pi_=V5) %>%
                dplyr::group_by(n, p) %>%
                dplyr::summarize(se=sqrt(var(pi_)), pi_=mean(pi_)))
-    my_plot <- (ggplot(result, aes(x=n/p, y=pi_, ymin=pi_-se, ymax=pi_+se, color=factor(p))) +
-                labs(x='Samples n / Variants p', y=expression(paste('Posterior mean ', pi)), color='p') +
+    my_plot <- (ggplot(result, aes(x=n/p, y=pi_, ymin=pi_-se, ymax=pi_+se,
+                                   color=factor(p))) +
+                labs(x='Samples n / Variants p',
+                     y=expression(paste('Posterior mean ', pi)), color='p') +
                 scale_color_brewer(palette='Dark2') +
                 geom_line(size=.25) +
                 geom_linerange(size=.25, position=position_dodge(width=0.05)) +
@@ -30,7 +33,8 @@ sample_size <- function(result_file) {
                 theme_nature +
                 theme(legend.position=c(1, 1),
                       legend.justification=c(1, 1)))
-    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf', height=panelheight, width=panelheight, units='mm')
+    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
+          height=panelheight, width=panelheight, units='mm')
     print(my_plot)
     dev.off()
 }
@@ -44,19 +48,23 @@ equal_effect <- function(result_file) {
                dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5) %>%
                dplyr::group_by(p1, comp) %>%
                dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
-    p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat, ymin=pmax(pi_hat - se, 1e-3),
+    p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat,
+                                  ymin=pmax(pi_hat - se, 1e-3),
                                   ymax=pi_hat + se, group=comp,
                                   color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
           geom_line() +
           geom_linerange(size=.25, position=position_dodge(width=0.02)) +
-          geom_abline(data=data.frame(comp=c(1, 2), intercept=c(0, log10(2)), slope=c(1, 1)),
-                      aes(slope=slope, intercept=intercept, group=factor(comp), color=factor(comp)),
+          geom_abline(data=data.frame(comp=c(1, 2), intercept=c(0, log10(3)),
+                                      slope=c(1, 1)),
+                      aes(slope=slope, intercept=intercept, group=factor(comp),
+                          color=factor(comp)),
                       size=I(.1), linetype='dashed') +
           scale_color_brewer(palette='Dark2') +
           scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
-          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10', oob=scales::squish) +
+          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10',
+                             oob=scales::squish) +
           theme_nature +
           theme(legend.position=c(.6, 1),
                 legend.justification=c(1, 1),
@@ -77,7 +85,7 @@ equal_effect_ratio_prop <- function(result_file) {
           labs(x=expression(pi[1]),
                y=expression(pi[2] / pi[1])) +
           geom_boxplot(size=I(.25), outlier.size=.25) +
-          geom_hline(yintercept=2, size=.1, linetype='dashed') +
+          geom_hline(yintercept=3, size=.1, linetype='dashed') +
           scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
           theme_nature +
           theme(legend.position=c(.6, 1),
@@ -101,7 +109,8 @@ equal_prop <- function(result_file) {
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
           geom_line() +
           geom_linerange(size=.25, position=position_dodge(width=0.02)) +
-          geom_abline(intercept=0, slope=1, color='black', size=I(.1), linetype='dashed') +
+          geom_abline(intercept=0, slope=1, color='black', size=I(.1),
+                      linetype='dashed') +
           scale_color_brewer(palette='Dark2') +
           scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
           scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
@@ -121,15 +130,18 @@ ascertainment <- function(result_file) {
               dplyr::select(n=V1, k=V3, seed=V4, pi_=V6) %>%
               dplyr::group_by(n, k) %>%
               dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_))))
-    p <- (ggplot(pihat, aes(x=k, y=pi_hat, ymin=pi_hat-se, ymax=pi_hat+se, color=factor(n))) +
-          labs(x='Population prevalence', y=expression(paste('Posterior mean ', pi)), color='n') +
+    p <- (ggplot(pihat, aes(x=k, y=pi_hat, ymin=pi_hat-se, ymax=pi_hat+se,
+                            color=factor(n))) +
+          labs(x='Population prevalence',
+               y=expression(paste('Posterior mean ', pi)), color='n') +
           geom_line(size=.25) +
           geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
           scale_color_brewer(palette='Dark2') +
           theme_nature +
           theme(legend.position=c(1, 1),
                 legend.justification=c(1, 1)))
-    Cairo(file='logistic-ascertained.pdf', type='pdf', height=panelheight, width=panelheight, units='mm')
+    Cairo(file='logistic-ascertained.pdf', type='pdf', height=panelheight,
+          width=panelheight, units='mm')
     print(p)
     dev.off()
 }
@@ -139,17 +151,20 @@ joint_posterior <- function(weights_file) {
     weights <- read.table(weights_file, header=F, sep=' ')
     p0 <- (ggplot(weights, aes(x=V1, y=log10(V3))) +
           geom_line() +
-          labs(x=expression(pi[0]), y=expression(paste(log[10], p, "(", pi[0], "|", x, ",", pi[1], ")"))) +
+          labs(x=expression(pi[0]),
+               y=expression(paste(log[10], p, "(", pi[0], "|", x, ",", pi[1], ")"))) +
           facet_wrap(~ V2, nrow=1) +
           theme_nature +
           theme(panel.margin=unit(3, 'mm')))
     p1 <- (ggplot(weights, aes(x=V2, y=log10(V3))) +
           geom_line() +
-          labs(x=expression(pi[1]), y=expression(paste(log[10], p, "(", pi[1], "|", x, ",", pi[0], ")"))) +
+          labs(x=expression(pi[1]),
+               y=expression(paste(log[10], p, "(", pi[1], "|", x, ",", pi[0], ")"))) +
           facet_wrap(~ V1, nrow=1) +
           theme_nature +
           theme(panel.margin=unit(3, 'mm')))
-    Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf', height=2 * panelheight, width=7 * panelheight, units='mm')
+    Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
+          height=2 * panelheight, width=7 * panelheight, units='mm')
     grid.arrange(p0, p1, nrow=2)
     dev.off()
 }
@@ -169,7 +184,8 @@ pi_versus_h2 <- function(result_file) {
           geom_linerange(size=.25) +
           geom_hline(yintercept=0.01, size=I(.1), linetype='dashed') +
           theme_nature)
-    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf', height=panelheight, width=panelheight, units='mm')
+    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
+          height=panelheight, width=panelheight, units='mm')
     print(p)
     dev.off()
 }
@@ -248,7 +264,8 @@ posterior_contour <- function(args) {
           theme_nature +
           theme(plot.title=element_text(),
                 plot.margin=unit(c(0, 2, 0, 0), 'mm')))
-    Cairo(file=paste(dir_, 'llik.pdf', sep='/'), type='pdf', width=panelheight, height=panelheight, units='mm')
+    Cairo(file=paste(dir_, 'llik.pdf', sep='/'), type='pdf', width=panelheight,
+          height=panelheight, units='mm')
     print(p)
     dev.off()
 }
