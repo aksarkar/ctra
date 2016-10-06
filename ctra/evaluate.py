@@ -195,7 +195,7 @@ def evaluate():
         if args.true_causal:
             kwargs['true_causal'] = ~numpy.isclose(s.theta, 0)
         if args.method == 'pcgc':
-            numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3e')
+            numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3g')
             return
         elif args.method == 'coord':
             if args.model == 'gaussian':
