@@ -33,9 +33,8 @@ def evaluate():
 
     def Annotation(arg):
         num, var = arg.split(',')
-        return (int(num), float(var))
+        return (int(num), numpy.sqrt(float(var)))
 
-    annotation = lambda arg: tuple([f(x) for f, x in zip([int, float], arg.split())])
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     parser.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     parser.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
