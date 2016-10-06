@@ -302,3 +302,21 @@ ep_posterior <- function(root) {
     dev.off()
 }
 ep_posterior('/broad/hptmp/aksarkar/test')
+
+pi_posterior <- function(weights_file) {
+    weights <- (read.table(weights_file, sep=' ') %>%
+                dplyr::select(x=V1, y=V2, z=V3))
+    p <- (ggplot(weights, aes(x=x, y=y)) +
+          geom_contour(aes(z=z, color=..level..), bins=20, size=I(.1)) +
+          scale_color_gradient(low='#fee8c8', high='#e34a33') +
+          labs(x=expression(pi[1]), y=expression(pi[2])) +
+          scale_x_continuous(trans='log10') +
+          scale_y_continuous(trans='log10') +
+          theme_nature +
+          theme(plot.margin=unit(rep(1, 4), 'mm')))
+    Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
+          width=panelheight, height=panelheight, units='mm')
+    print(p)
+    dev.off()
+}
+pi_posterior('/broad/hptmp/aksarkar/test/weights.txt')
