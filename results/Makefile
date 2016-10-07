@@ -78,6 +78,6 @@ gaussian-h2:
 	parallel -j1 ctra-evaluate -a 1,1 -n 1000 -p 100 -v {} --true-pve -M coord -m gaussian -s 1 --write-data {} ::: 0.005 0.01 0.025 0.05
 
 IL27:
-	parallel -j1 gtool -S --g {}_16.gen.gz --s {}-clean.sample --og {}_IL27.gen.gz --os {}_IL27.sample --start 18510683 --end 38518155 ::: 58C NBS BD CAD CD HT RA T1D T2D
+	parallel --halt now,fail=1 -j1 gtool -S --g {}_16_chiamo.gz --s {}.sample --og {}_IL27.gen.gz --os {}_IL27.sample --start 18510683 --end 38518155 --sample_excl {}.exclude --exclusion snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
 
 .PHONY: gaussian-h2 IL27
