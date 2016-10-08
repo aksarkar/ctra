@@ -41,6 +41,7 @@ sample_size <- function(result_file) {
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/pcgc-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
@@ -75,6 +76,7 @@ equal_effect <- function(result_file) {
     dev.off()
 }
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
+equal_effect('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-effect.txt.gz')
 
 equal_effect_ratio_prop <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
@@ -124,6 +126,7 @@ equal_prop <- function(result_file) {
     dev.off()
 }
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-prop.txt.gz')
+equal_prop('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-prop.txt.gz')
 
 ascertainment <- function(result_file) {
     pihat <- (read.table(gzfile(result_file), sep=' ') %>%

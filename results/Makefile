@@ -1,3 +1,5 @@
+HAPLOTYPES := /broad/hptmp/aksarkar/haplotypes
+DATA := -n 1000 -p 1000
 MODEL := gaussian --center
 METHOD := coord
 PVE := --true-pve
@@ -77,7 +79,13 @@ gaussian-h2:
 	parallel -j1 ctra-evaluate -a 1,1 -n 1000 -p 100 -v {} --true-pve -M coord -m gaussian -s 1 --write-data {} ::: 0.005 0.01 0.025 0.05
 
 IL27:
-	parallel --halt now,fail=1 -j1 gtool -S --g {}_16_chiamo.gz --s {}.sample --og {}_IL27.gen.gz --os {}_IL27.sample --start 18510683 --end 38518155 --sample_excl {}.exclude --exclusion snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
+	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_16_chiamo.gz --s $(HAPLOTYPES)/{}.sample --og {}_IL27.gen.gz --os {}_IL27.sample --start 18510683 --end 38518155 --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
+	gunzip *.sample.gz
+
+chr%:
+	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_$*_chiamo.gz --s $(HAPLOTYPES)/{}.sample --og {}_$*.gen.gz --os {}_$*.sample --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
+	gunzip *.sample.gz
+
 clean:
 	rm -f *.txt *.txt.gz
 

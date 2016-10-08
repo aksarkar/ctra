@@ -160,7 +160,7 @@ def evaluate():
                 x = numpy.array(list(itertools.islice(probs, args.num_variants)))
             p, n = x.shape
             if p < args.num_variants:
-                logger.error('{} variants present, but {} were specified'.format(len(p, args.p)))
+                logger.error('{} variants present, but {} were specified'.format(p, args.num_variants))
                 sys.exit(1)
             x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
             y = s.compute_liabilities(x)
