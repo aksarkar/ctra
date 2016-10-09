@@ -143,12 +143,13 @@ ascertainment <- function(result_file) {
           theme_nature +
           theme(legend.position=c(1, 1),
                 legend.justification=c(1, 1)))
-    Cairo(file='logistic-ascertained.pdf', type='pdf', height=panelheight,
+    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf', height=panelheight,
           width=panelheight, units='mm')
     print(p)
     dev.off()
 }
-ascertainment('/broad/compbio/aksarkar/projects/ctra/results/logistic-ascertained.txt.gz')
+ascertainment('/broad/compbio/aksarkar/projects/ctra/results/varbvs-logistic-ascertained.txt.gz')
+ascertainment('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained.txt.gz')
 
 joint_posterior <- function(weights_file) {
     weights <- read.table(weights_file, header=F, sep=' ')
