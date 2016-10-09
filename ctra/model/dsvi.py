@@ -50,9 +50,9 @@ class DSVI(ImportanceSampler):
 
         # Hyperparameters
         pi = T.vector(name='pi')
-        pi_deref = T.basic.choose(a, pi)
+        pi_deref = _S(_Z(p))
         tau = T.vector(name='tau')
-        tau_deref = T.basic.choose(a, tau)
+        tau_deref = _S(_Z(p))
 
         # Variational parameters
         alpha_raw = _S(_Z(p))
@@ -88,12 +88,11 @@ class DSVI(ImportanceSampler):
         # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114).
         mu = T.dot(X_s, alpha * beta)
         nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
-        random = T.shared_randomstreams.RandomStreams(seed=0)
         if stoch_samples is None and minibatch_n > 10:
             stoch_samples = 1
         else:
             stoch_samples = 10
-        eta_raw = random.normal(size=(stoch_samples, minibatch_n))
+        eta_raw = _S(numpy.random.normal(size=(stoch_samples, minibatch_n)).astype(_real))
         eta = mu + T.sqrt(nu) * eta_raw
 
         # Objective function
@@ -112,12 +111,16 @@ class DSVI(ImportanceSampler):
                                    self.params)]
 
         logger.debug('Compiling the Theano functions')
-        self._randomize = _F(inputs=[], outputs=[],
-                             updates=[(alpha_raw, _Z(p)), (beta, _N(p))])
-        a = T.vector()
-        b = T.vector()
-        self._initialize = _F(inputs=[a, b], outputs=[],
-                              updates=[(alpha_raw, a), (beta, b)],
+        self._randomize = _F(inputs=[pi, tau], outputs=[],
+                             updates=[(alpha_raw, _Z(p)), (beta, _N(p)),
+                                      (pi_deref, T.basic.choose(a, pi)),
+                                      (tau_deref, T.basic.choose(a, tau))])
+        alpha_ = T.vector()
+        beta_ = T.vector()
+        self._initialize = _F(inputs=[alpha_, beta_, pi, tau], outputs=[],
+                              updates=[(alpha_raw, alpha_), (beta, beta_),
+                                       (pi_deref, T.basic.choose(a, pi)),
+                                       (tau_deref, T.basic.choose(a, tau))],
                               allow_input_downcast=True)
 
         grad = T.grad(elbo, self.params)
@@ -151,10 +154,10 @@ class DSVI(ImportanceSampler):
         logger.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
         if params is None:
-            self._randomize()
+            self._randomize(**hyperparams)
         else:
             alpha, beta = params
-            self._initialize(scipy.special.expit(alpha), beta)
+            self._initialize(scipy.special.expit(alpha), beta, **hyperparams)
         converged = False
         t = 0
         ewma = 0
