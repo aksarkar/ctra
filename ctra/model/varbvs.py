@@ -49,4 +49,5 @@ def varbvs(x, y, pve, function, *args):
         else:
             weights = numpy.loadtxt(os.path.join(data, 'weights.txt'))
         return result(pi=numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1),
+                      pi_grid=numpy.arange(-3, 0.25, 0.25).reshape(-1, 1),
                       weights=weights)

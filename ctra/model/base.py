@@ -31,7 +31,7 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 # This is needed for models implemented as standalone functions rather than
 # instance methods
-result = collections.namedtuple('result', ['pi', 'weights'])
+result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights'])
 
 class ImportanceSampler:
     def __init__(self, X, y, a, pve, **kwargs):

@@ -124,7 +124,7 @@ def evaluate():
         raise _A('Method {} does not support model {}'.format(args.method, args.model))
     if args.method in ('mcmc', 'varbvs') and len(args.annotation) > 1:
         raise _A('Method {} does not support multiple annotations'.format(args.method))
-    if args.method in ('varbvs', 'mcmc') and args.write_weights is not None:
+    if args.method == 'mcmc' and args.write_weights is not None:
         raise _A('Method {} does not support writing weights'.format(args.method))
 
     logging.getLogger('ctra').setLevel(args.log_level)
