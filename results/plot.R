@@ -42,6 +42,7 @@ sample_size('/broad/compbio/aksarkar/projects/ctra/results/pcgc-gaussian-sample-
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-sample-size.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/one-empty-coord-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
