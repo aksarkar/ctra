@@ -79,15 +79,16 @@ joblist.4: guassian-h2
 gaussian-h2:
 	parallel -j1 ctra-evaluate -a 1,1 -n 1000 -p 100 -v {} --true-pve -M coord -m gaussian -s 1 --write-data {} ::: 0.005 0.01 0.025 0.05
 
-IL27:
-	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_16_chiamo.gz --s $(HAPLOTYPES)/{}.sample --og {}_IL27.gen.gz --os {}_IL27.sample --start 18510683 --end 38518155 --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
+chr%:
+	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_$*.lift.gz --s $(HAPLOTYPES)/{}.sample --og {}_$*.gen.gz --os {}_$*.sample --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
 	gunzip *.sample.gz
 
-chr%:
-	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_$*_chiamo.gz --s $(HAPLOTYPES)/{}.sample --og {}_$*.gen.gz --os {}_$*.sample --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
-	gunzip *.sample.gz
+annotations.txt:
+	zcat 58C_01.gen.gz | awk -vOFS='\t' '{print "chr"$$1, $$3, $$3 + length($$5) - length($$4)}' | bedtools intersect -sorted -nobuf -c -a stdin -b /broad/compbio/aksarkar/projects/roadmap/data/roadmap/core-features/Enh/E042.bed.gz | cut -f4 >$@
 
 clean:
 	rm -f *.txt *.txt.gz
+
+.DELETE_ON_ERROR:
 
 .PHONY: gaussian-h2 IL27

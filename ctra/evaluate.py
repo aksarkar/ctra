@@ -34,7 +34,7 @@ def evaluate():
     def Annotation(arg):
         num, var = arg.split(',')
         return (int(num), numpy.sqrt(float(var)))
-
+
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     parser.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     parser.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
@@ -63,10 +63,10 @@ def evaluate():
     parser.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     parser.add_argument('--load-data', help='Directory to load data', default=None)
     parser.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)')
+    parser.add_argument('-A', '--load-annotations', help='Annotation vector')
     parser.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     parser.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     args = parser.parse_args()
-
 
     # Check argument values
     if args.num_samples <= 0:
@@ -129,7 +129,6 @@ def evaluate():
 
     logging.getLogger('ctra').setLevel(args.log_level)
     logger.debug('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
-
 
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         if args.min_maf is not None or args.max_maf is not None:
@@ -138,6 +137,12 @@ def evaluate():
             if args.max_maf is None:
                 args.max_maf = 0.05
             s.sample_mafs(args.min_maf, args.max_maf)
+        if args.load_annotations is not None:
+            logger.debug('Loading pre-computed annotations')
+            a = numpy.loadtxt(args.load_annotations).astype('int')
+            if a.shape[0] != args.num_variants:
+                raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
+            s.load_annotations(a)
         if args.permute_causal:
             logger.debug('Generating effects with permuted causal indicator')
             s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
@@ -155,12 +160,12 @@ def evaluate():
                 merged = ctra.formats.merge_oxstats([d for _, _, _, d in data])
                 probs = ([float(x) for x in row[5:]] for row in merged)
                 if args.num_samples > len(samples):
-                    logger.error('{} individuals present, but {} were specified'.format(len(samples), args.num_samples))
+                    logger.error('{} individuals present in OXSTATS data, but {} were specified'.format(len(samples), args.num_samples))
                     sys.exit(1)
                 x = numpy.array(list(itertools.islice(probs, args.num_variants)))
             p, n = x.shape
             if p < args.num_variants:
-                logger.error('{} variants present, but {} were specified'.format(p, args.num_variants))
+                logger.error('{} variants present in OXSTATS data, but {} were specified'.format(p, args.num_variants))
                 sys.exit(1)
             x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
             y = s.compute_liabilities(x)

@@ -32,8 +32,9 @@ p(y | l) = p(l < t), y = 0; p(l > t), y = 1
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
-import logging
 import contextlib
+import collections
+import logging
 import pickle
 import os.path
 
@@ -81,6 +82,9 @@ class Simulation:
         # Keep the right-most index of each annotation
         self.annot_index = numpy.array([self.p])
         self.annot = numpy.zeros(self.p, dtype='int32')
+        # Internally, keep the annotations in contiguous subvectors. Keep the
+        # real annotations separately and de-reference when sampling effects
+        self.true_annot = None
 
     def _annotations(self):
         """Yield blocks of annotated SNPs"""
@@ -119,6 +123,21 @@ class Simulation:
             self.annot[start:end] = i
         return self
 
+    def load_annotations(self, a):
+        """Load vector of annotations.
+
+        a - p x 1 vector of annotations (0, ..., m - 1)
+
+        """
+        p_k = numpy.array(list(collections.Counter(a).values()), dtype='int')
+        self.annot_index = numpy.cumsum(p_k)
+        self.true_annot = numpy.zeros(self.p, dtype='int')
+        for i, (start, end) in enumerate(self._annotations()):
+            self.annot[start:end] = i
+            self.true_annot[start:end] = numpy.nonzero(a == i)[0]
+        self.annot = self.annot[self.true_annot]
+        return self
+
     def sample_effects(self, pve, annotation_params=None, permute=False):
         """Generate SNP effects according to annotations.
 
@@ -149,6 +168,11 @@ class Simulation:
             self.theta[start:end][:num] = R.normal(scale=scale, size=num)
             if permute:
                 self.theta[start:end] = R.permutation(self.theta[start:end])
+
+        # De-reference the internal representation according to the true
+        # annotation
+        if self.true_annot is not None:
+            self.theta = self.theta[self.true_annot]
 
         # Keep genetic variance as a vector (per-SNP) for quicker case-control
         # sampling: at each step we need the remaining variance. Don't ignore
