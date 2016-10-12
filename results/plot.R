@@ -170,7 +170,7 @@ joint_posterior <- function(weights_file) {
           theme(panel.margin=unit(3, 'mm')))
     Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
           height=2 * panelheight, width=7 * panelheight, units='mm')
-    grid.arrange(p0, p1, nrow=2)
+    gridExtra::grid.arrange(p0, p1, nrow=2)
     dev.off()
 }
 joint_posterior('/broad/hptmp/aksarkar/test/weights.txt')
