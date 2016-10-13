@@ -110,6 +110,15 @@ class Simulation:
         self.x_var = 2 * self.maf * (1 - self.maf)
         return self        
 
+    def estimate_mafs(self, x):
+        logger.debug('Estimating minor allele frequencies from loaded data')
+        self.maf = x.mean(axis=1)
+        flip = numpy.where(self.maf > 0.5)
+        self.maf[flip] = 1 - self.maf[flip]
+        self.x_mean = 2 * self.maf
+        self.x_var = 2 * self.maf * (1 - self.maf)
+        return self
+
     def sample_annotations(self, proportion=None):
         """Generate annotations covering target proportion of SNPs.
 

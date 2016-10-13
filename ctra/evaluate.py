@@ -170,6 +170,7 @@ def evaluate():
                 logger.error('{} variants present in OXSTATS data, but {} were specified'.format(p, args.num_variants))
                 sys.exit(1)
             x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
+            s.estimate_mafs(x)
             y = s.compute_liabilities(x)
         elif args.prevalence is not None:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
