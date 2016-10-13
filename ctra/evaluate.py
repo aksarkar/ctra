@@ -19,6 +19,7 @@ import os.path
 import sys
 
 import numpy
+import scipy.linalg
 
 import ctra.algorithms
 import ctra.formats
@@ -66,6 +67,7 @@ def evaluate():
     parser.add_argument('-A', '--load-annotations', help='Annotation vector')
     parser.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     parser.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
+    parser.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
     args = parser.parse_args()
 
     # Check argument values
@@ -179,6 +181,12 @@ def evaluate():
         if args.normalize:
             x /= x.var(axis=0)
             y /= y.var()
+        if args.rotate:
+            logger.info('Computing SVD of genotypes')
+            _, v = scipy.linalg.eigh(numpy.inner(x, x))
+            rotation = scipy.linalg.inv(v)
+            y = rotation.dot(y)
+            x = rotation.dot(x)
         if args.write_data is not None:
             if not os.path.exists(args.write_data):
                 os.mkdir(args.write_data)
