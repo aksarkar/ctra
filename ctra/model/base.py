@@ -41,7 +41,7 @@ class ImportanceSampler:
         self.p = numpy.array(list(collections.Counter(self.a).values()), dtype='int')
         self.pve = pve
         self.var_x = numpy.array([X[:,a == i].var(axis=0).sum() for i in range(1 + max(a))])
-        self.eps = numpy.finfo(float).eps
+        self.eps = 1e-8
         logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _log_weight(self, params=None, true_causal=None, **hyperparams):

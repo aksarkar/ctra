@@ -180,6 +180,21 @@ class DSVI(ImportanceSampler):
                     alpha, beta = self._opt()
         return ewma, (alpha, beta)
 
+class GaussianDSVI(DSVI):
+    def __init__(self, X, y, a, pve, **kwargs):
+        # This needs to be instantiated before building the rest of the Theano
+        # graph since self._llik refers to it
+        _sigma2 = theano.shared(numpy.array([pve.sum() * y.var()],
+                                            dtype=_real))
+        self.sigma2 = T.addbroadcast(_sigma2, 0)
+        logger.debug('Fixing sigma2 to {}'.format(_sigma2.get_value()))
+        super().__init__(X, y, a, pve, params=[self.sigma2], **kwargs)
+
+    def _llik(self, y, eta):
+        """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""
+        F = -.5 * (T.log(self.sigma2) + T.sqr(y - eta) / self.sigma2)
+        return T.mean(T.sum(F, axis=1))
+
 class LogisticDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
         # This needs to be instantiated before building the rest of the Theano

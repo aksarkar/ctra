@@ -122,7 +122,7 @@ def evaluate():
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
     if args.method != 'mcmc' and any(k in args for k in ('burn_in', 'mcmc_samples')):
         logger.warn('Ignoring MCMC parameters for method {}'.format(args.method))
-    if (args.method, args.model) in (('dsvi', 'gaussian'), ('mcmc', 'logistic')):
+    if (args.method, args.model) in (('mcmc', 'logistic')):
         raise _A('Method {} does not support model {}'.format(args.method, args.model))
     if args.method in ('mcmc', 'varbvs') and len(args.annotation) > 1:
         raise _A('Method {} does not support multiple annotations'.format(args.method))
@@ -222,10 +222,14 @@ def evaluate():
             m = ctra.model.varbvs(x, y, pve, 'bvsmcmc', args.burn_in,
                                   args.mcmc_samples, args.seed)
         else:
-            m = ctra.model.LogisticDSVI(x, y, s.annot, K=args.prevalence,
-                                        pve=pve,
-                                        learning_rate=args.learning_rate,
-                                        minibatch_n=args.minibatch_size)
+            if args.model == 'gaussian':
+                model = ctra.model.GaussianDSVI
+            else:
+                model = ctra.model.LogisticDSVI
+            m = model(x, y, s.annot, K=args.prevalence,
+                      pve=pve,
+                      learning_rate=args.learning_rate,
+                      minibatch_n=args.minibatch_size)
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight, **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')

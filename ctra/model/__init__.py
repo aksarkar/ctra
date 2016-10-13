@@ -1,7 +1,9 @@
-from .coord import GaussianCoordinateAscent, LogisticCoordinateAscent
-from .dsvi import LogisticDSVI
-from .varbvs import varbvs
-from .pcgc import estimate as pcgc, grm
+from .coord import *
+from .dsvi import *
+from .varbvs import *
+from .pcgc import *
 
-__all__ = [GaussianCoordinateAscent, LogisticCoordinateAscent, LogisticDSVI,
-           varbvs, pcgc, grm]
+pcgc = estimate
+
+__all__ = [GaussianCoordinateAscent, LogisticCoordinateAscent,
+           GaussianDSVI, LogisticDSVI, varbvs, pcgc, grm]
