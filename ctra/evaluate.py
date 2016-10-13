@@ -1,9 +1,8 @@
 """Evaluate the accuracy of the model
 
-We want to recover the correct pi and tau, and also the correct posterior on
-theta and z. We use the distribution of parameter estimates in simulated
-training sets for the first, and AUPRC on a simulated validation set for the
-second.
+This module provides the entry point for the simulation study. This is needed
+because the development compute environment has strict memory limits and
+low-level concurrency primitives.
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
