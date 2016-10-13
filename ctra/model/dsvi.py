@@ -128,12 +128,12 @@ class DSVI(ImportanceSampler):
             learning_rate = numpy.array(5e-2 / minibatch_n, dtype=_real)
         logger.debug('Minibatch size = {}'.format(minibatch_n))
         logger.debug('Initial learning rate = {}'.format(learning_rate))
-        self.vb_step = _F(inputs=[epoch, pi, tau],
+        self.vb_step = _F(inputs=[epoch],
                           outputs=elbo,
                           updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
                                    for p_, g, cv in zip(self.params, grad, control)])
 
-        self._opt = _F(inputs=[pi, tau], outputs=[alpha, beta])
+        self._opt = _F(inputs=[], outputs=[alpha, beta])
         logger.debug('Finished initializing')
 
     def _llik(self, *args):
@@ -164,7 +164,7 @@ class DSVI(ImportanceSampler):
         ewma_ = ewma
         while not converged:
             t += 1
-            elbo = self.vb_step(epoch=t, **hyperparams)
+            elbo = self.vb_step(epoch=t)
             assert numpy.isfinite(elbo)
             if t < poll_iters:
                 ewma += elbo / poll_iters
@@ -177,7 +177,7 @@ class DSVI(ImportanceSampler):
                     converged = True
                 else:
                     ewma_ = ewma
-                    alpha, beta = self._opt(**hyperparams)
+                    alpha, beta = self._opt()
         return ewma, (alpha, beta)
 
 class LogisticDSVI(DSVI):
