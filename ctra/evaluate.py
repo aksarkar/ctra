@@ -46,7 +46,7 @@ def evaluate():
 
     data_args = parser.add_argument_group('Input/output', 'Loading and writing data files')
     data_args.add_argument('--load-data', help='Directory to load data', default=None)
-    data_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)')
+    data_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     data_args.add_argument('-A', '--load-annotations', help='Annotation vector')
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
@@ -72,6 +72,7 @@ def evaluate():
     vb_args.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    vb_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
 
     mcmc_args = parser.add_argument_group('MCMC', 'Parameters for tuning MCMC inference')
     mcmc_args.add_argument('-B', '--burn-in', type=int, help='Burn in samples for MCMC', default=int(1e5))
@@ -126,6 +127,7 @@ def evaluate():
             raise _A('Annotation {} must have between 0 and {} causal variants ({} specified)'.format(i, max_, num))
         if var <= 0:
             raise _A('Annotation {} must have positive effect size variance'.format(i))
+
     # Check if desired method is supported
     if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
@@ -137,6 +139,8 @@ def evaluate():
         raise _A('Method {} does not support multiple annotations'.format(args.method))
     if args.method == 'mcmc' and args.write_weights is not None:
         raise _A('Method {} does not support writing weights'.format(args.method))
+    if args.parametric_bootstrap is not None and (args.load_data is not None or args.load_oxstats is not None):
+        raise _A('Parametric bootstrap not supported for real data')
 
     logging.getLogger('ctra').setLevel(args.log_level)
     logger.debug('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
@@ -157,6 +161,7 @@ def evaluate():
         if args.permute_causal:
             logger.debug('Generating effects with permuted causal indicator')
             s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
+
         if args.load_data is not None:
             with open(os.path.join(args.load_data, 'genotypes.txt'), 'rb') as f:
                 x = numpy.loadtxt(f)
@@ -181,10 +186,18 @@ def evaluate():
             x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
             s.estimate_mafs(x)
             y = s.compute_liabilities(x)
-        elif args.prevalence is not None:
-            x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         else:
-            x, y = s.sample_gaussian(n=args.num_samples)
+            if args.parametric_bootstrap is None:
+                # Without bootstrapping, we take the first sample from the
+                # generative model
+                args.parametric_bootstrap = 0
+            else:
+                logger.debug('Burning in {} samples for parametric bootstrap sample {}'.format(args.num_samples * args.parametric_bootstrap, args.parametric_bootstrap))
+            for _ in range(args.parametric_bootstrap + 1):
+                if args.prevalence is not None:
+                    x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
+                else:
+                    x, y = s.sample_gaussian(n=args.num_samples)
         if args.center or args.normalize:
             x -= x.mean(axis=0)
             y -= y.mean()
@@ -207,6 +220,7 @@ def evaluate():
             with open(os.path.join(args.write_data, 'theta.txt'), 'wb') as f:
                 numpy.savetxt(f, s.theta, fmt='%.3f')
             return
+
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
                                for a in range(1 + max(s.annot))])
