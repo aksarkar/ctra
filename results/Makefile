@@ -5,6 +5,7 @@ METHOD := coord
 PVE := --true-pve
 GENO :=
 EMPTY :=
+BOOTSTRAP := parametric-bootstrap
 
 %.txt.gz:
 	awk 'FNR == 1 {sub("./$*-", "", FILENAME); sub(".txt", "", FILENAME); gsub("-", " ", FILENAME)} {print FILENAME, FNR, $$1}' ./$*-*.txt | sort -k1,4n | gzip >$@
@@ -80,7 +81,7 @@ gaussian-h2:
 	parallel -j1 ctra-evaluate -a 1,1 -n 1000 -p 100 -v {} --true-pve -M coord -m gaussian -s 1 --write-data {} ::: 0.005 0.01 0.025 0.05
 
 joblist.5:
-	parallel --dry-run "ctra-evaluate -a 10,1 -n 100 -p 100 -v 0.2 --true-pve -M coord -m gaussian --center --rotate -s 0 --parametric-bootstrap {} >coord-gaussian-parametric-bootstrap-{}.txt" ::: $$(seq 0 99) >$@
+	parallel --dry-run "ctra-evaluate -a 10,1 -n 100 -p 100 -v 0.2 --true-pve -M coord -m gaussian --center --rotate -s 0 --$(BOOTSTRAP) {} >coord-gaussian-$(BOOTSTRAP)-{}.txt" ::: $$(seq 0 99) >$@
 
 chr%:
 	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_$*.lift.gz --s $(HAPLOTYPES)/{}.sample --og {}_$*.gen.gz --os {}_$*.sample --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D

@@ -72,7 +72,10 @@ def evaluate():
     vb_args.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
-    vb_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
+
+    bootstrap_args = parser.add_mutually_exclusive_group()
+    bootstrap_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
+    bootstrap_args.add_argument('--nonparametric-bootstrap', type=int, help='Nonparametric bootstrap trial for frequentist standard errors', default=None)
 
     mcmc_args = parser.add_argument_group('MCMC', 'Parameters for tuning MCMC inference')
     mcmc_args.add_argument('-B', '--burn-in', type=int, help='Burn in samples for MCMC', default=int(1e5))
@@ -198,6 +201,11 @@ def evaluate():
                     x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
                 else:
                     x, y = s.sample_gaussian(n=args.num_samples)
+            if args.nonparametric_bootstrap is not None:
+                for _ in range(args.nonparametric_bootstrap):
+                    sample = numpy.random.choice(args.num_samples, args.num_samples)
+                x = x[sample,:]
+                y = y[sample]
         if args.center or args.normalize:
             x -= x.mean(axis=0)
             y -= y.mean()
