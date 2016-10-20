@@ -31,7 +31,7 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 # This is needed for models implemented as standalone functions rather than
 # instance methods
-result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights'])
+result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params'])
 
 class ImportanceSampler:
     def __init__(self, X, y, a, pve, **kwargs):
@@ -84,10 +84,11 @@ class ImportanceSampler:
         # Perform importance sampling, using ELBO instead of the marginal
         # likelihood
         log_weights = numpy.zeros(shape=len(proposals))
+        self.params = []
         logger.info('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
-            log_weights[i], *_ = self._log_weight(pi=pi[i], tau=tau[i],
-                                                  params=params, **kwargs)
+            log_weights[i], params_ = self._log_weight(pi=pi[i], tau=tau[i], params=params, **kwargs)
+            self.params.append(params_)
 
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
