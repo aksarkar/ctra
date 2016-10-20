@@ -27,14 +27,12 @@ import ctra.simulation
 
 logger = logging.getLogger(__name__)
 
-def evaluate():
-    """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
+def _parser():
     _A = argparse.ArgumentTypeError
 
     def Annotation(arg):
         num, var = arg.split(',')
         return (int(num), numpy.sqrt(float(var)))
-
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     req_args = parser.add_argument_group('Required arguments', '')
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
@@ -81,8 +79,9 @@ def evaluate():
     mcmc_args.add_argument('-B', '--burn-in', type=int, help='Burn in samples for MCMC', default=int(1e5))
     mcmc_args.add_argument('-S', '--mcmc-samples', type=int, help='Number of posterior samples for MCMC', default=int(1e3))
 
-    args = parser.parse_args()
-
+    return parser
+
+def _validate(args):
     # Check argument values
     if args.num_samples <= 0:
         raise _A('Number of samples must be positive')
@@ -130,7 +129,7 @@ def evaluate():
             raise _A('Annotation {} must have between 0 and {} causal variants ({} specified)'.format(i, max_, num))
         if var <= 0:
             raise _A('Annotation {} must have positive effect size variance'.format(i))
-
+
     # Check if desired method is supported
     if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
@@ -145,9 +144,13 @@ def evaluate():
     if args.parametric_bootstrap is not None and (args.load_data is not None or args.load_oxstats is not None):
         raise _A('Parametric bootstrap not supported for real data')
 
+def evaluate():
+    """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
+
+    args = _parser().parse_args()
+    _validate(args)
     logging.getLogger('ctra').setLevel(args.log_level)
     logger.debug('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
-
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         if args.min_maf is not None or args.max_maf is not None:
             if args.min_maf is None:
