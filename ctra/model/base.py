@@ -98,4 +98,3 @@ class ImportanceSampler:
         self.pi_grid = pi
         self.pi = normalized_weights.dot(pi)
         return self
-

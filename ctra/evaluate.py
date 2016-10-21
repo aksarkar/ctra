@@ -18,6 +18,7 @@ import os.path
 import sys
 
 import numpy
+import scipy.stats
 import scipy.linalg
 
 import ctra.algorithms
@@ -74,6 +75,7 @@ def _parser():
     bootstrap_args = parser.add_mutually_exclusive_group()
     bootstrap_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
     bootstrap_args.add_argument('--nonparametric-bootstrap', type=int, help='Nonparametric bootstrap trial for frequentist standard errors', default=None)
+    bootstrap_args.add_argument('--ppc', type=int, help='Hold out validation set for posterior predictive check', default=None)
 
     mcmc_args = parser.add_argument_group('MCMC', 'Parameters for tuning MCMC inference')
     mcmc_args.add_argument('-B', '--burn-in', type=int, help='Burn in samples for MCMC', default=int(1e5))
@@ -143,6 +145,8 @@ def _validate(args):
         raise _A('Method {} does not support writing weights'.format(args.method))
     if args.parametric_bootstrap is not None and (args.load_data is not None or args.load_oxstats is not None):
         raise _A('Parametric bootstrap not supported for real data')
+    if args.ppc is not None and args.method in ('mcmc'):
+        raise _A('Method {} does not support posterior predictive check'.format(args.method))
 
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
@@ -168,6 +172,8 @@ def evaluate():
             logger.debug('Generating effects with permuted causal indicator')
             s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
 
+        if args.ppc is not None:
+            args.num_samples += args.ppc
         if args.load_data is not None:
             with open(os.path.join(args.load_data, 'genotypes.txt'), 'rb') as f:
                 x = numpy.loadtxt(f)
@@ -231,6 +237,11 @@ def evaluate():
             with open(os.path.join(args.write_data, 'theta.txt'), 'wb') as f:
                 numpy.savetxt(f, s.theta, fmt='%.3f')
             return
+        if args.ppc is not None:
+            x_validate = x[-args.ppc:]
+            y_validate = y[-args.ppc:]
+            x = x[:-args.ppc]
+            y = y[:-args.ppc]
 
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
@@ -272,5 +283,23 @@ def evaluate():
                 for p, w in zip(m.pi_grid, m.weights):
                     print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
                                          w), file=f)
+        if args.ppc is not None:
+            theta = numpy.array([alpha * beta for alpha, beta, *_ in m.params]).T
+            if args.model == 'logistic' and method == 'dsvi':
+                y_hat += numpy.array([var.get_value() for _, _, var in m.params]).dot(m.weights)
+            y_hat = x.dot(theta.dot(m.weights))
+            with open('training.txt', 'w') as f:
+                for i in zip(y, y_hat):
+                    print(*i, file=f)
+            r, _ = scipy.stats.pearsonr(y, y_hat)
+            logger.info('Training set correlation = {:.3f}'.format(r ** 2))
+            y_hat = x_validate.dot(theta.dot(m.weights))
+            if args.model == 'logistic' and method == 'dsvi':
+                y_hat += numpy.array([var.get_value() for _, _, var in m.params]).dot(m.weights)
+            with open('validation.txt', 'w') as f:
+                for i in zip(y_validate, y_hat):
+                    print(*i, file=f)
+            r, _ = scipy.stats.pearsonr(y_validate, y_hat)
+            logger.info('Validation set correlation = {:.3f}'.format(r ** 2))
         logger.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
