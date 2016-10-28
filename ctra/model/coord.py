@@ -47,7 +47,10 @@ class GaussianCoordinateAscent(CoordinateAscent):
             beta = _R.normal(size=p)
             sigma2 = y.var()
         else:
-            alpha, beta, sigma2 = params
+            alpha_, beta_, sigma2_ = params
+            alpha = alpha_.copy()
+            beta = beta_.copy()
+            sigma2 = sigma2_.copy()
         logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve,
                                                                    'pi': pi,
                                                                    'tau': tau,
@@ -135,7 +138,10 @@ class LogisticCoordinateAscent(CoordinateAscent):
             beta = _R.normal(size=p)
             zeta = numpy.ones(n)
         else:
-            alpha, beta, zeta = params
+            alpha_, beta_, sigma2_ = params
+            alpha = alpha_.copy()
+            beta = beta_.copy()
+            sigma2 = sigma2_.copy()
         logger.debug('Starting coordinate ascent given {}'.format({'pve': self.pve, 'pi': pi, 'tau': tau}))
         # Precompute things
         eta = X.dot(alpha * beta).reshape(-1, 1)
