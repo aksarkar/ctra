@@ -212,7 +212,7 @@ def evaluate():
                     x, y = s.sample_gaussian(n=args.num_samples)
             if args.nonparametric_bootstrap is not None:
                 for _ in range(args.nonparametric_bootstrap):
-                    sample = numpy.random.choice(args.num_samples, args.num_samples)
+                    sample = s.random.choice(args.num_samples, args.num_samples)
                 x = x[sample,:]
                 y = y[sample]
         if args.center or args.normalize:

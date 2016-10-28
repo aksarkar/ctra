@@ -41,7 +41,6 @@ import os.path
 import numpy
 import scipy.stats
 
-R = numpy.random
 _N = scipy.stats.norm()
 
 logger = logging.getLogger(__name__)
@@ -72,7 +71,9 @@ class Simulation:
 
         """
         logging.info('Initializing simulation')
-        R.seed(seed)
+        # This is needed to properly handle initializing from a pickled
+        # simulation
+        self.random = numpy.random.RandomState(seed)
         self.p = p
         self.sample_mafs(min_maf, max_maf)
         # Should raise an exception if this is used before sampling
@@ -103,7 +104,7 @@ class Simulation:
 
         """
         logger.debug('Sampling minor allele frequencies')
-        self.maf = R.uniform(min_maf, max_maf, size=self.p)
+        self.maf = self.random.uniform(min_maf, max_maf, size=self.p)
         # Population mean and variance of genotype, according to the binomial
         # distribution
         self.x_mean = 2 * self.maf
@@ -174,9 +175,9 @@ class Simulation:
         logging.info('Sampling SNP parameters')
         self.theta = numpy.zeros(self.p)
         for (num, scale), (start, end) in zip(annotation_params, self._annotations()):
-            self.theta[start:end][:num] = R.normal(scale=scale, size=num)
+            self.theta[start:end][:num] = self.random.normal(scale=scale, size=num)
             if permute:
-                self.theta[start:end] = R.permutation(self.theta[start:end])
+                self.theta[start:end] = self.random.permutation(self.theta[start:end])
 
         # De-reference the internal representation according to the true
         # annotation
@@ -199,7 +200,7 @@ class Simulation:
         following de los Campos et al. PLoS Genet 2015.
 
         """
-        x = R.binomial(2, self.maf, size=(n, self.p)) - self.x_mean
+        x = self.random.binomial(2, self.maf, size=(n, self.p)) - self.x_mean
         return x
 
     def compute_liabilities(self, x, normalize=False):
@@ -207,7 +208,7 @@ class Simulation:
         if self.theta is None:
             raise ValueError('Need to sample theta first')
         genetic_value = x.dot(self.theta)
-        genetic_value += numpy.sqrt(self.residual_var) * R.normal(size=x.shape[0])
+        genetic_value += numpy.sqrt(self.residual_var) * self.random.normal(size=x.shape[0])
         if normalize:
             genetic_value /= numpy.sqrt(self.pheno_var)
         return genetic_value
