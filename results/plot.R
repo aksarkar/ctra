@@ -223,9 +223,20 @@ pi_prior <- function() {
 pi_prior()
 
 bvs_posterior <- function(x, y, t0, t1, sigma, rho, scale) {
-    (sum(dnorm(y, x[,1:2] %*% c(t0, t1), sigma, log=TRUE)) +
-     dnorm(t0, 0, scale, log=TRUE) +
-     dnorm(t1, 0, scale, log=TRUE))
+    llik <- (sum(dnorm(y, x[,1:2] %*% c(t0, t1), sigma, log=TRUE)) +
+             2 * log(0.01) +
+             dnorm(t0, 0, scale, log=TRUE) +
+             dnorm(t1, 0, scale, log=TRUE))
+    if (t0 == 0) {
+        llik <- llik + log(0.01) + log(0.99) + dnorm(t1, 0, scale, log=TRUE)
+    }
+    if (t1 == 0) {
+        llik <- llik + log(0.01) + log(0.99) + dnorm(t0, 0, scale, log=TRUE)
+    }
+    if (t0 == 0 & t1 == 0) {
+        llik <- llik + 2 * log(0.99)
+    }
+    llik
 }
 
 posterior_contour <- function(args) {
@@ -264,7 +275,7 @@ posterior_contour <- function(args) {
           scale_color_gradient(low='#fee8c8', high='#e34a33') +
           labs(title=substitute(paste(h^2, '=', pve, ',', n, '=', n_),
                                 list(pve=sprintf('%.3f', pve), n_=dim(Y)[1])),
-               x=expression(theta[0]), y=expression(theta[1])) +
+               x=expression(theta[1]), y=expression(theta[2])) +
           scale_x_continuous(expand=c(0, 0)) +
           scale_y_continuous(expand=c(0, 0)) +
           theme_nature +
@@ -280,8 +291,9 @@ plot_posterior_contour <- function(root) {
     pve <- c('0.005', '0.01', '0.025', '0.05')
     n <- c('5000', '10000', '50000', '100000')
     pi_ <- 0.01
-    plots <- (expand.grid(c(.01), n, pi_) %>%
-              dplyr::mutate(dir_=paste(root, sprintf('%s-%s', Var1, n), sep='/'), pi_=Var3) %>%
+    plots <- (expand.grid(pve, n, pi_) %>%
+              dplyr::mutate(dir_=paste(root, sprintf('%s-%s', Var1, Var2), sep='/'), pi_=Var3) %>%
+              dplyr::filter(file.exists(dir_)) %>%
               dplyr::group_by(dir_, pi_) %>%
               dplyr::do(plot=posterior_contour(.)))
 }
