@@ -243,7 +243,7 @@ posterior_contour <- function(args) {
     tau <- (1 - pve) * pi_ * sum(apply(X, 2, var)) / pve
     scale <- sqrt(1 / tau)
     rho <- 1
-    theta0 <- seq(-1, 1, length.out=100)
+    theta0 <- seq(-1.5, 1.5, length.out=100)
     posterior <- (
         expand.grid(theta0, theta0) %>%
         dplyr::select(x=Var1, y=Var2) %>%
@@ -262,7 +262,8 @@ posterior_contour <- function(args) {
           geom_hline(yintercept=0, size=I(.1)) +
           geom_vline(xintercept=0, size=I(.1)) +
           scale_color_gradient(low='#fee8c8', high='#e34a33') +
-          labs(title=substitute(paste(h^2, '=', pve), list(pve=sprintf('%.3f', pve))),
+          labs(title=substitute(paste(h^2, '=', pve, ',', n, '=', n_),
+                                list(pve=sprintf('%.3f', pve), n_=dim(Y)[1])),
                x=expression(theta[0]), y=expression(theta[1])) +
           scale_x_continuous(expand=c(0, 0)) +
           scale_y_continuous(expand=c(0, 0)) +
@@ -277,9 +278,10 @@ posterior_contour <- function(args) {
 
 plot_posterior_contour <- function(root) {
     pve <- c('0.005', '0.01', '0.025', '0.05')
+    n <- c('5000', '10000', '50000', '100000')
     pi_ <- 0.01
-    plots <- (expand.grid(pve, pi_) %>%
-              dplyr::mutate(dir_=paste(root, pve, sep='/'), pi_=Var2) %>%
+    plots <- (expand.grid(c(.01), n, pi_) %>%
+              dplyr::mutate(dir_=paste(root, sprintf('%s-%s', Var1, n), sep='/'), pi_=Var3) %>%
               dplyr::group_by(dir_, pi_) %>%
               dplyr::do(plot=posterior_contour(.)))
 }
