@@ -173,7 +173,7 @@ joint_posterior <- function(weights_file) {
     gridExtra::grid.arrange(p0, p1, nrow=2)
     dev.off()
 }
-joint_posterior('/broad/hptmp/aksarkar/test/weights.txt')
+joint_posterior('/broad/hptmp/aksarkar/ctra-evaluate/weights.txt')
 
 pi_versus_h2 <- function(result_file) {
     result <- (
@@ -283,7 +283,7 @@ plot_posterior_contour <- function(root) {
               dplyr::group_by(dir_, pi_) %>%
               dplyr::do(plot=posterior_contour(.)))
 }
-plot_posterior_contour('/broad/hptmp/aksarkar/test')
+plot_posterior_contour('/broad/hptmp/aksarkar/ctra-evaluate')
 
 ep_posterior <- function(root) {
     x <- as.matrix(read.table(paste(root, 'genotypes.txt', sep='/')))
@@ -306,7 +306,7 @@ ep_posterior <- function(root) {
     print(posterior)
     dev.off()
 }
-ep_posterior('/broad/hptmp/aksarkar/test')
+ep_posterior('/broad/hptmp/aksarkar/ctra-evaluate')
 
 pi_posterior <- function(weights_file) {
     weights <- (read.table(weights_file, sep=' ') %>%
@@ -324,4 +324,4 @@ pi_posterior <- function(weights_file) {
     print(p)
     dev.off()
 }
-pi_posterior('/broad/hptmp/aksarkar/test/weights.txt')
+pi_posterior('/broad/hptmp/aksarkar/ctra-evaluate/weights.txt')
