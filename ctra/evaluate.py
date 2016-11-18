@@ -73,6 +73,7 @@ def _parser():
     vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
 
     bootstrap_args = parser.add_mutually_exclusive_group()
+    bootstrap_args.add_argument('--resample', action='store_true', help='Resample genotypes to desired sample size')
     bootstrap_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
     bootstrap_args.add_argument('--nonparametric-bootstrap', type=int, help='Nonparametric bootstrap trial for frequentist standard errors', default=None)
     bootstrap_args.add_argument('--validation', type=int, help='Hold out validation set for posterior predictive check', default=None)
@@ -187,7 +188,7 @@ def evaluate():
                 samples = list(itertools.chain.from_iterable(s for _, _, s, _ in data))
                 merged = ctra.formats.merge_oxstats([d for _, _, _, d in data])
                 probs = ([float(x) for x in row[5:]] for row in merged)
-                if args.num_samples > len(samples):
+                if args.num_samples > len(samples) and not args.resample:
                     logger.error('{} individuals present in OXSTATS data, but {} were specified'.format(len(samples), args.num_samples))
                     sys.exit(1)
                 x = numpy.array(list(itertools.islice(probs, args.num_variants)))
@@ -195,8 +196,16 @@ def evaluate():
             if p < args.num_variants:
                 logger.error('{} variants present in OXSTATS data, but {} were specified'.format(p, args.num_variants))
                 sys.exit(1)
-            x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:min(args.num_samples, n // 3),:]
+            if not args.resample and args.num_samples < n // 3:
+                n = args.num_samples
+            else:
+                n = n // 3
+            x = (x.reshape(p, -1, 3) * numpy.array([0, 1, 2])).sum(axis=2).T[:n,:]
             s.estimate_mafs(x)
+            if args.resample:
+                logger.debug('Resampling individuals')
+                index = s.random.choice(x.shape[0], size=args.num_samples)
+                x = x[index,:]
             y = s.compute_liabilities(x)
         else:
             if args.parametric_bootstrap is None:
