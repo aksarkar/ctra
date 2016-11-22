@@ -1,9 +1,9 @@
 HAPLOTYPES := /broad/hptmp/aksarkar/haplotypes
-DATA := -n 1000 -p 1000
+GENO :=
+DATA := -n 1000 -p 1000 $(GENO)
 MODEL := gaussian --center
 METHOD := coord
 PVE := --true-pve
-GENO :=
 EMPTY :=
 BOOTSTRAP := parametric-bootstrap
 
@@ -83,9 +83,22 @@ gaussian-h2:
 joblist.5:
 	parallel --dry-run "ctra-evaluate -a 10,1 -n 100 -p 100 -v 0.2 --true-pve -M coord -m gaussian --center --rotate -s 0 --$(BOOTSTRAP) {} >coord-gaussian-$(BOOTSTRAP)-{}.txt" ::: $$(seq 0 99) >$@
 
+pre:
+	parallel -X ln -sf {} . ::: $(HAPLOTYPES:haplotypes=1kg-phase1)/*.gen.gz $(HAPLOTYPES)/*.sample
+	touch $@
+
 chr%:
 	parallel --halt now,fail=1 -j1 gtool -S --g $(HAPLOTYPES)/{}_$*.lift.gz --s $(HAPLOTYPES)/{}.sample --og {}_$*.gen.gz --os {}_$*.sample --sample_excl $(HAPLOTYPES)/{}.exclude --exclusion $(HAPLOTYPES)/snps.exclude ::: 58C NBS BD CAD CD HT RA T1D T2D
 	gunzip *.sample.gz
+	touch $@
+
+imputed-posterior: pre
+	parallel -j1 ctra-evaluate -a 1,1 -n 5000 -p 100 --load-oxstats {58C,NBS,BD,CAD,CD,HT,RA,T1D,T2D}{.sample,_22.gen.gz} --resample -v {} --true-pve -M coord -m gaussian --center -s 0 --write-data {}-5000 ::: 0.005 0.01 0.025 0.05
+	parallel -j1 ctra-evaluate -a 1,1 -n {} -p 100 --load-oxstats {58C,NBS,BD,CAD,CD,HT,RA,T1D,T2D}{.sample,_22.gen.gz} --resample -v 0.01 --true-pve -M coord -m gaussian --center -s 0 --write-data 0.01-{} ::: 5000 10000 50000 100000
+
+array-posterior: chr22
+	parallel -j1 ctra-evaluate -a 1,1 -n 5000 -p 100 --load-oxstats {58C,NBS,BD,CAD,CD,HT,RA,T1D,T2D}_22.{sample,gen.gz} --resample -v {} --true-pve -M coord -m gaussian --center -s 0 --write-data {}-5000 ::: 0.005 0.01 0.025 0.05
+	parallel -j1 ctra-evaluate -a 1,1 -n {} -p 100 --load-oxstats {58C,NBS,BD,CAD,CD,HT,RA,T1D,T2D}_22.{sample,gen.gz} --resample -v 0.01 --true-pve -M coord -m gaussian --center -s 0 --write-data 0.01-{} ::: 5000 10000 50000 100000
 
 annotations.txt:
 	zcat 58C_01.gen.gz | awk -vOFS='\t' '{print "chr"$$1, $$3, $$3 + length($$5) - length($$4)}' | bedtools intersect -sorted -nobuf -c -a stdin -b /broad/compbio/aksarkar/projects/roadmap/data/roadmap/core-features/Enh/E042.bed.gz | cut -f4 >$@
