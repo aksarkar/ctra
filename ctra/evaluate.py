@@ -49,6 +49,7 @@ def _parser():
     data_args.add_argument('-A', '--load-annotations', help='Annotation vector')
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
+    data_args.add_argument('-f', '--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
@@ -148,6 +149,10 @@ def _validate(args):
         raise _A('Parametric bootstrap not supported for real data')
     if args.validation is not None and args.method in ('mcmc'):
         raise _A('Method {} does not support posterior predictive check'.format(args.method))
+    if args.bayes_factor and len(args.annotation) == 1:
+        raise _A('Model comparison not supported for only one annotation')
+    if args.bayes_factor and args.method in ('mcmc', 'varbvs'):
+        raise _A('Model comparison not supported for method {}'.format(args.method))
 
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
@@ -270,6 +275,10 @@ def evaluate():
             else:
                 model = ctra.model.LogisticCoordinateAscent
             m = model(x, y, s.annot, pve).fit(atol=args.tolerance, **kwargs)
+            if args.bayes_factor:
+                logger.info('Fitting null model')
+                m0 = model(x, y, numpy.zeros(x.shape[1]).astype(int), pve).fit(atol=args.tolerance, **kwargs)
+                import pdb; pdb.set_trace()
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper', **kwargs)
@@ -286,6 +295,9 @@ def evaluate():
                       learning_rate=args.learning_rate,
                       minibatch_n=args.minibatch_size)
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight, **kwargs)
+            if args.bayes_factor:
+                logger.info('Fitting null model')
+                m0 = model(x, y, numpy.zeros(x.shape[1]).astype(int), pve).fit(atol=args.tolerance, **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
             with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
@@ -310,5 +322,7 @@ def evaluate():
                     print(*i, file=f)
             r, _ = scipy.stats.pearsonr(y_validate, y_hat)
             logger.info('Validation set correlation = {:.3f}'.format(r ** 2))
+        if args.bayes_factor:
+            logger.info('Bayes factor = {:.3f}'.format(m.weights.mean() / m0.weights.mean()))
         logger.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
