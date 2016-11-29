@@ -45,17 +45,6 @@ _N = scipy.stats.norm()
 
 logger = logging.getLogger(__name__)
 
-def _multinomial(pmf):
-    """Sample from multiple multinomial distributions in parallel. This is needed
-to sample from individual-specific genotype conditional probabilities.
-
-    Based on https://stackoverflow.com/a/34190035
-
-    """
-    cdf = pmf.cumsum(axis=0)
-    query = R.rand(pmf.shape[1])
-    return (cdf < query).sum(axis=0)
-
 class Simulation:
     """Sample genotypes and phenotypes from a variety of genetic architectures."""
 
@@ -254,6 +243,17 @@ class Simulation:
                 n -= num_taken
         return x, y
 
+    def _multinomial(self, pmf):
+        """Sample from multiple multinomial distributions in parallel. This is needed
+    to sample from individual-specific genotype conditional probabilities.
+
+        Based on https://stackoverflow.com/a/34190035
+
+        """
+        cdf = pmf.cumsum(axis=0)
+        query = self.random.rand(pmf.shape[1])
+        return (cdf < query).sum(axis=0)
+
     def sample_genotypes_given_pheno(self, n, K, case=True):
         """Sample matrix of genotypes given phenotype.
 
@@ -281,7 +281,7 @@ class Simulation:
                 prob_p_given_g = 1 - prob_p_given_g
             pmf = prob_p_given_g * prob_z[j][:, numpy.newaxis]
             pmf /= pmf.sum(axis=0)
-            x_j = _multinomial(pmf)
+            x_j = self._multinomial(pmf)
             x[:, j] = x_j
             y = new_y[numpy.arange(n), x_j]
         return x
