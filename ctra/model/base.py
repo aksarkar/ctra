@@ -1,14 +1,9 @@
-"""Importance sampling to estimate the hyperposterior
+"""Outer level algorithms to estimate the hyperposterior p(pi, tau | X, y, A)
 
 We fit a generalized linear model regressing phenotype against genotype. We
 impose a spike-and-slab prior on the coefficients to regularize the
 problem. Our inference task is to estimate the posterior distribution of the
 parameter pi (probability each SNP is causal).
-
-We use un-normalized importance sampling to estimate the posterior, avoiding
-the intractable normalizer. We replace the model evidence term in the
-importance weight with the optimal lower bound achieved by a variational
-approximation to the intractable posterior p(theta, z | x, y, a).
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
@@ -33,7 +28,7 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 # instance methods
 result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params'])
 
-class ImportanceSampler:
+class Model:
     def __init__(self, X, y, a, pve, **kwargs):
         self.X = X
         self.y = y
@@ -42,10 +37,43 @@ class ImportanceSampler:
         self.pve = pve
         self.var_x = numpy.array([X[:,a == i].var(axis=0).sum() for i in range(1 + max(a))])
         self.eps = 1e-8
+        self.elbo_vals = None
         logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
     def _log_weight(self, params=None, true_causal=None, **hyperparams):
         raise NotImplementedError
+
+    def fit(self, proposals=None, **kwargs):
+        raise NotImplementedError
+    
+    def bayes_factor(self, other):
+        """Return the Bayes factor between this model and another fitted model
+
+        Scale importance weights using both sets of un-normalized importance
+        samples to account for different baseline ELBO.
+
+        """
+        if self.elbo_vals is None or other.elbo_vals is None:
+            raise ValueError('Must fit the model before computing Bayes factors')
+        return numpy.exp(numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
+                         self.elbo_vals.max() -
+                         numpy.log(numpy.exp(other.elbo_vals - other.elbo_vals.max()).mean()) -
+                         other.elbo_vals.max())
+
+class ImportanceSampler(Model):
+    """Estimate the posterior p(pi, tau | X, y, A) using un-normalized importance
+sampling.
+
+    This is the strategy taken by Carbonetto & Stephens, Bayesian Anal 2012 to
+    avoid computing the intractable normalizer, assuming uniform prior
+    p(pi)p(tau) and uniform proposal distribution q(pi)q(tau) (in practice,
+    taking samples on a fixed grid). Bound the intractable model evidence term
+    in the importance weight is by finding the optimal variational
+    approximation to the intractable posterior p(theta, z | x, y, a).
+
+    """
+    def __init__(self, X, y, a, pve, **kwargs):
+        super().__init__(X, y, a, pve)
 
     def fit(self, proposals=None, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
@@ -103,14 +131,20 @@ class ImportanceSampler:
         self.pi = normalized_weights.dot(pi)
         return self
 
-    def bayes_factor(self, other):
-        """Return the Bayes factor between this model and another fitted model
+class BayesianQuadrature(Model):
+    """Estimate the posterior p(pi, tau | X, y, A) using Bayesian quadrature.
 
-        Scale importance weights using both sets of un-normalized importance
-        samples to account for different baseline ELBO.
+    The idea is described in Osborne et al., NIPS 2012. To evaluate the
+    intractable integral \iint p(X, y, A | pi, tau) p(pi, tau) dpi dtau, we put
+    a Gaussian process prior to represent uncertainty in p(X, y, A | pi, tau)
+    at points (pi, tau) not yet evaluated. This means we can actively choose
+    the next (pi, tau) to minimize the uncertainty in the integral
+    (exploration) and maximize the number of high likelihood samples
+    (exploitation).
 
-        """
-        return numpy.exp(numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
-                         self.elbo_vals.max() -
-                         numpy.log(numpy.exp(other.elbo_vals - other.elbo_vals.max()).mean()) -
-                         other.elbo_vals.max())
+    """
+    def __init__(self, X, y, a, pve):
+        super().__init__(X, y, a, pve)
+
+    def fit(self, proposals=None, **kwargs):
+        raise NotImplementedError
