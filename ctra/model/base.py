@@ -47,17 +47,19 @@ class ImportanceSampler:
     def _log_weight(self, params=None, true_causal=None, **hyperparams):
         raise NotImplementedError
 
-    def fit(self, **kwargs):
+    def fit(self, proposals=None, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
 
+        proposals - list of proposals for pi
         kwargs - algorithm-specific parameters
 
         """
-        # Propose pi_0, pi_1. This induces a proposal for tau following Guan et
-        # al. Ann Appl Stat 2011; Carbonetto et al. Bayesian Anal 2012
-        proposals = list(itertools.product(*[numpy.arange(_logit(1 / p_k),
-                                                          _logit(.1), .25)
-                                             for p_k in self.p]))
+        if proposals is None:
+            # Propose pi, inducing a proposal for tau (Guan et al., Ann Appl
+            # Stat 2011; Carbonetto et al., Bayesian Anal 2012)
+            proposals = list(itertools.product(*[[-10] + list(numpy.arange(_logit(1 / p_k), _logit(.1), .25))
+                                                 for p_k in self.p]))
+        pve = self.pve
 
         if 'true_causal' in kwargs:
             z = kwargs['true_causal']
@@ -68,15 +70,15 @@ class ImportanceSampler:
         # general we need to warm start different sets of parameters per model,
         # so in this generic implementation we can't unpack things.
         params = None
-        pi = numpy.zeros(shape=(len(proposals), self.pve.shape[0]), dtype=_real)
+        pi = numpy.zeros(shape=(len(proposals), pve.shape[0]), dtype=_real)
         tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
         logger.info('Finding best initialization')
         for i, logit_pi in enumerate(proposals):
             pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
             induced_genetic_var = (pi[i] * self.var_x).sum()
-            tau[i] = numpy.repeat(((1 - self.pve.sum()) * induced_genetic_var) /
-                                  self.pve.sum(), self.pve.shape[0]).astype(_real)
+            tau[i] = numpy.repeat(((1 - pve.sum()) * induced_genetic_var) /
+                                  pve.sum(), pve.shape[0]).astype(_real)
             elbo_, params_ = self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
             if elbo_ > best_elbo:
                 params = params_
@@ -90,11 +92,25 @@ class ImportanceSampler:
             log_weights[i], params_ = self._log_weight(pi=pi[i], tau=tau[i], params=params, **kwargs)
             self.params.append(params_)
 
+        self.elbo_vals = log_weights.copy()
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
         log_weights -= max(log_weights)
         normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
         self.weights = normalized_weights
+        self.pip = normalized_weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
         self.pi_grid = pi
         self.pi = normalized_weights.dot(pi)
         return self
+
+    def bayes_factor(self, other):
+        """Return the Bayes factor between this model and another fitted model
+
+        Scale importance weights using both sets of un-normalized importance
+        samples to account for different baseline ELBO.
+
+        """
+        return numpy.exp(numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
+                         self.elbo_vals.max() -
+                         numpy.log(numpy.exp(other.elbo_vals - other.elbo_vals.max()).mean()) -
+                         other.elbo_vals.max())

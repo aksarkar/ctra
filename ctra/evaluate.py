@@ -27,10 +27,9 @@ import ctra.model
 import ctra.simulation
 
 logger = logging.getLogger(__name__)
+_A = argparse.ArgumentTypeError
 
 def _parser():
-    _A = argparse.ArgumentTypeError
-
     def Annotation(arg):
         num, var = arg.split(',')
         return (int(num), numpy.sqrt(float(var)))
@@ -277,8 +276,8 @@ def evaluate():
             m = model(x, y, s.annot, pve).fit(atol=args.tolerance, **kwargs)
             if args.bayes_factor:
                 logger.info('Fitting null model')
-                m0 = model(x, y, numpy.zeros(x.shape[1]).astype(int), pve).fit(atol=args.tolerance, **kwargs)
-                import pdb; pdb.set_trace()
+                m0 = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'), pve)
+                m0 = m0.fit(atol=args.tolerance, proposals=m.pi_grid.dot(m.p) / m.p.sum(), **kwargs)
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper', **kwargs)
@@ -297,7 +296,8 @@ def evaluate():
             m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight, **kwargs)
             if args.bayes_factor:
                 logger.info('Fitting null model')
-                m0 = model(x, y, numpy.zeros(x.shape[1]).astype(int), pve).fit(atol=args.tolerance, **kwargs)
+                m0 = model(x, y, s.annot, pve)
+                m0 = m0.fit(atol=args.tolerance, proposals=m.pi_grid.dot(m.p) / m.p.sum(), **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
             with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
@@ -323,6 +323,6 @@ def evaluate():
             r, _ = scipy.stats.pearsonr(y_validate, y_hat)
             logger.info('Validation set correlation = {:.3f}'.format(r ** 2))
         if args.bayes_factor:
-            logger.info('Bayes factor = {:.3f}'.format(m.weights.mean() / m0.weights.mean()))
+            logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
         logger.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
