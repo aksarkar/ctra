@@ -339,3 +339,21 @@ pi_posterior <- function(weights_file) {
     dev.off()
 }
 pi_posterior('/broad/hptmp/aksarkar/ctra-evaluate/weights.txt')
+
+plot_pip <- function(pip_file) {
+    pip <- (read.table(pip_file) %>%
+            dplyr::select(pip=V1) %>%
+            dplyr::mutate(x=seq(1, along.with=.$pip)) %>%
+            head(n=100))
+    p <- (ggplot(pip, aes(x=factor(x), y=pip)) +
+          geom_point(size=.1) +
+          labs(x='Coefficient', y='PIP') +
+          theme_nature +
+          theme(panel.grid.major=element_line(color='gray70'),
+                panel.grid.major.y=element_blank()))
+    Cairo(file=sub('.txt', '.pdf', pip_file), type='pdf',
+          width=189, height=panelheight, units='mm')
+    print(p)
+    dev.off()
+}
+plot_pip('/broad/hptmp/aksarkar/ctra-evaluate/pip.txt')
