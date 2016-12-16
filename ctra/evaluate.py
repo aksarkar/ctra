@@ -12,6 +12,7 @@ import collections
 import contextlib
 import itertools
 import logging
+import pdb
 import pprint
 import os
 import os.path
@@ -53,6 +54,7 @@ def _parser():
     data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
     data_args.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
+    data_args.add_argument('--pdb', action='store_true', help='Drop into pdb after fitting the model', default=False)
 
     sim_args = parser.add_argument_group('Simulation', 'Parameters for generating synthetic data')
     sim_args.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
@@ -326,3 +328,5 @@ def evaluate():
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
         logger.info('Writing posterior mean pi')
         numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
+        if args.pdb:
+            pdb.set_trace()
