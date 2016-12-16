@@ -148,7 +148,7 @@ sampling.
 class BayesianQuadrature(Model):
     """Estimate the posterior p(pi, tau | X, y, A) using Bayesian quadrature.
 
-    The idea is described in Osborne et al., NIPS 2012. To evaluate the
+    The idea is described in Gunter et al., NIPS 2016. To evaluate the
     intractable integral \iint p(X, y, A | pi, tau) p(pi, tau) dpi dtau, we put
     a Gaussian process prior to represent uncertainty in p(X, y, A | pi, tau)
     at points (pi, tau) not yet evaluated. This means we can actively choose
@@ -160,5 +160,34 @@ class BayesianQuadrature(Model):
     def __init__(self, X, y, a, pve):
         super().__init__(X, y, a, pve)
 
-    def fit(self, proposals=None, **kwargs):
+    def _gp_llik(x, ltilde, input_length_scale, output_length_scale):
+        """Return the log-likelihood GP() """
         raise NotImplementedError
+
+    def _gp_jac(x, ltilde, input_length_scale, output_length_scale)
+        raise NotImplementedError
+
+    def fit(self, max_samples=100, **kwargs):
+        m = self.a.shape[0]
+        # Prior on logit(pi)
+        prior_mean = numpy.zeros(m)
+        prior_covar = numpy.eye(m)
+        # GP kernel hyperparameters. Input length scale is diagonal of kernel
+        input_length_scale = numpy.ones(m)
+        output_length_scale = numpy.ones(1)
+        llik = numpy.zeros(max_samples)
+        logit_pi = prior_mean
+        for i in max_samples:
+            # Square-root transform the samples f(pi, tau) = P(X, y, A | pi, tau)
+            pi = _expit(logit_pi)
+            tau = numpy.repeat(((1 - self.pve.sum()) * (pi * self.var_x).sum()) /
+                               self.pve.sum(), self.pve.shape[0]).astype(_real)
+            llik[i] = self._log_weight(pi=pi, tau=tau, **kwargs)
+            alpha = 0.8 * numpy.exp(llik[:i] - llik[:i].max()).min()
+            ltilde = sqrt(2 * abs(llik[:i] - alpha))
+            if i > 3:
+                # Update GP hyperparameters using ML-II
+                x0 = numpy.contatenate((input_length_scale, output_length_scale))
+                hyper = scipy.optimize.minimize(fun=BayesianQuadrature._gp_llik,
+                                                x0=x0,
+                                                jac=BayesianQuadrature._gp_jac)
