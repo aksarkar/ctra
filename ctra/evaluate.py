@@ -50,6 +50,7 @@ def _parser():
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     data_args.add_argument('-f', '--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
+    data_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
@@ -154,6 +155,10 @@ def _validate(args):
         raise _A('Model comparison not supported for only one annotation')
     if args.bayes_factor and args.method in ('mcmc', 'varbvs'):
         raise _A('Model comparison not supported for method {}'.format(args.method))
+    if args.true_causal and args.method not in ('coord', 'dsvi'):
+        raise _A('Fixing causal variants not supported for method {}'.format(args.method))
+    if args.propose_tau and args.method not in ('coord', 'dsvi'):
+        raise _A('Proposing tau not supported for method {}'.format(args.method))
 
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
@@ -267,6 +272,8 @@ def evaluate():
         kwargs = {}
         if args.true_causal:
             kwargs['true_causal'] = ~numpy.isclose(s.theta, 0)
+        if args.propose_tau:
+            kwargs['propose_tau'] = True
         if args.method == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3g')
             return
@@ -278,7 +285,7 @@ def evaluate():
             m = model(x, y, s.annot, pve).fit(atol=args.tolerance, **kwargs)
             if args.bayes_factor:
                 logger.info('Fitting null model')
-                m0 = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'), pve)
+                m0 = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'), pve.sum().reshape(1, 1))
                 m0 = m0.fit(atol=args.tolerance, proposals=m.pi_grid.dot(m.p) / m.p.sum(), **kwargs)
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
@@ -326,7 +333,11 @@ def evaluate():
             logger.info('Validation set correlation = {:.3f}'.format(r ** 2))
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
-        logger.info('Writing posterior mean pi')
-        numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
         if args.pdb:
             pdb.set_trace()
+        if args.propose_tau:
+            logger.info('Writing posterior mean tau')
+            numpy.savetxt(sys.stdout.buffer, m.tau, fmt='%.3g')
+        else:
+            logger.info('Writing posterior mean pi')
+            numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')

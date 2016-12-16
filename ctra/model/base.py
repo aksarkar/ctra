@@ -75,7 +75,7 @@ sampling.
     def __init__(self, X, y, a, pve, **kwargs):
         super().__init__(X, y, a, pve)
 
-    def fit(self, proposals=None, **kwargs):
+    def fit(self, proposals=None, propose_tau=False, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
 
         proposals - list of proposals for pi
@@ -83,10 +83,14 @@ sampling.
 
         """
         if proposals is None:
-            # Propose pi, inducing a proposal for tau (Guan et al., Ann Appl
-            # Stat 2011; Carbonetto et al., Bayesian Anal 2012)
-            proposals = list(itertools.product(*[[-10] + list(numpy.arange(_logit(1 / p_k), _logit(.1), .25))
-                                                 for p_k in self.p]))
+            if propose_tau:
+                # Propose log(tau)
+                proposals = list(itertools.product(*[list(10 ** numpy.arange(-3, 1, 0.5))
+                                                    for p_k in self.p]))
+            else:
+                # Propose logit(pi)
+                proposals = list(itertools.product(*[[-10] + list(numpy.arange(_logit(1 / p_k), _logit(.1), .25))
+                                                     for p_k in self.p]))
         pve = self.pve
 
         if 'true_causal' in kwargs:
@@ -102,11 +106,19 @@ sampling.
         tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
         logger.info('Finding best initialization')
-        for i, logit_pi in enumerate(proposals):
-            pi[i] = _expit(numpy.array(logit_pi)).astype(_real)
-            induced_genetic_var = (pi[i] * self.var_x).sum()
-            tau[i] = numpy.repeat(((1 - pve.sum()) * induced_genetic_var) /
-                                  pve.sum(), pve.shape[0]).astype(_real)
+        for i, prop in enumerate(proposals):
+            # Proposing one of (pi, tau) induces a proposal for the other (Guan
+            # et al., Ann Appl Stat 2011; Carbonetto et al., Bayesian Anal
+            # 2012)
+            if propose_tau:
+                tau[i] = numpy.array(prop).astype(_real)
+                pi[i] = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.var_x / tau[i]).sum(),
+                                     pve.shape[0]).astype(_real)
+                assert 0 < pi[i] < 1
+            else:
+                pi[i] = _expit(numpy.array(prop)).astype(_real)
+                tau[i] = numpy.repeat(((1 - pve.sum()) * (pi[i] * self.var_x).sum()) /
+                                      pve.sum(), pve.shape[0]).astype(_real)
             elbo_, params_ = self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
             if elbo_ > best_elbo:
                 params = params_
@@ -128,7 +140,9 @@ sampling.
         self.weights = normalized_weights
         self.pip = normalized_weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
         self.pi_grid = pi
+        self.tau_grid = tau
         self.pi = normalized_weights.dot(pi)
+        self.tau = normalized_weights.dot(tau)
         return self
 
 class BayesianQuadrature(Model):
