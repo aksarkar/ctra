@@ -12,6 +12,7 @@ import collections
 import itertools
 import logging
 
+import GPy
 import numpy
 import scipy.special
 import theano
@@ -53,12 +54,7 @@ class Model:
         samples to account for different baseline ELBO.
 
         """
-        if self.elbo_vals is None or other.elbo_vals is None:
-            raise ValueError('Must fit the model before computing Bayes factors')
-        return numpy.exp(numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
-                         self.elbo_vals.max() -
-                         numpy.log(numpy.exp(other.elbo_vals - other.elbo_vals.max()).mean()) -
-                         other.elbo_vals.max())
+        return numpy.exp(self.evidence() - other.evidence())
 
 class ImportanceSampler(Model):
     """Estimate the posterior p(pi, tau | X, y, A) using un-normalized importance
@@ -145,6 +141,12 @@ sampling.
         self.tau = normalized_weights.dot(tau)
         return self
 
+    def evidence(self):
+        if self.elbo_vals is None:
+            raise ValueError('Must fit the model before computing Bayes factors')
+        return (numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
+                self.elbo_vals.max())
+
 class BayesianQuadrature(Model):
     """Estimate the posterior p(pi, tau | X, y, A) using Bayesian quadrature.
 
@@ -159,35 +161,41 @@ class BayesianQuadrature(Model):
     """
     def __init__(self, X, y, a, pve):
         super().__init__(X, y, a, pve)
+        self.evidence = None
 
-    def _gp_llik(x, ltilde, input_length_scale, output_length_scale):
-        """Return the log-likelihood GP() """
-        raise NotImplementedError
-
-    def _gp_jac(x, ltilde, input_length_scale, output_length_scale)
-        raise NotImplementedError
-
-    def fit(self, max_samples=100, **kwargs):
-        m = self.a.shape[0]
-        # Prior on logit(pi)
-        prior_mean = numpy.zeros(m)
-        prior_covar = numpy.eye(m)
-        # GP kernel hyperparameters. Input length scale is diagonal of kernel
-        input_length_scale = numpy.ones(m)
-        output_length_scale = numpy.ones(1)
+    def fit(self, init_samples=10, max_samples=100, **kwargs):
+        m = self.pve.shape
+        logit_pi = numpy.zeros(size=(max_samples, m))
         llik = numpy.zeros(max_samples)
-        logit_pi = prior_mean
+        _N = scipy.stats.multivariate_normal
+        hyperprior = _N(mean=numpy.zeros(m), covar=numpy.eye(m))
+        logit_pi[init_samples] = hyperprior.rvs(size=init_samples)
+        K = GPy.kern.RBF(input_dim=m, ARD=True)
         for i in max_samples:
-            # Square-root transform the samples f(pi, tau) = P(X, y, A | pi, tau)
             pi = _expit(logit_pi)
             tau = numpy.repeat(((1 - self.pve.sum()) * (pi * self.var_x).sum()) /
                                self.pve.sum(), self.pve.shape[0]).astype(_real)
             llik[i] = self._log_weight(pi=pi, tau=tau, **kwargs)
-            alpha = 0.8 * numpy.exp(llik[:i] - llik[:i].max()).min()
-            ltilde = sqrt(2 * abs(llik[:i] - alpha))
-            if i > 3:
-                # Update GP hyperparameters using ML-II
-                x0 = numpy.contatenate((input_length_scale, output_length_scale))
-                hyper = scipy.optimize.minimize(fun=BayesianQuadrature._gp_llik,
-                                                x0=x0,
-                                                jac=BayesianQuadrature._gp_jac)
+            if i > init_samples:
+                # Square-root transform the samples. tau is deterministic given
+                # pi, so we write do inference on f(phi) = P(X, y, A | phi),
+                # g(phi) = sqrt(2 * (f(phi) - alpha))
+                phi = logit_pi[:i]
+                f_phi = numpy.exp(llik[:i] - llik[:i].max())
+                offset = .8 * f_phi.min()
+                g_phi = numpy.sqrt(2 * (f_phi - offset))
+                # Refit the GP
+                self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
+                self.wsabi.optimize()
+                # Actively sample the next point
+                raise NotImplementedError
+        # Expected value of the integral. Closed form from Rasmussen &
+        # Gharamani, 2003 (eq. 9)
+        _K = self.wsabi.rbf.K(phi)
+        z = _N(cov=(_K + hyperprior.cov)).pdf(g_phi)
+        self.evidence = offset + .5 * sum(wsabi.rbf.variance * z * numpy.linalg.pinv(_K).dot(g_phi))
+
+    def evidence(self):
+        if self.evidence is None:
+            raise ValueError('Must fit the model before computing Bayes factors')
+        return self.evidence

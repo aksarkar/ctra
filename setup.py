@@ -8,7 +8,7 @@ setuptools.setup(
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
     license='BSD',
-    install_requires=['drmaa', 'numpy', 'scipy', 'theano'],
+    install_requires=['drmaa', 'numpy', 'scipy', 'theano', 'GPy'],
     entry_points={
         'console_scripts': [
             'ctra-evaluate=ctra.evaluate:evaluate',
