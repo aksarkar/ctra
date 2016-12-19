@@ -14,6 +14,7 @@ import logging
 
 import GPy
 import numpy
+import scipy.optimize
 import scipy.special
 import theano
 
@@ -163,37 +164,46 @@ class BayesianQuadrature(Model):
         super().__init__(X, y, a, pve)
         self.evidence = None
 
+    def _neg_exp_var_evidence(self, phi, prior_weight):
+        mean, var = self.wsabi.predict_noiseless(phi.reshape(-1, 1))
+        return -mean * mean * var * prior_weight
+
     def fit(self, init_samples=10, max_samples=100, **kwargs):
         m = self.pve.shape
         logit_pi = numpy.zeros(size=(max_samples, m))
         llik = numpy.zeros(max_samples)
         _N = scipy.stats.multivariate_normal
-        hyperprior = _N(mean=numpy.zeros(m), covar=numpy.eye(m))
-        logit_pi[init_samples] = hyperprior.rvs(size=init_samples)
+        self.hyperprior = _N(mean=numpy.zeros(m), cov=numpy.eye(m))
+        logit_pi[init_samples] = self.hyperprior.rvs(size=init_samples)
         K = GPy.kern.RBF(input_dim=m, ARD=True)
         for i in max_samples:
-            pi = _expit(logit_pi)
+            pi = _expit(logit_pi[i])
             tau = numpy.repeat(((1 - self.pve.sum()) * (pi * self.var_x).sum()) /
                                self.pve.sum(), self.pve.shape[0]).astype(_real)
             llik[i] = self._log_weight(pi=pi, tau=tau, **kwargs)
             if i > init_samples:
-                # Square-root transform the samples. tau is deterministic given
-                # pi, so we write do inference on f(phi) = P(X, y, A | phi),
-                # g(phi) = sqrt(2 * (f(phi) - alpha))
+                logger.debug('Refitting the quadrature GP')
+                # Square-root transform the (hyperparameter, llik) pairs. tau
+                # is deterministic given pi, so we do inference on f(phi) =
+                # P(X, y, A | phi), g(phi) = sqrt(2 * (f(phi) - alpha))
                 phi = logit_pi[:i]
                 f_phi = numpy.exp(llik[:i] - llik[:i].max())
                 offset = .8 * f_phi.min()
-                g_phi = numpy.sqrt(2 * (f_phi - offset))
+                g_phi = numpy.sqrt(2 * (f_phi - offset)).reshape(-1, 1)
+                prior_weight = _N(cov=(_K + self.hyperprior.cov)).pdf(g_phi)
                 # Refit the GP
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
                 # Actively sample the next point
-                raise NotImplementedError
+                logger.debug('Actively sampling next point')
+                logit_pi[i + 1] = scipy.optimize.minimize(self._neg_exp_var_evidence,
+                                                          x0=self.hyperprior.rvs(1),
+                                                          args=(prior_weight,))
         # Expected value of the integral. Closed form from Rasmussen &
         # Gharamani, 2003 (eq. 9)
         _K = self.wsabi.rbf.K(phi)
-        z = _N(cov=(_K + hyperprior.cov)).pdf(g_phi)
-        self.evidence = offset + .5 * sum(wsabi.rbf.variance * z * numpy.linalg.pinv(_K).dot(g_phi))
+        self.evidence = offset + .5 * sum(wsabi.rbf.variance * prior_weight *
+                                          numpy.linalg.pinv(_K).dot(g_phi))
 
     def evidence(self):
         if self.evidence is None:
