@@ -1,3 +1,4 @@
+from .base import *
 from .coord import *
 from .dsvi import *
 from .varbvs import *
@@ -5,5 +6,6 @@ from .pcgc import *
 
 pcgc = estimate
 
-__all__ = [GaussianCoordinateAscent, LogisticCoordinateAscent,
-           GaussianDSVI, LogisticDSVI, varbvs, pcgc, grm]
+__all__ = [ImportanceSampler, BayesianQuadrature, GaussianCoordinateAscent,
+           LogisticCoordinateAscent, GaussianDSVI, LogisticDSVI, varbvs, pcgc,
+           grm]

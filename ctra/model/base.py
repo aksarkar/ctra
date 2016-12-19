@@ -31,21 +31,11 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params'])
 
 class Model:
-    def __init__(self, X, y, a, pve, **kwargs):
-        self.X = X
-        self.y = y
-        self.a = a
-        self.p = numpy.array(list(collections.Counter(self.a).values()), dtype='int')
-        self.pve = pve
-        self.var_x = numpy.array([X[:,a == i].var(axis=0).sum() for i in range(1 + max(a))])
-        self.eps = 1e-8
+    def __init__(self, model, **kwargs):
+        self.model = model
         self.elbo_vals = None
-        logger.info('Fixing parameters {}'.format({'pve': self.pve}))
 
-    def _log_weight(self, params=None, true_causal=None, **hyperparams):
-        raise NotImplementedError
-
-    def fit(self, proposals=None, **kwargs):
+    def fit(self, **kwargs):
         raise NotImplementedError
     
     def bayes_factor(self, other):
@@ -56,6 +46,20 @@ class Model:
 
         """
         return numpy.exp(self.evidence() - other.evidence())
+
+class Algorithm:
+    def __init__(self, X, y, a, pve, **kwargs):
+        self.X = X
+        self.y = y
+        self.a = a
+        self.p = numpy.array(list(collections.Counter(self.a).values()), dtype='int')
+        self.pve = pve
+        self.var_x = numpy.array([X[:,a == i].var(axis=0).sum() for i in range(1 + max(a))])
+        self.eps = 1e-8
+        logger.info('Fixing parameters {}'.format({'pve': self.pve}))
+
+    def log_weight(self, pi, tau, **kwargs):
+        raise NotImplementedError
 
 class ImportanceSampler(Model):
     """Estimate the posterior p(pi, tau | X, y, A) using un-normalized importance
@@ -69,8 +73,8 @@ sampling.
     approximation to the intractable posterior p(theta, z | x, y, a).
 
     """
-    def __init__(self, X, y, a, pve, **kwargs):
-        super().__init__(X, y, a, pve)
+    def __init__(self, model, **kwargs):
+        super().__init__(model)
 
     def fit(self, proposals=None, propose_tau=False, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
@@ -83,12 +87,12 @@ sampling.
             if propose_tau:
                 # Propose log(tau)
                 proposals = list(itertools.product(*[list(10 ** numpy.arange(-3, 1, 0.5))
-                                                    for p_k in self.p]))
+                                                    for p_k in self.model.p]))
             else:
                 # Propose logit(pi)
                 proposals = list(itertools.product(*[[-10] + list(numpy.arange(_logit(1 / p_k), _logit(.1), .25))
-                                                     for p_k in self.p]))
-        pve = self.pve
+                                                     for p_k in self.model.p]))
+        pve = self.model.pve
 
         if 'true_causal' in kwargs:
             z = kwargs['true_causal']
@@ -109,14 +113,14 @@ sampling.
             # 2012)
             if propose_tau:
                 tau[i] = numpy.array(prop).astype(_real)
-                pi[i] = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.var_x / tau[i]).sum(),
+                pi[i] = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / tau[i]).sum(),
                                      pve.shape[0]).astype(_real)
                 assert 0 < pi[i] < 1
             else:
                 pi[i] = _expit(numpy.array(prop)).astype(_real)
-                tau[i] = numpy.repeat(((1 - pve.sum()) * (pi[i] * self.var_x).sum()) /
+                tau[i] = numpy.repeat(((1 - pve.sum()) * (pi[i] * self.model.var_x).sum()) /
                                       pve.sum(), pve.shape[0]).astype(_real)
-            elbo_, params_ = self._log_weight(pi=pi[i], tau=tau[i], **kwargs)
+            elbo_, params_ = self.model.log_weight(pi=pi[i], tau=tau[i], **kwargs)
             if elbo_ > best_elbo:
                 params = params_
 
@@ -126,7 +130,7 @@ sampling.
         self.params = []
         logger.info('Performing importance sampling')
         for i, logit_pi in enumerate(proposals):
-            log_weights[i], params_ = self._log_weight(pi=pi[i], tau=tau[i], params=params, **kwargs)
+            log_weights[i], params_ = self.model.log_weight(pi=pi[i], tau=tau[i], params=params, **kwargs)
             self.params.append(params_)
 
         self.elbo_vals = log_weights.copy()
@@ -160,27 +164,36 @@ class BayesianQuadrature(Model):
     (exploitation).
 
     """
-    def __init__(self, X, y, a, pve):
-        super().__init__(X, y, a, pve)
+    def __init__(self, model, **kwargs):
+        super().__init__(model, **kwargs)
         self.evidence = None
 
     def _neg_exp_var_evidence(self, phi, prior_weight):
+        """Return the negative expected variance in the model evidence as a function of
+hyperparameters phi
+
+        This is needed for active sampling the next hyperparameter setting to
+        evaluate.
+
+        """
         mean, var = self.wsabi.predict_noiseless(phi.reshape(-1, 1))
         return -mean * mean * var * prior_weight
 
     def fit(self, init_samples=10, max_samples=100, **kwargs):
-        m = self.pve.shape
-        logit_pi = numpy.zeros(size=(max_samples, m))
+        m = self.model.pve.shape[0]
+        logit_pi = numpy.zeros((max_samples, m))
         llik = numpy.zeros(max_samples)
         _N = scipy.stats.multivariate_normal
         self.hyperprior = _N(mean=numpy.zeros(m), cov=numpy.eye(m))
-        logit_pi[init_samples] = self.hyperprior.rvs(size=init_samples)
+        logit_pi[:init_samples,:] = self.hyperprior.rvs(size=init_samples).reshape(-1, m)
         K = GPy.kern.RBF(input_dim=m, ARD=True)
-        for i in max_samples:
+        self.params = []
+        for i in range(max_samples):
             pi = _expit(logit_pi[i])
-            tau = numpy.repeat(((1 - self.pve.sum()) * (pi * self.var_x).sum()) /
-                               self.pve.sum(), self.pve.shape[0]).astype(_real)
-            llik[i] = self._log_weight(pi=pi, tau=tau, **kwargs)
+            tau = numpy.repeat(((1 - self.model.pve.sum()) * (pi * self.model.var_x).sum()) /
+                               self.model.pve.sum(), self.model.pve.shape[0]).astype(_real)
+            llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
+            self.params.append(_params)
             if i > init_samples:
                 logger.debug('Refitting the quadrature GP')
                 # Square-root transform the (hyperparameter, llik) pairs. tau
@@ -190,18 +203,19 @@ class BayesianQuadrature(Model):
                 f_phi = numpy.exp(llik[:i] - llik[:i].max())
                 offset = .8 * f_phi.min()
                 g_phi = numpy.sqrt(2 * (f_phi - offset)).reshape(-1, 1)
-                prior_weight = _N(cov=(_K + self.hyperprior.cov)).pdf(g_phi)
                 # Refit the GP
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
                 # Actively sample the next point
                 logger.debug('Actively sampling next point')
+                import pdb; pdb.set_trace()
+                _K = self.wsabi.rbf.K(phi)
+                prior_weight = _N(cov=(_K + self.hyperprior.cov)).pdf(g_phi)
                 logit_pi[i + 1] = scipy.optimize.minimize(self._neg_exp_var_evidence,
                                                           x0=self.hyperprior.rvs(1),
                                                           args=(prior_weight,))
         # Expected value of the integral. Closed form from Rasmussen &
         # Gharamani, 2003 (eq. 9)
-        _K = self.wsabi.rbf.K(phi)
         self.evidence = offset + .5 * sum(wsabi.rbf.variance * prior_weight *
                                           numpy.linalg.pinv(_K).dot(g_phi))
 

@@ -18,7 +18,7 @@ import scipy.special
 import theano
 import theano.tensor as T
 
-from .base import ImportanceSampler
+from .base import Algorithm
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ _Z = lambda n: numpy.zeros(n).astype(_real)
 _R = numpy.random
 _N = lambda n: _R.normal(size=n).astype(_real)
 
-class DSVI(ImportanceSampler):
+class DSVI(Algorithm):
     """Class providing the implementation of the optimizer
 
     This is intended to provide a pickle-able object to re-use the Theano
@@ -139,7 +139,7 @@ class DSVI(ImportanceSampler):
     def _llik(self, *args):
         raise NotImplementedError
 
-    def _log_weight(self, params=None, weight=0.5, poll_iters=1000,
+    def log_weight(self, params=None, weight=0.5, poll_iters=1000,
                     min_iters=100000, atol=1, true_causal=None, **hyperparams):
         """Return optimum ELBO and variational parameters which achieve it.
 

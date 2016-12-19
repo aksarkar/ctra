@@ -14,21 +14,17 @@ import logging
 import numpy
 import scipy.special
 
-from .base import ImportanceSampler
+from .base import Algorithm
 
 logger = logging.getLogger(__name__)
 _R = numpy.random
 _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
-class CoordinateAscent(ImportanceSampler):
-    def __init__(self, X, y, a, pve):
+class GaussianCoordinateAscent(Algorithm):
+    def __init__(self, X, y, a, pve, **kwargs):
         super().__init__(X, y, a, pve)
 
-class GaussianCoordinateAscent(CoordinateAscent):
-    def __init__(self, X, y, a, pve):
-        super().__init__(X, y, a, pve)
-
-    def _log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
+    def log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
         X = self.X
         y = self.y
         a = self.a
@@ -104,8 +100,8 @@ class GaussianCoordinateAscent(CoordinateAscent):
                 converged = True
         return elbo, (alpha, beta, sigma2)
 
-class LogisticCoordinateAscent(CoordinateAscent):
-    def __init__(self, X, y, a, pve):
+class LogisticCoordinateAscent(Algorithm):
+    def __init__(self, X, y, a, pve, **kwargs):
         super().__init__(X, y, a, pve)
     
     def _update_logistic_var_params(self, zeta):
@@ -119,7 +115,7 @@ class LogisticCoordinateAscent(CoordinateAscent):
         xdx = numpy.einsum('ij,ik,kj->j', self.X, numpy.diag(d), self.X) - numpy.square(xd) / d.sum()
         return d, yhat, xty, xd, xdx
 
-    def _log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
+    def log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
         X = self.X
         y = self.y
         a = self.a

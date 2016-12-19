@@ -39,6 +39,7 @@ def _parser():
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'mcmc', 'dsvi'], help='Method to fit model', required=True)
+    req_args.add_argument('-O', '--outer-method', choices=['smc', 'wsabi'], help='Outer method (for hyperparameters)', required=True)
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
@@ -147,6 +148,8 @@ def _validate(args):
         raise _A('Method {} does not support multiple annotations'.format(args.method))
     if args.method == 'mcmc' and args.write_weights is not None:
         raise _A('Method {} does not support writing weights'.format(args.method))
+    if args.outer_method == 'wsabi' and args.method not in ('coord', 'dsvi'):
+        raise _A('Outer method "{}" does not support inner method "{}"'.format(args.outer_method, args.method))
     if args.parametric_bootstrap is not None and (args.load_data is not None or args.load_oxstats is not None):
         raise _A('Parametric bootstrap not supported for real data')
     if args.validation is not None and args.method in ('mcmc'):
@@ -277,16 +280,6 @@ def evaluate():
         if args.method == 'pcgc':
             numpy.savetxt(sys.stdout.buffer, pve, fmt='%.3g')
             return
-        elif args.method == 'coord':
-            if args.model == 'gaussian':
-                model = ctra.model.GaussianCoordinateAscent
-            else:
-                model = ctra.model.LogisticCoordinateAscent
-            m = model(x, y, s.annot, pve).fit(atol=args.tolerance, **kwargs)
-            if args.bayes_factor:
-                logger.info('Fitting null model')
-                m0 = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'), pve.sum().reshape(1, 1))
-                m0 = m0.fit(atol=args.tolerance, proposals=m.pi_grid.dot(m.p) / m.p.sum(), **kwargs)
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper', **kwargs)
@@ -294,18 +287,30 @@ def evaluate():
             m = ctra.model.varbvs(x, y, pve, 'bvsmcmc', args.burn_in,
                                   args.mcmc_samples, args.seed)
         else:
-            if args.model == 'gaussian':
-                model = ctra.model.GaussianDSVI
+            if args.method == 'coord':
+                if args.model == 'gaussian':
+                    model = ctra.model.GaussianCoordinateAscent
+                else:
+                    model = ctra.model.LogisticCoordinateAscent
             else:
-                model = ctra.model.LogisticDSVI
-            m = model(x, y, s.annot, K=args.prevalence,
-                      pve=pve,
-                      learning_rate=args.learning_rate,
-                      minibatch_n=args.minibatch_size)
-            m.fit(poll_iters=args.poll_iters, weight=args.ewma_weight, **kwargs)
+                if args.model == 'gaussian':
+                    model = ctra.model.GaussianDSVI
+                else:
+                    model = ctra.model.LogisticDSVI
+            inner = model(x, y, s.annot, pve, learning_rate=args.learning_rate,
+                          minibatch_n=args.minibatch_size)
+            if args.outer_method == 'smc':
+                m = ctra.model.ImportanceSampler(inner)
+            else:
+                m = ctra.model.BayesianQuadrature(inner)
+            m = m.fit(atol=args.tolerance, poll_iters=args.poll_iters,
+                      weight=args.ewma_weight, **kwargs)
             if args.bayes_factor:
                 logger.info('Fitting null model')
-                m0 = model(x, y, s.annot, pve)
+                m0 = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'),
+                           pve.sum().reshape(1, 1),
+                           learning_rate=args.learning_rate,
+                           minibatch_n=args.minibatch_size)
                 m0 = m0.fit(atol=args.tolerance, proposals=m.pi_grid.dot(m.p) / m.p.sum(), **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
