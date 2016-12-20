@@ -168,30 +168,70 @@ class BayesianQuadrature(Model):
         super().__init__(model, **kwargs)
         self.evidence = None
 
-    def _neg_exp_var_evidence(self, phi, prior_weight):
-        """Return the negative expected variance in the model evidence as a function of
-hyperparameters phi
+    def _neg_exp_var_evidence(self, phi):
+        """Return f(phi) = -E[p(x | phi)]"""
+        mean, var = self.wsabi.predict_noiseless(phi.reshape(-1, 1))
+        assert self.hyperprior is not None
+        prior_weight = self.hyperprior.pdf(phi)
+        return -(mean ** 2) * var * (prior_weight ** 2)
 
-        This is needed for active sampling the next hyperparameter setting to
-        evaluate.
+    def _active_sample(self, max_retries=10):
+        """Return the next hyperparameter sample phi
+
+        The active sampling scheme finds the point which contributes maximum
+        variance to the current estimate of the model evidence.
 
         """
-        mean, var = self.wsabi.predict_noiseless(phi.reshape(-1, 1))
-        return -mean * mean * var * prior_weight
+        logger.debug('Actively sampling next point')
+        opt = object()
+        opt.success = False
+        n = 0
+        while n < max_retries and not opt.success:
+            x0 = self.hyperprior.rvs(1)
+            logger.debug('Starting minimizer from x0={}'.format(x0))
+            opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0)
+        if not opt.success:
+            raise ValueError('Failed to find next sample')
+        return opt.x
 
-    def fit(self, init_samples=10, max_samples=100, **kwargs):
+    def _handle_converged(self, llik):
+        """Set the relevant derived parameters after BQ converges"""
+        self.elbo_vals = llik.copy()
+        # Scale the log importance weights before normalizing to avoid numerical
+        # problems
+        llik -= max(llik)
+        normalized_weights = numpy.exp(llik - scipy.misc.logsumexp(llik))
+        self.weights = normalized_weights
+        self.pip = normalized_weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
+        self.pi = normalized_weights.dot(numpy.array(self.pi_grid))
+        self.tau = normalized_weights.dot(numpy.array(self.tau_grid))
+        return self
+
+
+    def fit(self, init_samples=10, max_samples=100, atol=1e-2, **kwargs):
+        """Draw samples from the hyperposterior
+
+        init_samples - initial draws from hyperprior to fit GP
+        max_samples - maximum number of samples
+        atol - minimum variance in model evidence for convergence
+
+        """
         m = self.model.pve.shape[0]
         logit_pi = numpy.zeros((max_samples, m))
         llik = numpy.zeros(max_samples)
         _N = scipy.stats.multivariate_normal
-        self.hyperprior = _N(mean=numpy.zeros(m), cov=numpy.eye(m))
+        self.hyperprior = _N(mean=-2 * numpy.ones(m), cov=numpy.eye(m))
         logit_pi[:init_samples,:] = self.hyperprior.rvs(size=init_samples).reshape(-1, m)
         K = GPy.kern.RBF(input_dim=m, ARD=True)
         self.params = []
+        self.pi_grid = []
+        self.tau_grid = []
         for i in range(max_samples):
             pi = _expit(logit_pi[i])
+            self.pi_grid.append(pi)
             tau = numpy.repeat(((1 - self.model.pve.sum()) * (pi * self.model.var_x).sum()) /
                                self.model.pve.sum(), self.model.pve.shape[0]).astype(_real)
+            self.tau_grid.append(tau)
             llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
             self.params.append(_params)
             if i > init_samples:
@@ -206,18 +246,22 @@ hyperparameters phi
                 # Refit the GP
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
-                # Actively sample the next point
-                logger.debug('Actively sampling next point')
-                import pdb; pdb.set_trace()
+                # Expected value and variance of the integral. Closed form from
+                # Rasmussen & Gharamani, 2003 (eqs. 9, 10)
                 _K = self.wsabi.rbf.K(phi)
-                prior_weight = _N(cov=(_K + self.hyperprior.cov)).pdf(g_phi)
-                logit_pi[i + 1] = scipy.optimize.minimize(self._neg_exp_var_evidence,
-                                                          x0=self.hyperprior.rvs(1),
-                                                          args=(prior_weight,))
-        # Expected value of the integral. Closed form from Rasmussen &
-        # Gharamani, 2003 (eq. 9)
-        self.evidence = offset + .5 * sum(wsabi.rbf.variance * prior_weight *
-                                          numpy.linalg.pinv(_K).dot(g_phi))
+                z = _N(cov=_K + numpy.eye(i)).pdf(phi)
+                _Kinv = numpy.linalg.pinv(_K)
+                self.evidence = offset + .5 * sum(self.wsabi.rbf.variance *
+                                                  z * _Kinv.dot(g_phi))
+                self.evidence_var = (1 / numpy.sqrt(numpy.linalg.det(2 * _Kinv)) -
+                                     z.dot(_Kinv).dot(z))
+                logger.debug('Sample {}: variance = {}'.format(i + 1, self.evidence_var))
+                if numpy.isfinite(self.evidence_var) and self.evidence_var < atol:
+                    logger.info('BQ converged after {} samples'.format(i + 1))
+                    return self._handle_converged(llik[:i + 1])
+                if i + 1 < max_samples:
+                    # Get the next hyperparameter sample
+                    logit_pi[i + 1] = self._active_sample()
 
     def evidence(self):
         if self.evidence is None:
