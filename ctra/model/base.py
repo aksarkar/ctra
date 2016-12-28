@@ -247,13 +247,17 @@ class BayesianQuadrature(Model):
                 self.wsabi.optimize()
                 # Expected value and variance of the integral. Closed form from
                 # Rasmussen & Gharamani, 2003 (eqs. 9, 10)
-                _K = self.wsabi.rbf.K(phi)
-                z = _N(cov=_K + numpy.eye(i)).pdf(phi)
-                _Kinv = numpy.linalg.pinv(_K)
-                self.evidence = offset + .5 * sum(self.wsabi.rbf.variance *
-                                                  z * _Kinv.dot(g_phi))
-                self.evidence_var = (1 / numpy.sqrt(numpy.linalg.det(2 * _Kinv)) -
-                                     z.dot(_Kinv).dot(z))
+                z = (self.wsabi.rbf.variance /
+                     numpy.sqrt(numpy.linalg.det(numpy.diag(1 / self.wsabi.rbf.lengthscale) + numpy.eye(i))) *
+                     # TODO: Achieve this using broadcasting?
+                     numpy.array([numpy.exp(-.5 * q.T.dot(1 / numpy.diag(self.wsabi.rbf.lengthscale) + numpy.eye(m)).dot(q)) for q in phi]))
+                _Kinv = numpy.linalg.pinv(self.wsabi.rbf.K(phi))
+                # Invert all the transforms
+                self.evidence = (llik[:i].max() +
+                                 numpy.log(offset + .5 * numpy.square(L.dot(_Kinv).dot(g_phi))))
+                self.evidence_var = (self.wsabi.rbf.variance /
+                                     numpy.sqrt(2 * numpy.linalg.det(numpy.diag(1 / self.wsabi.rbf.lengthscale) + numpy.eye(i))) -
+                                     z.T.dot(_Kinv).dot(z))
                 logger.debug('Sample {}: variance = {}'.format(i + 1, self.evidence_var))
                 if numpy.isfinite(self.evidence_var) and self.evidence_var < atol:
                     logger.info('BQ converged after {} samples'.format(i + 1))
