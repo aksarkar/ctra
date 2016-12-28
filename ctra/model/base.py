@@ -184,9 +184,8 @@ class BayesianQuadrature(Model):
         """
         logger.debug('Actively sampling next point')
         opt = object()
-        opt.success = False
         n = 0
-        while n < max_retries and not opt.success:
+        while n < max_retries and not getattr(opt, 'success', False):
             x0 = self.hyperprior.rvs(1)
             logger.debug('Starting minimizer from x0={}'.format(x0))
             opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0)
