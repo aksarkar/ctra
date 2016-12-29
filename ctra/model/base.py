@@ -21,6 +21,10 @@ import theano
 logger = logging.getLogger(__name__)
 _real = theano.config.floatX
 
+# Remove GPy noise
+logging.getLogger("GP").setLevel('ERROR')
+logging.getLogger("GPRegression").setLevel('ERROR')
+
 # We need to change base since we're going to be interpreting the value of pi,
 # logit(pi)
 _expit = lambda x: scipy.special.expit(x * numpy.log(10))
@@ -193,19 +197,41 @@ class BayesianQuadrature(Model):
             raise ValueError('Failed to find next sample')
         return opt.x
 
-    def _handle_converged(self, llik):
-        """Set the relevant derived parameters after BQ converges"""
-        self.elbo_vals = llik.copy()
-        # Scale the log importance weights before normalizing to avoid numerical
-        # problems
-        llik -= max(llik)
-        normalized_weights = numpy.exp(llik - scipy.misc.logsumexp(llik))
-        self.weights = normalized_weights
-        self.pip = normalized_weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
-        self.pi = normalized_weights.dot(numpy.array(self.pi_grid))
-        self.tau = normalized_weights.dot(numpy.array(self.tau_grid))
-        return self
+    def _update_params(self, llik, offset, phi, g_phi):
+        """Update the relevant derived parameters after seeing design points phi
 
+        The parameters are expectations and variances over the quadrature GP.
+
+        """
+        # Expected value and variance of the integral. Closed form from
+        # Rasmussen & Gharamani, 2003 (eqs. 9, 10)
+        A = numpy.diag(self.wsabi.rbf.lengthscale)
+        Ainv = numpy.diag(1 / self.wsabi.rbf.lengthscale)
+        B = self.hyperprior.cov
+        Binv = numpy.linalg.pinv(self.hyperprior.cov)
+        z = (self.wsabi.rbf.variance /
+             numpy.sqrt(numpy.linalg.det(Ainv.dot(B) + numpy.eye(len(llik)))) *
+             # TODO: Achieve this using broadcasting?
+             numpy.array([numpy.exp(-.5 * (q - self.hyperprior.mean).T.dot(numpy.linalg.pinv(A + B)).dot(q - self.hyperprior.mean)) for q in phi]))
+        _Kinv = numpy.linalg.pinv(self.wsabi.rbf.K(phi))
+        evidence = z.dot(_Kinv).dot(g_phi)
+        evidence_var = (self.wsabi.rbf.variance /
+                        numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + numpy.eye(len(llik)))) -
+                        z.T.dot(_Kinv).dot(z))
+        # This follows from same derivation as [RG03] eq. 9 and definition of
+        # expectation
+        _pi = (z * numpy.array([Ainv.dot(q) + Binv.dot(self.hyperprior.mean) for q in phi]).reshape(-1)).dot(_Kinv).dot(g_phi)
+        # Invert all the transforms to get expectations with respect to the
+        # original measure
+        self.evidence = (llik.max() + numpy.log(offset + .5 * numpy.square(evidence)))
+        self.evidence_var = offset + .5 * numpy.square(evidence_var)
+        # TODO: fix this
+        self.pi = _expit(offset + .5 * numpy.square(_pi))
+        # tau is fixed given pi
+        self.tau = ((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) / self.model.pve.sum()
+        if len(llik) == 50 or not numpy.isfinite(self.evidence_var) or self.evidence_var <= 0:
+            import pdb; pdb.set_trace()
+        logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self.evidence, self.evidence_var, self.pi))
 
     def fit(self, init_samples=10, max_samples=100, atol=1e-2, **kwargs):
         """Draw samples from the hyperposterior
@@ -245,26 +271,11 @@ class BayesianQuadrature(Model):
                 # Refit the GP
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
-                # Expected value and variance of the integral. Closed form from
-                # Rasmussen & Gharamani, 2003 (eqs. 9, 10)
-                z = (self.wsabi.rbf.variance /
-                     numpy.sqrt(numpy.linalg.det(numpy.diag(1 / self.wsabi.rbf.lengthscale) + numpy.eye(i))) *
-                     # TODO: Achieve this using broadcasting?
-                     numpy.array([numpy.exp(-.5 * q.T.dot(1 / numpy.diag(self.wsabi.rbf.lengthscale) + numpy.eye(m)).dot(q)) for q in phi]))
-                _Kinv = numpy.linalg.pinv(self.wsabi.rbf.K(phi))
-                # Invert all the transforms
-                self.evidence = (llik[:i].max() +
-                                 numpy.log(offset + .5 * numpy.square(L.dot(_Kinv).dot(g_phi))))
-                self.evidence_var = (self.wsabi.rbf.variance /
-                                     numpy.sqrt(2 * numpy.linalg.det(numpy.diag(1 / self.wsabi.rbf.lengthscale) + numpy.eye(i))) -
-                                     z.T.dot(_Kinv).dot(z))
-                logger.debug('Sample {}: variance = {}'.format(i + 1, self.evidence_var))
-                if numpy.isfinite(self.evidence_var) and self.evidence_var < atol:
-                    logger.info('BQ converged after {} samples'.format(i + 1))
-                    return self._handle_converged(llik[:i + 1])
+                self._update_params(llik[:i], offset, phi, g_phi)
                 if i + 1 < max_samples:
                     # Get the next hyperparameter sample
                     logit_pi[i + 1] = self._active_sample()
+        return self
 
     def evidence(self):
         if self.evidence is None:
