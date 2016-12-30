@@ -245,7 +245,7 @@ class BayesianQuadrature(Model):
         logit_pi = numpy.zeros((max_samples, m))
         llik = numpy.zeros(max_samples)
         _N = scipy.stats.multivariate_normal
-        self.hyperprior = _N(mean=-2 * numpy.ones(m), cov=numpy.eye(m))
+        self.hyperprior = _N(mean=numpy.zeros(m), cov=4 * numpy.eye(m))
         logit_pi[:init_samples,:] = self.hyperprior.rvs(size=init_samples).reshape(-1, m)
         K = GPy.kern.RBF(input_dim=m, ARD=True)
         self.params = []
