@@ -219,18 +219,16 @@ class BayesianQuadrature(Model):
         evidence_var = (self.wsabi.rbf.variance /
                         numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + I)) -
                         z.T.dot(_Kinv).dot(z))
-        # This follows from same derivation as [RG03] eq. 9 and definition of
-        # expectation
-        _pi = (z * numpy.array([Ainv.dot(q) + Binv.dot(self.hyperprior.mean) for q in phi]).reshape(-1)).dot(_Kinv).dot(g_phi)
         # Invert all the transforms to get expectations with respect to the
         # original measure
         self.evidence = (llik.max() + numpy.log(offset + .5 * numpy.square(evidence)))
         self.evidence_var = offset + .5 * numpy.square(evidence_var)
-        # TODO: fix this
-        self.pi = _expit(offset + .5 * numpy.square(_pi))
+        # TODO: logit_pi isn't non-negative, so does the square-root transform
+        # mess this up? Just use the SMC estimator for now
+        self.pi = _expit(numpy.exp(llik - llik.max() - scipy.misc.logsumexp(llik - llik.max())).dot(phi))
         # tau is fixed given pi
         self.tau = ((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) / self.model.pve.sum()
-        if len(llik) == 50 or not numpy.isfinite(self.evidence_var) or self.evidence_var <= 0:
+        if not numpy.isfinite(self.evidence_var) or self.evidence_var <= 0:
             import pdb; pdb.set_trace()
         logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self.evidence, self.evidence_var, self.pi))
 
