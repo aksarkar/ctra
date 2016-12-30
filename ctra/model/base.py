@@ -234,12 +234,11 @@ class BayesianQuadrature(Model):
             import pdb; pdb.set_trace()
         logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self.evidence, self.evidence_var, self.pi))
 
-    def fit(self, init_samples=10, max_samples=100, atol=1e-2, **kwargs):
+    def fit(self, init_samples=10, max_samples=100, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
         max_samples - maximum number of samples
-        atol - minimum variance in model evidence for convergence
 
         """
         m = self.model.pve.shape[0]
