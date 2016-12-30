@@ -174,7 +174,7 @@ class BayesianQuadrature(Model):
 
     def _neg_exp_var_evidence(self, phi):
         """Return f(phi) = -E[p(x | phi)]"""
-        mean, var = self.wsabi.predict_noiseless(phi.reshape(-1, 1))
+        mean, var = self.wsabi.predict_noiseless(numpy.atleast_2d(phi))
         assert self.hyperprior is not None
         prior_weight = self.hyperprior.pdf(phi)
         return -(mean ** 2) * var * (prior_weight ** 2)
@@ -209,14 +209,15 @@ class BayesianQuadrature(Model):
         Ainv = numpy.diag(1 / self.wsabi.rbf.lengthscale)
         B = self.hyperprior.cov
         Binv = numpy.linalg.pinv(self.hyperprior.cov)
+        I = numpy.eye(Ainv.shape[0])
         z = (self.wsabi.rbf.variance /
-             numpy.sqrt(numpy.linalg.det(Ainv.dot(B) + numpy.eye(len(llik)))) *
+             numpy.sqrt(numpy.linalg.det(Ainv.dot(B) + I)) *
              # TODO: Achieve this using broadcasting?
              numpy.array([numpy.exp(-.5 * (q - self.hyperprior.mean).T.dot(numpy.linalg.pinv(A + B)).dot(q - self.hyperprior.mean)) for q in phi]))
         _Kinv = numpy.linalg.pinv(self.wsabi.rbf.K(phi))
         evidence = z.dot(_Kinv).dot(g_phi)
         evidence_var = (self.wsabi.rbf.variance /
-                        numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + numpy.eye(len(llik)))) -
+                        numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + I)) -
                         z.T.dot(_Kinv).dot(z))
         # This follows from same derivation as [RG03] eq. 9 and definition of
         # expectation
