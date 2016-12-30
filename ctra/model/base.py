@@ -259,7 +259,7 @@ class BayesianQuadrature(Model):
             self.tau_grid.append(tau)
             llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
             self.params.append(_params)
-            if i > init_samples:
+            if i + 1 >= init_samples:
                 logger.debug('Refitting the quadrature GP')
                 # Square-root transform the (hyperparameter, llik) pairs. tau
                 # is deterministic given pi, so we do inference on f(phi) =
