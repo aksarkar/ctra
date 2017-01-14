@@ -15,6 +15,7 @@ import logging
 import GPy
 import numpy
 import scipy.optimize
+import scipy.spatial
 import scipy.special
 import theano
 
@@ -172,14 +173,15 @@ class BayesianQuadrature(Model):
         super().__init__(model, **kwargs)
         self.evidence = None
 
-    def _neg_exp_var_evidence(self, phi):
-        """Return f(phi) = -E[p(x | phi)]"""
-        mean, var = self.wsabi.predict_noiseless(numpy.atleast_2d(phi))
-        assert self.hyperprior is not None
-        prior_weight = self.hyperprior.pdf(phi)
-        return -(mean ** 2) * var * (prior_weight ** 2)
+    def _neg_exp_var_evidence(self, query, phi, g_phi):
+        """Return -V[l(phi) pi(phi)]"""
+        query = numpy.atleast_2d(query)
+        schur_comp = self.wsabi.rbf.K(query, phi).dot(self._Kinv)
+        return -(numpy.square(self.hyperprior.pdf(query)) *
+                 (self.wsabi.rbf.K(query) - schur_comp.dot(self.wsabi.rbf.K(phi, query))) *
+                 (self._offset + .5 * schur_comp.dot(g_phi)))
 
-    def _active_sample(self, max_retries=10):
+    def _active_sample(self, phi, g_phi, max_retries=10):
         """Return the next hyperparameter sample phi
 
         The active sampling scheme finds the point which contributes maximum
@@ -192,43 +194,50 @@ class BayesianQuadrature(Model):
         while n < max_retries and not getattr(opt, 'success', False):
             x0 = self.hyperprior.rvs(1)
             logger.debug('Starting minimizer from x0={}'.format(x0))
-            opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0)
+            opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0, args=(phi, g_phi))
         if not opt.success:
             raise ValueError('Failed to find next sample')
         return opt.x
 
-    def _update_params(self, llik, offset, phi, g_phi):
+    def _update_params(self, llik, phi, g_phi):
         """Update the relevant derived parameters after seeing design points phi
 
         The parameters are expectations and variances over the quadrature GP.
 
         """
-        # Expected value and variance of the integral. Closed form from
-        # Rasmussen & Gharamani, 2003 (eqs. 9, 10)
+        m = self.model.pve.shape[0]
         A = numpy.diag(self.wsabi.rbf.lengthscale)
         Ainv = numpy.diag(1 / self.wsabi.rbf.lengthscale)
+        b = self.hyperprior.mean
         B = self.hyperprior.cov
-        Binv = numpy.linalg.pinv(self.hyperprior.cov)
+        Binv = numpy.linalg.pinv(B)
         I = numpy.eye(Ainv.shape[0])
+        # \int_X K(x, x_d) N(x; b, B) dx
         z = (self.wsabi.rbf.variance /
-             numpy.sqrt(numpy.linalg.det(Ainv.dot(B) + I)) *
-             # TODO: Achieve this using broadcasting?
-             numpy.array([numpy.exp(-.5 * (q - self.hyperprior.mean).T.dot(numpy.linalg.pinv(A + B)).dot(q - self.hyperprior.mean)) for q in phi]))
-        _Kinv = numpy.linalg.pinv(self.wsabi.rbf.K(phi))
-        evidence = z.dot(_Kinv).dot(g_phi)
-        evidence_var = (self.wsabi.rbf.variance /
-                        numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + I)) -
-                        z.T.dot(_Kinv).dot(z))
-        # Invert all the transforms to get expectations with respect to the
-        # original measure
-        self.evidence = (llik.max() + numpy.log(offset + .5 * numpy.square(evidence)))
-        self.evidence_var = offset + .5 * numpy.square(evidence_var)
-        # TODO: logit_pi isn't non-negative, so does the square-root transform
-        # mess this up? Just use the SMC estimator for now
+             numpy.sqrt(numpy.linalg.det(B)) *
+             numpy.exp(-.5 * numpy.square(scipy.spatial.distance.cdist(phi, numpy.atleast_2d(b), metric='mahalanobis', VI=numpy.linalg.pinv(A + B)))))
+        # \int_X K(x, x_d)^2 N(x; b, B) dx
+        w = (numpy.square(self.wsabi.rbf.variance) /
+             numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + I)) *
+             numpy.exp(-.5 * numpy.square(scipy.spatial.distance.cdist(phi, numpy.atleast_2d(b), metric='mahalanobis', VI=numpy.linalg.pinv(.5 * A + B)))))
+        self._Kinv = numpy.linalg.pinv(self.wsabi.rbf.K(phi))
+        # The inner integral for the variance of the marginal likelihood:
+        #
+        #    \inv_X K(x, x_d) N(x; b, B) K(x, x') dx
+        #
+        # results in a Gaussian with covariance sigma. The outer integral
+        # results in a Gaussian with covariance _lambda
+        sigma = Ainv + numpy.linalg.pinv(Ainv + Binv)
+        _lambda = numpy.linalg.pinv(sigma) + numpy.linalg.pinv(Ainv + Binv)
+        # The term (K^-1 f)^2 comes outside the integrals
+        v = numpy.square(self._Kinv.dot(g_phi))
+        self._evidence = (llik.max() + numpy.log(self._offset + .5 * w.T.dot(v)))
+        self.evidence_var = (z.T.dot(z) * numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) * numpy.linalg.det(_lambda)) -
+                             w.T.dot(self._Kinv).dot(w))
         self.pi = _expit(numpy.exp(llik - llik.max() - scipy.misc.logsumexp(llik - llik.max())).dot(phi))
         # tau is fixed given pi
         self.tau = ((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) / self.model.pve.sum()
-        if not numpy.isfinite(self.evidence_var) or self.evidence_var <= 0:
+        if not numpy.isfinite(self.evidence_var):
             import pdb; pdb.set_trace()
         logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self.evidence, self.evidence_var, self.pi))
 
@@ -264,15 +273,17 @@ class BayesianQuadrature(Model):
                 # P(X, y, A | phi), g(phi) = sqrt(2 * (f(phi) - alpha))
                 phi = logit_pi[:i]
                 f_phi = numpy.exp(llik[:i] - llik[:i].max())
-                offset = .8 * f_phi.min()
-                g_phi = numpy.sqrt(2 * (f_phi - offset)).reshape(-1, 1)
+                self._offset = .8 * f_phi.min()
+                g_phi = numpy.sqrt(2 * (f_phi - self._offset)).reshape(-1, 1)
                 # Refit the GP
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
-                self._update_params(llik[:i], offset, phi, g_phi)
+                self._update_params(llik[:i], phi, g_phi)
                 if i + 1 < max_samples:
                     # Get the next hyperparameter sample
-                    logit_pi[i + 1] = self._active_sample()
+                    logit_pi[i + 1] = self._active_sample(phi, g_phi)
+                else:
+                    import pdb; pdb.set_trace()
         return self
 
     def evidence(self):
