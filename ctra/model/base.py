@@ -178,13 +178,13 @@ class BayesianQuadrature(Model):
 
     def _neg_exp_var_evidence(self, query, phi, g_phi):
         """Return -V[l(phi) pi(phi)]"""
-        query = numpy.atleast_2d(query)
+        query = numpy.atleast_2d(numpy.squeeze(query))
         schur_comp = self.wsabi.rbf.K(query, phi).dot(self._Kinv)
         return -(numpy.square(self.hyperprior.pdf(query)) *
                  (self.wsabi.rbf.K(query) - schur_comp.dot(self.wsabi.rbf.K(phi, query))) *
                  (self._offset + .5 * schur_comp.dot(g_phi)))
 
-    def _active_sample(self, phi, g_phi, max_retries=10):
+    def _active_sample(self, phi, g_phi, max_retries=20):
         """Return the next hyperparameter sample phi
 
         The active sampling scheme finds the point which contributes maximum
