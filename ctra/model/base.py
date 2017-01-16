@@ -282,11 +282,13 @@ class BayesianQuadrature(Model):
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
                 self._update_params(llik[:i], phi, g_phi)
-                if i + 1 < max_samples:
+                if self.evidence_var <= 0:
+                    logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
+                    self.evidence_var = 0
+                    break
+                elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
                     logit_pi[i + 1] = self._active_sample(phi, g_phi)
-                else:
-                    import pdb; pdb.set_trace()
         return self
 
     def evidence(self):
