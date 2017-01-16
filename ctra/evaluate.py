@@ -300,18 +300,19 @@ def evaluate():
             inner = model(x, y, s.annot, pve, learning_rate=args.learning_rate,
                           minibatch_n=args.minibatch_size)
             if args.outer_method == 'smc':
-                m = ctra.model.ImportanceSampler(inner)
+                outer = ctra.model.ImportanceSampler
             else:
-                m = ctra.model.BayesianQuadrature(inner)
-            m = m.fit(atol=args.tolerance, poll_iters=args.poll_iters,
-                      weight=args.ewma_weight, **kwargs)
+                outer = ctra.model.BayesianQuadrature
+            m = outer(inner).fit(atol=args.tolerance, poll_iters=args.poll_iters,
+                                 weight=args.ewma_weight, **kwargs)
             if args.bayes_factor:
                 logger.info('Fitting null model')
-                m0 = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'),
+                proposals = numpy.array(m.pi_grid).dot(inner.p) / inner.p.sum()
+                inner = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'),
                            pve.sum().reshape(1, 1),
                            learning_rate=args.learning_rate,
                            minibatch_n=args.minibatch_size)
-                m0 = m0.fit(atol=args.tolerance, proposals=m.pi_grid.dot(m.p) / m.p.sum(), **kwargs)
+                m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
             with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:

@@ -12,12 +12,12 @@ import collections
 import itertools
 import logging
 
-import GPy
 import numpy
 import scipy.optimize
 import scipy.spatial
 import scipy.special
 import theano
+import GPy
 
 logger = logging.getLogger(__name__)
 _real = theano.config.floatX
@@ -43,6 +43,9 @@ class Model:
     def fit(self, **kwargs):
         raise NotImplementedError
     
+    def evidence(self):
+        raise NotImplementedError
+
     def bayes_factor(self, other):
         """Return the Bayes factor between this model and another fitted model
 
@@ -50,7 +53,7 @@ class Model:
         samples to account for different baseline ELBO.
 
         """
-        return numpy.exp(self.evidence() - other.evidence())
+        return numpy.ravel(numpy.exp(self.evidence() - other.evidence()))[0]
 
 class Algorithm:
     def __init__(self, X, y, a, pve, **kwargs):
@@ -171,7 +174,7 @@ class BayesianQuadrature(Model):
     """
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
-        self.evidence = None
+        self._evidence = None
 
     def _neg_exp_var_evidence(self, query, phi, g_phi):
         """Return -V[l(phi) pi(phi)]"""
@@ -287,6 +290,6 @@ class BayesianQuadrature(Model):
         return self
 
     def evidence(self):
-        if self.evidence is None:
+        if self._evidence is None:
             raise ValueError('Must fit the model before computing Bayes factors')
-        return self.evidence
+        return self._evidence
