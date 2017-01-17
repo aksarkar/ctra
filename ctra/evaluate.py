@@ -309,9 +309,9 @@ def evaluate():
                 logger.info('Fitting null model')
                 proposals = numpy.array(m.pi_grid).dot(inner.p) / inner.p.sum()
                 inner = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'),
-                           pve.sum().reshape(1, 1),
-                           learning_rate=args.learning_rate,
-                           minibatch_n=args.minibatch_size)
+                              pve.sum().reshape(1, 1),
+                              learning_rate=args.learning_rate,
+                              minibatch_n=args.minibatch_size)
                 m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
