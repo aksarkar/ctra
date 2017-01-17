@@ -202,13 +202,14 @@ class BayesianQuadrature(Model):
             raise ValueError('Failed to find next sample')
         return opt.x
 
-    def _update_params(self, llik, phi, g_phi):
+    def _update_params(self, llik, phi, g_phi, propose_tau=False):
         """Update the relevant derived parameters after seeing design points phi
 
         The parameters are expectations and variances over the quadrature GP.
 
         """
-        m = self.model.pve.shape[0]
+        pve = self.model.pve
+        m = pve.shape[0]
         A = numpy.diag(self.wsabi.rbf.lengthscale)
         Ainv = numpy.diag(1 / self.wsabi.rbf.lengthscale)
         b = self.hyperprior.mean
@@ -235,37 +236,48 @@ class BayesianQuadrature(Model):
         # The term (K^-1 f)^2 comes outside the integrals
         v = numpy.square(self._Kinv.dot(g_phi))
         self._evidence = (llik.max() + numpy.log(self._offset + .5 * w.T.dot(v)))
-        self.evidence_var = (z.T.dot(z) * numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) * numpy.linalg.det(_lambda)) -
+        self.evidence_var = (self.wsabi.rbf.variance * z.T.dot(z) * numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) * numpy.linalg.det(_lambda)) -
                              w.T.dot(self._Kinv).dot(w))
-        self.pi = _expit(numpy.exp(llik - llik.max() - scipy.misc.logsumexp(llik - llik.max())).dot(phi))
-        # tau is fixed given pi
-        self.tau = ((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) / self.model.pve.sum()
+        self.elbo_vals = llik
+        if propose_tau:
+            self.tau = numpy.exp(numpy.exp(llik - llik.max() - scipy.misc.logsumexp(llik - llik.max())).dot(phi))
+            self.pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / self.tau).sum(),
+                                   pve.shape[0]).astype(_real)
+        else:
+            self.pi = _expit(numpy.exp(llik - llik.max() - scipy.misc.logsumexp(llik - llik.max())).dot(phi))
+            self.tau = numpy.repeat(((1 - pve.sum()) * (self.pi * self.model.var_x).sum()) /
+                                    pve.sum(), pve.shape[0]).astype(_real)
         if not numpy.isfinite(self.evidence_var):
             import pdb; pdb.set_trace()
         logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self.evidence, self.evidence_var, self.pi))
 
-    def fit(self, init_samples=10, max_samples=100, **kwargs):
+    def fit(self, init_samples=10, max_samples=100, propose_tau=False, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
         max_samples - maximum number of samples
 
         """
-        m = self.model.pve.shape[0]
-        logit_pi = numpy.zeros((max_samples, m))
+        pve = self.model.pve
+        m = pve.shape[0]
+        hyperparam = numpy.zeros((max_samples, m))
         llik = numpy.zeros(max_samples)
-        _N = scipy.stats.multivariate_normal
-        self.hyperprior = _N(mean=numpy.zeros(m), cov=4 * numpy.eye(m))
-        logit_pi[:init_samples,:] = self.hyperprior.rvs(size=init_samples).reshape(-1, m)
+        self.hyperprior = scipy.stats.multivariate_normal(mean=numpy.zeros(m), cov=4 * numpy.eye(m))
+        hyperparam[:init_samples,:] = self.hyperprior.rvs(size=init_samples).reshape(-1, m)
         K = GPy.kern.RBF(input_dim=m, ARD=True)
         self.params = []
         self.pi_grid = []
         self.tau_grid = []
         for i in range(max_samples):
-            pi = _expit(logit_pi[i])
+            if propose_tau:
+                tau = numpy.exp(hyperparam[i])
+                pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / tau).sum(),
+                                  pve.shape[0]).astype(_real)
+            else:
+                pi = _expit(hyperparam[i])
+                tau = numpy.repeat(((1 - pve.sum()) * (pi * self.model.var_x).sum()) /
+                                   pve.sum(), pve.shape[0]).astype(_real)
             self.pi_grid.append(pi)
-            tau = numpy.repeat(((1 - self.model.pve.sum()) * (pi * self.model.var_x).sum()) /
-                               self.model.pve.sum(), self.model.pve.shape[0]).astype(_real)
             self.tau_grid.append(tau)
             llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
             self.params.append(_params)
@@ -274,21 +286,21 @@ class BayesianQuadrature(Model):
                 # Square-root transform the (hyperparameter, llik) pairs. tau
                 # is deterministic given pi, so we do inference on f(phi) =
                 # P(X, y, A | phi), g(phi) = sqrt(2 * (f(phi) - alpha))
-                phi = logit_pi[:i]
+                phi = hyperparam[:i]
                 f_phi = numpy.exp(llik[:i] - llik[:i].max())
                 self._offset = .8 * f_phi.min()
                 g_phi = numpy.sqrt(2 * (f_phi - self._offset)).reshape(-1, 1)
                 # Refit the GP
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
                 self.wsabi.optimize()
-                self._update_params(llik[:i], phi, g_phi)
+                self._update_params(llik[:i], phi, g_phi, propose_tau)
                 if self.evidence_var <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
                     self.evidence_var = 0
                     break
                 elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
-                    logit_pi[i + 1] = self._active_sample(phi, g_phi)
+                    hyperparam[i + 1] = self._active_sample(phi, g_phi)
         return self
 
     def evidence(self):
