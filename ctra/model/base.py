@@ -38,7 +38,7 @@ result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params']
 class Model:
     def __init__(self, model, **kwargs):
         self.model = model
-        self.elbo_vals = None
+        self.elbo_vals = []
 
     def fit(self, **kwargs):
         raise NotImplementedError
@@ -160,6 +160,23 @@ sampling.
         return (numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
                 self.elbo_vals.max())
 
+class _mvuniform():
+    """Multidimensional uniform distribution
+
+    Convenience wrapper to allow sampling m-dimensional vectors using the same
+    API as scipy.stats.multivariate_normal
+
+    """
+    def __init__(self, a, b, m):
+        self.m = m
+        self.uniform = scipy.stats.uniform(loc=a, scale=b - a)
+
+    def rvs(self, size):
+        return self.uniform.rvs(size=self.m * size).reshape(-1, self.m)
+
+    def logpdf(self, x):
+        return self.uniform.logpdf(x).sum()
+
 class WSABI_L(Model):
     """Estimate the posterior p(pi, tau | X, y, A) using WSABI-L (Gunter et al., NIPS 2016).
 
@@ -239,7 +256,6 @@ class WSABI_L(Model):
         self._evidence = (llik.max() + numpy.log(self._offset + .5 * w.T.dot(v)))
         self.evidence_var = (self.wsabi.rbf.variance * z.T.dot(z) * numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) * numpy.linalg.det(_lambda)) -
                              w.T.dot(self._Kinv).dot(w))
-        self.elbo_vals = llik
         if propose_tau:
             self.tau = numpy.exp(numpy.exp(llik - llik.max() - scipy.misc.logsumexp(llik - llik.max())).dot(phi))
             self.pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / self.tau).sum(),
@@ -268,9 +284,10 @@ class WSABI_L(Model):
             # being Gaussian elsewhere, but in the case of proposing tau we
             # specify a log-uniform prior and use importance reweighting to
             # work with a Gaussian prior
-            self.hyperprior = scipy.stats.multivariate_normal()
+            self.hyperprior = scipy.stats.multivariate_normal(cov=numpy.eye(m))
+            # Set minimum tau as tau corresponding to pi = 1e-5
             a = -5
-            self.proposal = scipy.stats.uniform(loc=a, scale=numpy.log(self.model.var_x.sum()) - a)
+            self.proposal = _mvuniform(a, numpy.log(self.model.var_x.sum()), m)
         else:
             self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
             self.proposal = self.hyperprior
@@ -291,12 +308,13 @@ class WSABI_L(Model):
             self.pi_grid.append(pi)
             self.tau_grid.append(tau)
             llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
+            self.elbo_vals.append(llik[i])
+            if propose_tau:
+                # Importance-reweighting trick
+                llik[i] += (self.proposal.logpdf(hyperparam[i]) -
+                            self.hyperprior.logpdf(hyperparam[i]))
             self.params.append(_params)
             if i + 1 >= init_samples:
-                if propose_tau:
-                    # Importance-reweighting trick
-                    llik[i] += (self.proposal.logpdf(hyperparam[i]) -
-                                self.hyperprior.logpdf(hyperparam[i]))
                 # Square-root transform the (hyperparameter, llik) pairs. tau
                 # is deterministic given pi (and vice-versa), so we do
                 # inference on one:
