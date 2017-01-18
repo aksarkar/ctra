@@ -6,6 +6,6 @@ from .pcgc import *
 
 pcgc = estimate
 
-__all__ = [ImportanceSampler, BayesianQuadrature, GaussianCoordinateAscent,
+__all__ = [ImportanceSampler, WSABI_L, GaussianCoordinateAscent,
            LogisticCoordinateAscent, GaussianDSVI, LogisticDSVI, varbvs, pcgc,
            grm]

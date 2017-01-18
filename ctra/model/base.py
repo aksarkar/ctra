@@ -160,15 +160,14 @@ sampling.
         return (numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
                 self.elbo_vals.max())
 
-class BayesianQuadrature(Model):
-    """Estimate the posterior p(pi, tau | X, y, A) using Bayesian quadrature.
+class WSABI_L(Model):
+    """Estimate the posterior p(pi, tau | X, y, A) using WSABI-L (Gunter et al., NIPS 2016).
 
-    The idea is described in Gunter et al., NIPS 2016. To evaluate the
-    intractable integral \iint p(X, y, A | pi, tau) p(pi, tau) dpi dtau, we put
-    a Gaussian process prior to represent uncertainty in p(X, y, A | pi, tau)
-    at points (pi, tau) not yet evaluated. This means we can actively choose
-    the next (pi, tau) to minimize the uncertainty in the integral
-    (exploration) and maximize the number of high likelihood samples
+    To evaluate the intractable integral \iint p(X, y, A | pi, tau) p(pi, tau)
+    dpi dtau, we put a Gaussian process prior to represent uncertainty in p(X,
+    y, A | pi, tau) at points (pi, tau) not yet evaluated. This means we can
+    actively choose the next (pi, tau) to minimize the uncertainty in the
+    integral (exploration) and maximize the number of high likelihood samples
     (exploitation).
 
     """
@@ -265,9 +264,10 @@ class BayesianQuadrature(Model):
         hyperparam = numpy.zeros((max_samples, m))
         llik = numpy.zeros(max_samples)
         if propose_tau:
-            # The naming here is misleading because we rely on self.hyperprior being Gaussian
-            # elsewhere, but in the case of proposing tau we specify a log-uniform prior and use
-            # importance reweighting to work with a Gaussian prior
+            # The naming here is misleading because we rely on self.hyperprior
+            # being Gaussian elsewhere, but in the case of proposing tau we
+            # specify a log-uniform prior and use importance reweighting to
+            # work with a Gaussian prior
             self.hyperprior = scipy.stats.multivariate_normal()
             a = -5
             self.proposal = scipy.stats.uniform(loc=a, scale=numpy.log(self.model.var_x.sum()) - a)
@@ -297,8 +297,9 @@ class BayesianQuadrature(Model):
                     # Importance-reweighting trick
                     llik[i] += (self.proposal.logpdf(hyperparam[i]) -
                                 self.hyperprior.logpdf(hyperparam[i]))
-                # Square-root transform the (hyperparameter, llik) pairs. tau is deterministic given
-                # pi (and vice-versa), so we do inference on one:
+                # Square-root transform the (hyperparameter, llik) pairs. tau
+                # is deterministic given pi (and vice-versa), so we do
+                # inference on one:
                 #
                 # f(phi) = P(X, y, A | phi), g(phi) = sqrt(2 * (f(phi) - alpha))
                 phi = hyperparam[:i]

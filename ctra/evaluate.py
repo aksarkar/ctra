@@ -39,7 +39,7 @@ def _parser():
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'mcmc', 'dsvi'], help='Method to fit model', required=True)
-    req_args.add_argument('-O', '--outer-method', choices=['smc', 'wsabi'], help='Outer method (for hyperparameters)', required=True)
+    req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi'], help='Outer method (for hyperparameters)', required=True)
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
@@ -299,10 +299,10 @@ def evaluate():
                     model = ctra.model.LogisticDSVI
             inner = model(x, y, s.annot, pve, learning_rate=args.learning_rate,
                           minibatch_n=args.minibatch_size)
-            if args.outer_method == 'smc':
+            if args.outer_method == 'is':
                 outer = ctra.model.ImportanceSampler
             else:
-                outer = ctra.model.BayesianQuadrature
+                outer = ctra.model.WSABI_L
             m = outer(inner).fit(atol=args.tolerance, poll_iters=args.poll_iters,
                                  weight=args.ewma_weight, **kwargs)
             if args.bayes_factor:
