@@ -195,10 +195,12 @@ class BayesianQuadrature(Model):
         opt = object()
         n = 0
         while n < max_retries and not getattr(opt, 'success', False):
-            x0 = self.hyperprior.rvs(1)
+            x0 = self.proposal.rvs(1)
             logger.debug('Starting minimizer from x0={}'.format(x0))
-            opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0, args=(phi, g_phi))
+            opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0, args=(phi, g_phi), method='Nelder-Mead')
+            n += 1
         if not opt.success:
+            import pdb; pdb.set_trace()
             raise ValueError('Failed to find next sample')
         return opt.x
 
@@ -249,9 +251,9 @@ class BayesianQuadrature(Model):
                                     pve.sum(), pve.shape[0]).astype(_real)
         if not numpy.isfinite(self.evidence_var):
             import pdb; pdb.set_trace()
-        logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self.evidence, self.evidence_var, self.pi))
+        logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self._evidence, self.evidence_var, self.pi))
 
-    def fit(self, init_samples=10, max_samples=100, propose_tau=False, **kwargs):
+    def fit(self, init_samples=10, max_samples=100, propose_tau=False, atol=0.1, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
@@ -262,8 +264,17 @@ class BayesianQuadrature(Model):
         m = pve.shape[0]
         hyperparam = numpy.zeros((max_samples, m))
         llik = numpy.zeros(max_samples)
-        self.hyperprior = scipy.stats.multivariate_normal(mean=numpy.zeros(m), cov=4 * numpy.eye(m))
-        hyperparam[:init_samples,:] = self.hyperprior.rvs(size=init_samples).reshape(-1, m)
+        if propose_tau:
+            # The naming here is misleading because we rely on self.hyperprior being Gaussian
+            # elsewhere, but in the case of proposing tau we specify a log-uniform prior and use
+            # importance reweighting to work with a Gaussian prior
+            self.hyperprior = scipy.stats.multivariate_normal()
+            a = -5
+            self.proposal = scipy.stats.uniform(loc=a, scale=numpy.log(self.model.var_x.sum()) - a)
+        else:
+            self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
+            self.proposal = self.hyperprior
+        hyperparam[:init_samples,:] = self.proposal.rvs(size=init_samples).reshape(-1, m)
         K = GPy.kern.RBF(input_dim=m, ARD=True)
         self.params = []
         self.pi_grid = []
@@ -282,21 +293,30 @@ class BayesianQuadrature(Model):
             llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
             self.params.append(_params)
             if i + 1 >= init_samples:
-                logger.debug('Refitting the quadrature GP')
-                # Square-root transform the (hyperparameter, llik) pairs. tau
-                # is deterministic given pi, so we do inference on f(phi) =
-                # P(X, y, A | phi), g(phi) = sqrt(2 * (f(phi) - alpha))
+                if propose_tau:
+                    # Importance-reweighting trick
+                    llik[i] += (self.proposal.logpdf(hyperparam[i]) -
+                                self.hyperprior.logpdf(hyperparam[i]))
+                # Square-root transform the (hyperparameter, llik) pairs. tau is deterministic given
+                # pi (and vice-versa), so we do inference on one:
+                #
+                # f(phi) = P(X, y, A | phi), g(phi) = sqrt(2 * (f(phi) - alpha))
                 phi = hyperparam[:i]
                 f_phi = numpy.exp(llik[:i] - llik[:i].max())
                 self._offset = .8 * f_phi.min()
                 g_phi = numpy.sqrt(2 * (f_phi - self._offset)).reshape(-1, 1)
                 # Refit the GP
+                logger.debug('Refitting the quadrature GP')
                 self.wsabi = GPy.models.GPRegression(phi, g_phi, K)
+                logger.debug('Refitting the quadrature GP hyperparameters')
                 self.wsabi.optimize()
                 self._update_params(llik[:i], phi, g_phi, propose_tau)
                 if self.evidence_var <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
                     self.evidence_var = 0
+                    break
+                elif self.evidence_var <= atol:
+                    logger.info('Finished active sampling after {} samples (tolerance reached)'.format(i))
                     break
                 elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
