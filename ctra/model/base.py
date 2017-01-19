@@ -228,12 +228,12 @@ class WSABI_L(Model):
         """
         pve = self.model.pve
         m = pve.shape[0]
-        A = numpy.diag(self.wsabi.rbf.lengthscale)
-        Ainv = numpy.diag(1 / self.wsabi.rbf.lengthscale)
+        I = numpy.eye(m)
+        A = self.wsabi.rbf.lengthscale * I
+        Ainv = I / self.wsabi.rbf.lengthscale
         b = self.hyperprior.mean
         B = self.hyperprior.cov
         Binv = numpy.linalg.pinv(B)
-        I = numpy.eye(Ainv.shape[0])
         # \int_X K(x, x_d) N(x; b, B) dx
         z = (self.wsabi.rbf.variance /
              numpy.sqrt(numpy.linalg.det(B)) *
@@ -292,7 +292,7 @@ class WSABI_L(Model):
             self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
             self.proposal = self.hyperprior
         hyperparam[:init_samples,:] = self.proposal.rvs(size=init_samples).reshape(-1, m)
-        K = GPy.kern.RBF(input_dim=m, ARD=True)
+        K = GPy.kern.RBF(input_dim=m, ARD=False)
         self.params = []
         self.pi_grid = []
         self.tau_grid = []
