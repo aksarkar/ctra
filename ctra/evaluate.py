@@ -56,6 +56,7 @@ def _parser():
     data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
     data_args.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
+    data_args.add_argument('--plot', help='Output file to plot to', default=None)
     data_args.add_argument('--pdb', action='store_true', help='Drop into pdb after fitting the model', default=False)
 
     sim_args = parser.add_argument_group('Simulation', 'Parameters for generating synthetic data')
@@ -162,10 +163,11 @@ def _validate(args):
         raise _A('Fixing causal variants not supported for method {}'.format(args.method))
     if args.propose_tau and args.method not in ('coord', 'dsvi'):
         raise _A('Proposing tau not supported for method {}'.format(args.method))
+    if args.plot is not None and args.outer_method != 'wsabi':
+        raise _A('Plotting not supported for method {}'.format(args.outer_method))
 
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
-
     args = _parser().parse_args()
     _validate(args)
     logging.getLogger('ctra').setLevel(args.log_level)
@@ -339,6 +341,14 @@ def evaluate():
             logger.info('Validation set correlation = {:.3f}'.format(r ** 2))
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
+        if args.plot is not None:
+            import matplotlib
+            matplotlib.pyplot.switch_backend('pdf')
+            fig, axes = matplotlib.pyplot.subplots(2, 1)
+            m.wsabi.plot(ax=axes[0])
+            if args.bayes_factor:
+                m0.wsabi.plot(ax=axes[1])
+            fig.savefig(args.plot)
         if args.pdb:
             pdb.set_trace()
         if args.propose_tau:
