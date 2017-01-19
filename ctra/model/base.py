@@ -268,6 +268,18 @@ class WSABI_L(Model):
             import pdb; pdb.set_trace()
         logger.debug('Sample {}: evidence = {}, variance = {}, pi = {}'.format(len(llik), self._evidence, self.evidence_var, self.pi))
 
+    def _handle_converged(self):
+        # Scale the log importance weights before normalizing to avoid numerical
+        # problems
+        log_weights = self.elbo_vals - max(self.elbo_vals)
+        normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
+        self.weights = normalized_weights
+        self.pip = normalized_weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
+        self.pi_grid = pi
+        self.tau_grid = tau
+        self.pi = normalized_weights.dot(pi)
+        self.tau = normalized_weights.dot(tau)
+
     def fit(self, init_samples=10, max_samples=100, propose_tau=False, atol=0.1, **kwargs):
         """Draw samples from the hyperposterior
 
@@ -340,6 +352,7 @@ class WSABI_L(Model):
                 elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
                     hyperparam[i + 1] = self._active_sample(phi, g_phi)
+        self._handle_converged()
         return self
 
     def evidence(self):
