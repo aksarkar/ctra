@@ -192,7 +192,7 @@ class WSABI_L(Model):
         super().__init__(model, **kwargs)
         self._evidence = None
 
-    def _neg_exp_var_evidence(self, query, phi, g_phi):
+    def _neg_uncertainty(self, query, phi, g_phi):
         """Return -V[l(phi) pi(phi)]"""
         query = numpy.atleast_2d(numpy.squeeze(query))
         schur_comp = self.wsabi.rbf.K(query, phi).dot(self._Kinv)
@@ -213,7 +213,7 @@ class WSABI_L(Model):
         while n < max_retries and not getattr(opt, 'success', False):
             x0 = self.proposal.rvs(1)
             logger.debug('Starting minimizer from x0={}'.format(x0))
-            opt = scipy.optimize.minimize(self._neg_exp_var_evidence, x0=x0, args=(phi, g_phi), method='Nelder-Mead')
+            opt = scipy.optimize.minimize(self._neg_uncertainty, x0=x0, args=(phi, g_phi), method='Nelder-Mead')
             n += 1
         if not opt.success:
             import pdb; pdb.set_trace()
