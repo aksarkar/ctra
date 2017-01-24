@@ -12,6 +12,7 @@ import collections
 import itertools
 import logging
 
+import matplotlib
 import numpy
 import scipy.optimize
 import scipy.spatial
@@ -34,6 +35,8 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 # This is needed for models implemented as standalone functions rather than
 # instance methods
 result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params'])
+
+matplotlib.pyplot.switch_backend('pdf')
 
 class Model:
     def __init__(self, model, **kwargs):
@@ -199,6 +202,7 @@ class WSABI:
         self.gp = None
         # ARD kernel overfits/explodes numerically in our problem
         self.K = GPy.kern.RBF(input_dim=self.m, ARD=False)
+        self.K.lengthscale.constrain_bounded(0, 1)
         self.x = []
         self.f = []
         self._mean = None
@@ -260,7 +264,7 @@ class WSABI:
     def fit(self, integrate_phi=False):
         """Fit the GP on the transformed data"""
         self.gp = GPy.models.GPRegression(self.x, self.f, self.K)
-        self.gp.optimize()
+        self.gp.optimize_restarts()
         # Pre-compute things
         A = self.gp.rbf.lengthscale * self.I
         Ainv = self.I / self.gp.rbf.lengthscale
@@ -276,28 +280,39 @@ class WSABI:
              numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + self.I)) *
              numpy.exp(-.5 * _sqdist(self.x, b, .5 * A + B)))
         if integrate_phi:
-            w *= numpy.linalg.pinv(2 * Ainv + Binv) * (self.x.dot(2 * Ainv[:,:,numpy.newaxis]).sum(axis=2) + Binv.dot(b))
-            self.offset *= b
-        self._mean = self.offset + .5 * w.T.dot(right)
+            # \int_X x N(x; m, V) dx = m
+            m = numpy.linalg.pinv(2 * Ainv + Binv) * (self.x.dot(2 * Ainv[:,:,numpy.newaxis]).sum(axis=2) + Binv.dot(b))
+            self._mean = self.offset * b + .5 * (w * m).T.dot(right)
+        else:
+            self._mean = self.offset + w.T.dot(right)
         if self.log_scaling is not None:
             self._mean = self.log_scaling + numpy.log(self._mean)
 
-        # \int_X K(x, x_d) N(x; b, B) dx
-        z = (self.gp.rbf.variance /
-             numpy.sqrt(numpy.linalg.det(B)) *
-             numpy.exp(-.5 * _sqdist(self.x, b, A + B)))
-        # The inner integral for the variance of the marginal likelihood:
-        #
-        #    \inv_X K(x, x_d) N(x; b, B) K(x, x') dx
-        #
-        # results in a Gaussian with covariance sigma. The outer integral
-        # results in a Gaussian with covariance _lambda
-        sigma = Ainv + numpy.linalg.pinv(Ainv + Binv)
-        _lambda = numpy.linalg.pinv(sigma) + numpy.linalg.pinv(Ainv + Binv)
-        self._var = (self.gp.rbf.variance * z.T.dot(z) *
-                     numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) *
-                                numpy.linalg.det(_lambda)) -
-                     w.T.dot(self.Kinv).dot(w))
+        if integrate_phi:
+            # \int_X x^2 N(x; b, B) dx = b^2 + Tr(B)
+            s = numpy.square(b) + numpy.trace(B)
+            # \int_X x^2 N(x; m, V) dx = m^2 + Tr(V)
+            S = numpy.square(m) + numpy.trace(2 * Ainv + Binv)
+            # V[x] = E[x^2] - (E[x])^2
+            self._var = self.offset * s + .5 * (w * S).T.dot(right)
+            self._var -= numpy.square(self._mean)
+        else:
+            # \int_X K(x, x_d) N(x; b, B) dx
+            z = (self.gp.rbf.variance /
+                 numpy.sqrt(numpy.linalg.det(B)) *
+                 numpy.exp(-.5 * _sqdist(self.x, b, A + B)))
+            # The inner integral for the variance of the marginal likelihood:
+            #
+            #    \inv_X K(x, x_d) N(x; b, B) K(x, x') dx
+            #
+            # results in a Gaussian with covariance sigma. The outer integral
+            # results in a Gaussian with covariance _lambda
+            sigma = Ainv + numpy.linalg.pinv(Ainv + Binv)
+            _lambda = numpy.linalg.pinv(sigma) + numpy.linalg.pinv(Ainv + Binv)
+            self._var = (self.gp.rbf.variance * z.T.dot(z) *
+                         numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) *
+                                    numpy.linalg.det(_lambda)) -
+                         w.T.dot(self.Kinv).dot(w))
         return self
 
     def mean(self):
@@ -394,9 +409,13 @@ class ActiveSampler(Model):
                 self.evidence_gp = self.evidence_gp.transform(hyperparam[:i], llik[:i]).fit()
                 logger.debug('Refitting GP for phi p(phi | D)')
                 p_phi = numpy.exp(llik[:i] - self.evidence_gp.mean()).reshape(-1, m)
-                import pdb; pdb.set_trace()
                 self.phi_gp = self.phi_gp.transform(hyperparam[:i], p_phi, exp=False).fit(integrate_phi=True)
-                logger.debug('Sample {}: Z={}, phi={}'.format(i, self.evidence_gp, self.phi_gp))
+                logger.debug('Sample {}: Z={}, phi={}'.format(i + 1, self.evidence_gp, self.phi_gp))
+                fig, axes = matplotlib.pyplot.subplots(2, 1)
+                self.evidence_gp.gp.plot(ax=axes[0])
+                self.phi_gp.gp.plot(ax=axes[1])
+                fig.savefig('test.pdf')
+                import pdb; pdb.set_trace()
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
