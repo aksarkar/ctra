@@ -161,7 +161,7 @@ class LogisticCoordinateAscent(Algorithm):
                 beta[j] = (xty[j] + xdx[j] * theta_j + xd[j] * d.T.dot(eta) / d.sum() - xj.T.dot(numpy.diag(d)).dot(eta)) / gamma[j]
                 ssr = beta[j] * beta[j] * gamma[j]
                 if true_causal is None:
-                    alpha[j] = scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j])))
+                    alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j]))), self.eps, 1 - self.eps)
                 eta += xj * (alpha[j] * beta[j] - theta_j)
             gamma = xdx + tau_deref
             a = 1 / d.sum()
@@ -183,6 +183,7 @@ class LogisticCoordinateAscent(Algorithm):
                      (alpha * L(alpha / pi_deref) + (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
             logger.debug('{:>8.6g} {:>8.0f}'.format(elbo[0], alpha.sum()))
             if not numpy.isfinite(elbo):
+                import pdb; pdb.set_trace()
                 raise ValueError('ELBO must be finite')
             elif elbo > 0:
                 raise ValueError('ELBO must be non-positive')
