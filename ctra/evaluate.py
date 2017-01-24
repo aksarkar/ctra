@@ -38,7 +38,7 @@ def _parser():
     req_args = parser.add_argument_group('Required arguments', '')
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
-    req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'mcmc', 'dsvi'], help='Method to fit model', required=True)
+    req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi'], help='Method to fit model', required=True)
     req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi'], help='Outer method (for hyperparameters)', required=True, default='is')
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
@@ -83,10 +83,6 @@ def _parser():
     bootstrap_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
     bootstrap_args.add_argument('--nonparametric-bootstrap', type=int, help='Nonparametric bootstrap trial for frequentist standard errors', default=None)
     bootstrap_args.add_argument('--validation', type=int, help='Hold out validation set for posterior predictive check', default=None)
-
-    mcmc_args = parser.add_argument_group('MCMC', 'Parameters for tuning MCMC inference')
-    mcmc_args.add_argument('-B', '--burn-in', type=int, help='Burn in samples for MCMC', default=int(1e5))
-    mcmc_args.add_argument('-S', '--mcmc-samples', type=int, help='Number of posterior samples for MCMC', default=int(1e3))
 
     return parser
 
@@ -142,23 +138,15 @@ def _validate(args):
     # Check if desired method is supported
     if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight')):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
-    if args.method != 'mcmc' and any(k in args for k in ('burn_in', 'mcmc_samples')):
-        logger.warn('Ignoring MCMC parameters for method {}'.format(args.method))
-    if (args.method, args.model) in (('mcmc', 'logistic')):
-        raise _A('Method {} does not support model {}'.format(args.method, args.model))
-    if args.method in ('mcmc', 'varbvs') and len(args.annotation) > 1:
+    if args.method in ('varbvs',) and len(args.annotation) > 1:
         raise _A('Method {} does not support multiple annotations'.format(args.method))
-    if args.method == 'mcmc' and args.write_weights is not None:
-        raise _A('Method {} does not support writing weights'.format(args.method))
     if args.outer_method == 'wsabi' and args.method not in ('coord', 'dsvi'):
         raise _A('Outer method "{}" does not support inner method "{}"'.format(args.outer_method, args.method))
     if args.parametric_bootstrap is not None and (args.load_data is not None or args.load_oxstats is not None):
         raise _A('Parametric bootstrap not supported for real data')
-    if args.validation is not None and args.method in ('mcmc'):
-        raise _A('Method {} does not support posterior predictive check'.format(args.method))
     if args.bayes_factor and len(args.annotation) == 1:
         raise _A('Model comparison not supported for only one annotation')
-    if args.bayes_factor and args.method in ('mcmc', 'varbvs'):
+    if args.bayes_factor and args.method in ('varbvs',):
         raise _A('Model comparison not supported for method {}'.format(args.method))
     if args.true_causal and args.method not in ('coord', 'dsvi'):
         raise _A('Fixing causal variants not supported for method {}'.format(args.method))
@@ -286,9 +274,6 @@ def evaluate():
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper', **kwargs)
-        elif args.method == 'mcmc':
-            m = ctra.model.varbvs(x, y, pve, 'bvsmcmc', args.burn_in,
-                                  args.mcmc_samples, args.seed)
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
@@ -305,7 +290,7 @@ def evaluate():
             if args.outer_method == 'is':
                 outer = ctra.model.ImportanceSampler
             else:
-                outer = ctra.model.WSABI_L
+                outer = ctra.model.ActiveSampler
             logger.info('Fitting alternate model')
             m = outer(inner).fit(atol=args.tolerance, poll_iters=args.poll_iters,
                                  weight=args.ewma_weight, **kwargs)
