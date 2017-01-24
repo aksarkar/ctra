@@ -51,6 +51,7 @@ def _parser():
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     data_args.add_argument('-f', '--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
+    data_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     data_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
@@ -305,9 +306,10 @@ def evaluate():
                 outer = ctra.model.ImportanceSampler
             else:
                 outer = ctra.model.WSABI_L
+            logger.info('Fitting alternate model')
             m = outer(inner).fit(atol=args.tolerance, poll_iters=args.poll_iters,
                                  weight=args.ewma_weight, **kwargs)
-            if args.bayes_factor:
+            if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')
                 proposals = numpy.array(m.pi_grid).dot(inner.p) / inner.p.sum()
                 inner = model(x, y, numpy.zeros(s.annot.shape, dtype='int8'),
@@ -351,6 +353,8 @@ def evaluate():
             fig.savefig(args.plot)
         if args.pdb:
             pdb.set_trace()
+        if args.fit_null:
+            m = m0
         if args.propose_tau:
             logger.info('Writing posterior mean tau')
             numpy.savetxt(sys.stdout.buffer, m.tau, fmt='%.3g')
