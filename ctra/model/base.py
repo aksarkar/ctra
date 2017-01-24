@@ -245,6 +245,7 @@ class WSABI:
         exp - exponentiate log likelihoods
 
         """
+        f = f[:]
         if exp:
             self.log_scaling = f.max()
             f = numpy.exp(f - self.log_scaling)
@@ -256,7 +257,7 @@ class WSABI:
         self.f = f
         return self
 
-    def fit(self):
+    def fit(self, integrate_phi=False):
         """Fit the GP on the transformed data"""
         self.gp = GPy.models.GPRegression(self.x, self.f, self.K)
         self.gp.optimize()
@@ -272,9 +273,11 @@ class WSABI:
         right = numpy.square(self.Kinv.dot(self.f))
         # \int_X K(x, x_d)^2 N(x; b, B) dx
         w = (numpy.square(self.gp.rbf.variance) /
-                  numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + self.I)) *
-                  numpy.exp(-.5 * _sqdist(self.x, b, .5 * A + B)))
-
+             numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + self.I)) *
+             numpy.exp(-.5 * _sqdist(self.x, b, .5 * A + B)))
+        if integrate_phi:
+            w *= numpy.linalg.pinv(2 * Ainv + Binv) * (self.x.dot(2 * Ainv[:,:,numpy.newaxis]).sum(axis=2) + Binv.dot(b))
+            self.offset *= b
         self._mean = self.offset + .5 * w.T.dot(right)
         if self.log_scaling is not None:
             self._mean = self.log_scaling + numpy.log(self._mean)
@@ -301,13 +304,13 @@ class WSABI:
         """Return the posterior mean \int_X m(x) p(x) dx"""
         if self._mean is None:
             raise ValueError('Must fit the model before estimating its mean')
-        return self._mean
+        return numpy.squeeze(self._mean)
 
     def var(self):
         """Return the posterior variance \int_X Cov(x, x') p(x) p(x') dx dx' """
         if self._var is None:
             raise ValueError('Must fit the model before estimating its variance')
-        return self._var
+        return numpy.squeeze(self._var)
 
     def __repr__(self):
         return 'WSABI(mean={}, var={})'.format(self.mean(), self.var())
@@ -326,7 +329,7 @@ class ActiveSampler(Model):
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
 
-    def fit(self, init_samples=10, max_samples=100, propose_tau=False, propose_null=False, atol=0.1, **kwargs):
+    def fit(self, init_samples=20, max_samples=100, propose_tau=False, propose_null=False, atol=0.1, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
@@ -389,12 +392,12 @@ class ActiveSampler(Model):
             if i + 1 >= init_samples:
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.transform(hyperparam[:i], llik[:i]).fit()
-                logger.debug('Refitting GP for phi')
-                self.phi_gp = self.evidence_gp.transform(hyperparam[:i], llik[:i] - self.evidence_gp.mean())
-                logger.debug('Sample {}: Z={}, phi={}'.format(len(llik),
-                                                              self.evidence_gp,
-                                                              self.phi_gp))
-                v = self.phi_gp.var()
+                logger.debug('Refitting GP for phi p(phi | D)')
+                p_phi = numpy.exp(llik[:i] - self.evidence_gp.mean()).reshape(-1, m)
+                import pdb; pdb.set_trace()
+                self.phi_gp = self.phi_gp.transform(hyperparam[:i], p_phi, exp=False).fit(integrate_phi=True)
+                logger.debug('Sample {}: Z={}, phi={}'.format(i, self.evidence_gp, self.phi_gp))
+                v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
                     break
