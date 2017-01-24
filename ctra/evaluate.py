@@ -58,7 +58,7 @@ def _parser():
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
     data_args.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     data_args.add_argument('--plot', help='Output file to plot to', default=None)
-    data_args.add_argument('--pdb', action='store_true', help='Drop into pdb after fitting the model', default=False)
+    data_args.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
 
     sim_args = parser.add_argument_group('Simulation', 'Parameters for generating synthetic data')
     sim_args.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
@@ -351,8 +351,9 @@ def evaluate():
             if args.bayes_factor:
                 m0.wsabi.plot(ax=axes[1])
             fig.savefig(args.plot)
-        if args.pdb:
-            pdb.set_trace()
+        if args.interact:
+            import code
+            code.interact(local=dict(globals(), **locals()))
         if args.fit_null:
             m = m0
         if args.propose_tau:
