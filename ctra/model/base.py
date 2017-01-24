@@ -344,7 +344,7 @@ class ActiveSampler(Model):
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
 
-    def fit(self, init_samples=20, max_samples=100, propose_tau=False, propose_null=False, atol=0.1, **kwargs):
+    def fit(self, init_samples=20, max_samples=40, propose_tau=False, propose_null=False, atol=0.1, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
@@ -407,15 +407,15 @@ class ActiveSampler(Model):
             if i + 1 >= init_samples:
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.transform(hyperparam[:i], llik[:i]).fit()
-                logger.debug('Refitting GP for phi p(phi | D)')
+                logger.debug('Refitting GP for p(phi | D) / Z')
                 p_phi = numpy.exp(llik[:i] - self.evidence_gp.mean()).reshape(-1, m)
                 self.phi_gp = self.phi_gp.transform(hyperparam[:i], p_phi, exp=False).fit(integrate_phi=True)
-                logger.debug('Sample {}: Z={}, phi={}'.format(i + 1, self.evidence_gp, self.phi_gp))
+                logger.info('Sample {}: Z={}, phi={}'.format(i + 1, self.evidence_gp, self.phi_gp))
                 fig, axes = matplotlib.pyplot.subplots(2, 1)
                 self.evidence_gp.gp.plot(ax=axes[0])
                 self.phi_gp.gp.plot(ax=axes[1])
-                fig.savefig('test.pdf')
-                import pdb; pdb.set_trace()
+                fig.savefig('{}.pdf'.format(i))
+                matplotlib.pyplot.close()
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
@@ -428,11 +428,11 @@ class ActiveSampler(Model):
                     hyperparam[i + 1] = next(self.phi_gp)
         # Finalize the fitted hyparameters
         if propose_tau:
-            self.tau = self.phi_gp.mean()
+            self.tau = numpy.log(numpy.atleast_1d(self.phi_gp.mean()))
             self.pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / self.tau).sum(),
                                    pve.shape[0]).astype(_real)
         else:
-            self.pi = self.phi_gp.mean()
+            self.pi = _logit(numpy.atleast_1d(self.phi_gp.mean()))
             self.tau = numpy.repeat(((1 - pve.sum()) * (self.pi * self.model.var_x).sum()) /
                                     pve.sum(), pve.shape[0]).astype(_real)
         self.pip = []
