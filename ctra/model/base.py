@@ -42,6 +42,44 @@ class Model:
     def __init__(self, model, **kwargs):
         self.model = model
         self.elbo_vals = []
+        # In general we need to warm start different sets of parameters per
+        # model, so in the generic implementation we can't unpack things.
+        self.params = []
+        self.pi_grid = []
+        self.tau_grid = []
+
+    def propose(self, logit_pi=None, log_tau=None, pool=True):
+        """Propose pi (tau), and return the tuple (pi, tau) consistent with
+self.model.pve
+
+        Assuming PVE fixed, proposing one of (pi, tau) induces a proposal for
+        the other (Guan et al., Ann Appl Stat 2011; Carbonetto et al., Bayesian
+        Anal 2012).
+
+        """
+        # Proposing one of (pi, tau) induces a proposal for the other (Guan
+        # et al., Ann Appl Stat 2011; Carbonetto et al., Bayesian Anal
+        # 2012)
+        pve = self.model.pve
+        if logit_pi is not None:
+            pi = _expit(numpy.atleast_1d(logit_pi))
+            if pool:
+                tau = numpy.repeat(((1 - pve.sum()) * (pi * self.model.var_x).sum()) /
+                                   pve.sum(), pve.shape[0]).astype(_real)
+            else:
+                tau = ((1 - pve) * pi[i] * self.model.var_x) / pve
+        elif log_tau is not None:
+            tau = numpy.atleast_1d(10 ** log_tau)
+            if pool:
+                pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / tau).sum(),
+                                  pve.shape[0])
+            else:
+                pi = pve / (1 - pve) / (self.model.var_x / tau)
+        else:
+            raise ValueError('At least one of pi or tau must be proposed')
+        self.pi_grid.append(pi.astype(_real))
+        self.tau_grid.append(tau.astype(_real))
+
     def _handle_converged(self):
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
@@ -106,7 +144,7 @@ sampling.
         if proposals is None:
             if propose_tau:
                 # Propose log(tau)
-                proposals = list(itertools.product(*[list(10 ** numpy.arange(-3, 1, 0.5))
+                proposals = list(itertools.product(*[list(numpy.arange(-3, 1, 0.5))
                                                     for p_k in self.model.p]))
             else:
                 # Propose logit(pi)
@@ -119,51 +157,21 @@ sampling.
             kwargs['true_causal'] = numpy.clip(z.astype(_real), 1e-4, 1 - 1e-4)
             assert not numpy.isclose(max(kwargs['true_causal']), 1)
 
-        # Find the best initialization of the variational parameters. In
-        # general we need to warm start different sets of parameters per model,
-        # so in this generic implementation we can't unpack things.
-        params = None
-        pi = numpy.zeros(shape=(len(proposals), pve.shape[0]), dtype=_real)
-        tau = numpy.zeros(shape=pi.shape, dtype=_real)
         best_elbo = float('-inf')
         logger.info('Finding best initialization')
-        for i, prop in enumerate(proposals):
-            # Proposing one of (pi, tau) induces a proposal for the other (Guan
-            # et al., Ann Appl Stat 2011; Carbonetto et al., Bayesian Anal
-            # 2012)
-            if propose_tau:
-                tau[i] = numpy.array(prop).astype(_real)
-                pi[i] = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / tau[i]).sum(),
-                                     pve.shape[0]).astype(_real)
-                assert 0 < pi[i] < 1
-            else:
-                pi[i] = _expit(numpy.array(prop)).astype(_real)
-                tau[i] = numpy.repeat(((1 - pve.sum()) * (pi[i] * self.model.var_x).sum()) /
-                                      pve.sum(), pve.shape[0]).astype(_real)
-            elbo_, params_ = self.model.log_weight(pi=pi[i], tau=tau[i], **kwargs)
+        for hyper in proposals:
+            self.propose(hyper, propose_tau)
+            elbo_, params_ = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
             if elbo_ > best_elbo:
                 params = params_
 
-        # Perform importance sampling, using ELBO instead of the marginal
-        # likelihood
-        log_weights = numpy.zeros(shape=len(proposals))
-        self.params = []
         logger.info('Performing importance sampling')
-        for i, logit_pi in enumerate(proposals):
-            log_weights[i], params_ = self.model.log_weight(pi=pi[i], tau=tau[i], params=params, **kwargs)
+        for pi, tau in zip(self.pi_grid, self.tau_grid):
+            elbo_, params_ = self.model.log_weight(pi=pi, tau=tau, params=params, **kwargs)
+            self.elbo_vals.append(elbo_)
             self.params.append(params_)
 
-        self.elbo_vals = log_weights.copy()
-        # Scale the log importance weights before normalizing to avoid numerical
-        # problems
-        log_weights -= max(log_weights)
-        normalized_weights = numpy.exp(log_weights - scipy.misc.logsumexp(log_weights))
-        self.weights = normalized_weights
-        self.pip = normalized_weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
-        self.pi_grid = pi
-        self.tau_grid = tau
-        self.pi = normalized_weights.dot(pi)
-        self.tau = normalized_weights.dot(tau)
+        self._handle_converged()
         return self
 
     def evidence(self):
@@ -368,17 +376,9 @@ NIPS 2016)."""
         for i in range(max_samples):
             if propose_null:
                 hyperparam[i] = numpy.repeat(hyperparam[i][0], pve.shape[0])
-            if propose_tau:
-                tau = numpy.exp(hyperparam[i]).astype(_real)
-                pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / tau).sum(),
-                                  pve.shape[0]).astype(_real)
-            else:
-                pi = _expit(hyperparam[i]).astype(_real)
-                tau = numpy.repeat(((1 - pve.sum()) * (pi * self.model.var_x).sum()) /
-                                   pve.sum(), pve.shape[0]).astype(_real)
-            self.pi_grid.append(pi)
-            self.tau_grid.append(tau)
-            llik[i], _params = self.model.log_weight(pi=pi, tau=tau, **kwargs)
+            self.propose(hyperparam[i], propose_tau)
+            llik[i], _params = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
+            # This is needed for the IS estimator
             self.elbo_vals.append(llik[i])
             if propose_tau:
                 # Importance-reweighting trick
@@ -400,16 +400,6 @@ NIPS 2016)."""
                     # Get the next hyperparameter sample
                     hyperparam[i + 1] = next(self.evidence_gp)
         self._handle_converged()
-        # Finalize the fitted hyparameters
-        phi_mean = self.evidence_gp.x.T.dot(self.weights)
-        if propose_tau:
-            self.tau = numpy.log(numpy.atleast_1d(phi_mean))
-            self.pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / self.tau).sum(),
-                                   pve.shape[0]).astype(_real)
-        else:
-            self.pi = _logit(numpy.atleast_1d(phi_mean))
-            self.tau = numpy.repeat(((1 - pve.sum()) * (self.pi * self.model.var_x).sum()) /
-                                    pve.sum(), pve.shape[0]).astype(_real)
         return self
 
     def evidence(self):
