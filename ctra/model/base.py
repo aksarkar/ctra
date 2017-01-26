@@ -42,6 +42,15 @@ class Model:
     def __init__(self, model, **kwargs):
         self.model = model
         self.elbo_vals = []
+    def _handle_converged(self):
+        # Scale the log importance weights before normalizing to avoid numerical
+        # problems
+        self.weights = self.elbo_vals - max(self.elbo_vals)
+        self.weights = numpy.exp(self.weights - scipy.misc.logsumexp(self.weights))
+        self.pip = self.weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
+        self.theta = self.weights.dot(numpy.array([alpha * beta for alpha, beta, *_ in self.params]))
+        self.pi = self.weights.dot(self.pi_grid)
+        self.tau = self.weights.dot(self.tau_grid)
 
     def fit(self, **kwargs):
         raise NotImplementedError
@@ -188,6 +197,15 @@ def _sqdist(a, b, V):
                            VI=numpy.linalg.pinv(V)))
 
 class WSABI:
+    """Warped sequential approximate Bayesian inference (Gunter et al., NIPS 2016)
+
+    To evaluate the intractable integral \int p(x | theta) p(theta) dtheta, we
+    put a Gaussian process prior to represent uncertainty in p(x | theta) at
+    points theta not yet evaluated. This means we can actively choose the next
+    theta to minimize the uncertainty in the integral (exploration) and
+    maximize the number of high likelihood samples (exploitation).
+
+    """
     def __init__(self, m, hyperprior=None, proposal=None, max_retries=10):
         if hyperprior is None:
             self.hyperprior = scipy.stats.multivariate_normal()
@@ -261,7 +279,7 @@ class WSABI:
         self.f = f
         return self
 
-    def fit(self, integrate_phi=False):
+    def fit(self):
         """Fit the GP on the transformed data"""
         self.gp = GPy.models.GPRegression(self.x, self.f, self.K)
         self.gp.optimize_restarts()
@@ -279,40 +297,23 @@ class WSABI:
         w = (numpy.square(self.gp.rbf.variance) /
              numpy.sqrt(numpy.linalg.det(2 * Ainv.dot(B) + self.I)) *
              numpy.exp(-.5 * _sqdist(self.x, b, .5 * A + B)))
-        if integrate_phi:
-            # \int_X x N(x; m, V) dx = m
-            m = numpy.linalg.pinv(2 * Ainv + Binv) * (self.x.dot(2 * Ainv[:,:,numpy.newaxis]).sum(axis=2) + Binv.dot(b))
-            self._mean = self.offset * b + .5 * (w * m).T.dot(right)
-        else:
-            self._mean = self.offset + w.T.dot(right)
-        if self.log_scaling is not None:
-            self._mean = self.log_scaling + numpy.log(self._mean)
-
-        if integrate_phi:
-            # \int_X x^2 N(x; b, B) dx = b^2 + Tr(B)
-            s = numpy.square(b) + numpy.trace(B)
-            # \int_X x^2 N(x; m, V) dx = m^2 + Tr(V)
-            S = numpy.square(m) + numpy.trace(2 * Ainv + Binv)
-            # V[x] = E[x^2] - (E[x])^2
-            self._var = self.offset * s + .5 * (w * S).T.dot(right)
-            self._var -= numpy.square(self._mean)
-        else:
-            # \int_X K(x, x_d) N(x; b, B) dx
-            z = (self.gp.rbf.variance /
-                 numpy.sqrt(numpy.linalg.det(B)) *
-                 numpy.exp(-.5 * _sqdist(self.x, b, A + B)))
-            # The inner integral for the variance of the marginal likelihood:
-            #
-            #    \inv_X K(x, x_d) N(x; b, B) K(x, x') dx
-            #
-            # results in a Gaussian with covariance sigma. The outer integral
-            # results in a Gaussian with covariance _lambda
-            sigma = Ainv + numpy.linalg.pinv(Ainv + Binv)
-            _lambda = numpy.linalg.pinv(sigma) + numpy.linalg.pinv(Ainv + Binv)
-            self._var = (self.gp.rbf.variance * z.T.dot(z) *
-                         numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) *
-                                    numpy.linalg.det(_lambda)) -
-                         w.T.dot(self.Kinv).dot(w))
+        self._mean = self.log_scaling + numpy.log(self.offset + w.T.dot(right))
+        # \int_X K(x, x_d) N(x; b, B) dx
+        z = (self.gp.rbf.variance /
+             numpy.sqrt(numpy.linalg.det(B)) *
+             numpy.exp(-.5 * _sqdist(self.x, b, A + B)))
+        # The inner integral for the variance of the marginal likelihood:
+        #
+        #    \inv_X K(x, x_d) N(x; b, B) K(x, x') dx
+        #
+        # results in a Gaussian with covariance sigma. The outer integral
+        # results in a Gaussian with covariance _lambda
+        sigma = Ainv + numpy.linalg.pinv(Ainv + Binv)
+        _lambda = numpy.linalg.pinv(sigma) + numpy.linalg.pinv(Ainv + Binv)
+        self._var = (self.gp.rbf.variance * z.T.dot(z) *
+                     numpy.sqrt(numpy.linalg.det(2 * Ainv + Binv) *
+                                numpy.linalg.det(_lambda)) -
+                     w.T.dot(self.Kinv).dot(w))
         return self
 
     def mean(self):
@@ -331,16 +332,8 @@ class WSABI:
         return 'WSABI(mean={}, var={})'.format(self.mean(), self.var())
 
 class ActiveSampler(Model):
-    """Estimate the posterior p(pi, tau | X, y, A) using WSABI-L (Gunter et al., NIPS 2016).
-
-    To evaluate the intractable integral \iint p(X, y, A | pi, tau) p(pi, tau)
-    dpi dtau, we put a Gaussian process prior to represent uncertainty in p(X,
-    y, A | pi, tau) at points (pi, tau) not yet evaluated. This means we can
-    actively choose the next (pi, tau) to minimize the uncertainty in the
-    integral (exploration) and maximize the number of high likelihood samples
-    (exploitation).
-
-    """
+    """Estimate the posterior p(pi, tau | X, y, A) using WSABI-L (Gunter et al.,
+NIPS 2016)."""
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
 
@@ -372,18 +365,6 @@ class ActiveSampler(Model):
             self.proposal = self.hyperprior
         hyperparam[:init_samples, :] = self.proposal.rvs(size=init_samples).reshape(-1, m)
         self.evidence_gp = WSABI(m=m, hyperprior=self.hyperprior, proposal=self.proposal)
-        # In the original problem we need E[g(phi)]:
-        #
-        #   \int_R g(phi) p(phi | x, y, a) dphi
-        # = \int_R g(phi) p(x, y, a | phi) p(phi) / Z dphi
-        #
-        # Now that we have Z, we can use the same square-root BQ to perform
-        # this integration. We don't integrate over Z because its variance is
-        # small enough to justify approximating its posterior as a spike.
-        self.phi_gp = WSABI(m=m, hyperprior=self.hyperprior, proposal=self.proposal)
-        self.params = []
-        self.pi_grid = []
-        self.tau_grid = []
         for i in range(max_samples):
             if propose_null:
                 hyperparam[i] = numpy.repeat(hyperparam[i][0], pve.shape[0])
@@ -407,15 +388,7 @@ class ActiveSampler(Model):
             if i + 1 >= init_samples:
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.transform(hyperparam[:i], llik[:i]).fit()
-                logger.debug('Refitting GP for p(phi | D) / Z')
-                p_phi = numpy.exp(llik[:i] - self.evidence_gp.mean()).reshape(-1, m)
-                self.phi_gp = self.phi_gp.transform(hyperparam[:i], p_phi, exp=False).fit(integrate_phi=True)
-                logger.info('Sample {}: Z={}, phi={}'.format(i + 1, self.evidence_gp, self.phi_gp))
-                fig, axes = matplotlib.pyplot.subplots(2, 1)
-                self.evidence_gp.gp.plot(ax=axes[0])
-                self.phi_gp.gp.plot(ax=axes[1])
-                fig.savefig('{}.pdf'.format(i))
-                matplotlib.pyplot.close()
+                logger.info('Sample {}: Z={}'.format(i + 1, self.evidence_gp))
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
@@ -425,17 +398,18 @@ class ActiveSampler(Model):
                     break
                 elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
-                    hyperparam[i + 1] = next(self.phi_gp)
+                    hyperparam[i + 1] = next(self.evidence_gp)
+        self._handle_converged()
         # Finalize the fitted hyparameters
+        phi_mean = self.evidence_gp.x.T.dot(self.weights)
         if propose_tau:
-            self.tau = numpy.log(numpy.atleast_1d(self.phi_gp.mean()))
+            self.tau = numpy.log(numpy.atleast_1d(phi_mean))
             self.pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / self.tau).sum(),
                                    pve.shape[0]).astype(_real)
         else:
-            self.pi = _logit(numpy.atleast_1d(self.phi_gp.mean()))
+            self.pi = _logit(numpy.atleast_1d(phi_mean))
             self.tau = numpy.repeat(((1 - pve.sum()) * (self.pi * self.model.var_x).sum()) /
                                     pve.sum(), pve.shape[0]).astype(_real)
-        self.pip = []
         return self
 
     def evidence(self):
