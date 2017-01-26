@@ -71,7 +71,7 @@ class DSVI(Algorithm):
         # We need to warm up the objective function in order to avoid
         # degenerate solutions where all variational free parameters go to
         # zero. The idea is given in Sønderby et al., NIPS 2016
-        temperature = _S(numpy.array(0, dtype=_real))
+        temperature = T.clip(numpy.array(warmup_rate).astype(_real) * epoch, 0, 1)
         if minibatch_n is not None:
             perm = _S(_R.permutation(n).astype('int32'))
             sample_minibatch = epoch % (n // minibatch_n)
@@ -134,7 +134,6 @@ class DSVI(Algorithm):
         logger.debug('Initial learning rate = {}'.format(learning_rate))
         _sgd_updates = [(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
                          for p_, g, cv in zip(self.params, grad, control)]
-        _sgd_updates.append((temperature, T.clip(temperature + warmup_rate, 0, 1)))
         self.vb_step = _F(inputs=[epoch], outputs=elbo, updates=_sgd_updates)
 
         self._opt = _F(inputs=[], outputs=[alpha, beta])
