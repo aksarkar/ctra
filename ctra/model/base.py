@@ -105,6 +105,15 @@ self.model.pve
         """
         return numpy.ravel(numpy.exp(self.evidence() - other.evidence()))[0]
 
+    def predict(self, x):
+        """Return the posterior mean prediction"""
+        return x.dot(self.theta)
+
+    def score(self, x, y):
+        """Return the coefficient of determination of the model fit"""
+        return 1 - (numpy.square(self.predict(x) - y).sum() /
+                    numpy.square(y - y.mean()).sum())
+
 class Algorithm:
     def __init__(self, X, y, a, pve, **kwargs):
         self.X = X
@@ -157,13 +166,18 @@ sampling.
             kwargs['true_causal'] = numpy.clip(z.astype(_real), 1e-4, 1 - 1e-4)
             assert not numpy.isclose(max(kwargs['true_causal']), 1)
 
-        best_elbo = float('-inf')
-        logger.info('Finding best initialization')
-        for hyper in proposals:
-            self.propose(hyper, propose_tau=propose_tau, pool=pool)
-            elbo_, params_ = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
-            if elbo_ > best_elbo:
-                params = params_
+        if 'params' in kwargs:
+            logger.info('Using specified initialization')
+            params = kwargs['params']
+        else:
+            best_elbo = float('-inf')
+            logger.info('Finding best initialization')
+            for hyper in proposals:
+                self.propose(hyper, propose_tau=propose_tau, pool=pool)
+                elbo_, params_ = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
+                if elbo_ > best_elbo:
+                    params = params_
+            kwargs['params'] = params
 
         logger.info('Performing importance sampling')
         for pi, tau in zip(self.pi_grid, self.tau_grid):
