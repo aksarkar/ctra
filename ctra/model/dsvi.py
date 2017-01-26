@@ -189,7 +189,7 @@ class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        _sigma2 = theano.shared(numpy.array([pve.sum() * y.var()],
+        _sigma2 = theano.shared(numpy.array([(1 - pve.sum()) * y.var()],
                                             dtype=_real))
         self.sigma2 = T.addbroadcast(_sigma2, 0)
         logger.debug('Fixing sigma2 to {}'.format(_sigma2.get_value()))
