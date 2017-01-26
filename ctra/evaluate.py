@@ -124,10 +124,10 @@ def _validate(args):
         raise _A('Learning rate must be positive')
     if args.learning_rate > 0.05:
         logger.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
-    if args.warmup_rate <= 0:
-        raise _A('Warmup rate must be positive')
+    if args.warmup_rate < 0:
+        raise _A('Warmup rate must be non-negative')
     if args.warmup_rate >= 1:
-        raise _A('Warmup rate set to {}. This is probably too large'.format(args.warmup_rate))
+        logger.warn('Warmup rate set to {}. This is probably too large'.format(args.warmup_rate))
     if args.minibatch_size <= 0:
         raise _A('Minibatch size must be positive')
     if args.minibatch_size > args.num_samples:
