@@ -143,8 +143,8 @@ class DSVI(Algorithm):
     def _llik(self, *args):
         raise NotImplementedError
 
-    def log_weight(self, params=None, weight=0.5, poll_iters=1000,
-                    min_iters=100000, atol=1, true_causal=None, **hyperparams):
+    def log_weight(self, pi, tau, params=None, weight=0.5, poll_iters=1000,
+                   min_iters=100000, atol=1, true_causal=None, **kwargs):
         """Return optimum ELBO and variational parameters which achieve it.
 
         params - Initial setting of the variational parameters (default: randomize)
@@ -155,6 +155,7 @@ class DSVI(Algorithm):
         hyperparams - pi, tau, etc.
 
         """
+        hyperparams = {'pi': pi, 'tau': tau}
         logger.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
         if params is None:
