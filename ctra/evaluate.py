@@ -18,6 +18,7 @@ import os
 import os.path
 import sys
 
+import matplotlib
 import numpy
 import scipy.stats
 import scipy.linalg
@@ -29,6 +30,9 @@ import ctra.simulation
 
 logger = logging.getLogger(__name__)
 _A = argparse.ArgumentTypeError
+
+# Set up things for plotting interactively
+matplotlib.pyplot.switch_backend('pdf')
 
 def _parser():
     def Annotation(arg):
@@ -52,12 +56,16 @@ def _parser():
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     data_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     data_args.add_argument('--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
-    data_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
     data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
     data_args.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     data_args.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
+
+    hyper_args = parser.add_mutually_exclusive_group()
+    hyper_args.add_argument('--no-pool', action='store_false', dest='pool', help='Propose per-annotation pi and tau', default=True)
+    hyper_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
+
 
     sim_args = parser.add_argument_group('Simulation', 'Parameters for generating synthetic data')
     sim_args.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
@@ -290,7 +298,7 @@ def evaluate():
                 outer = ctra.model.ActiveSampler
             logger.info('Fitting alternate model')
             m = outer(inner).fit(atol=args.tolerance, poll_iters=args.poll_iters,
-                                 weight=args.ewma_weight, **kwargs)
+                                 weight=args.ewma_weight, pool=args.pool, **kwargs)
             if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')
                 proposals = numpy.array(m.pi_grid).dot(inner.p) / inner.p.sum()

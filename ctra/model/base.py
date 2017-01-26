@@ -48,7 +48,7 @@ class Model:
         self.pi_grid = []
         self.tau_grid = []
 
-    def propose(self, logit_pi=None, log_tau=None, pool=True):
+    def propose(self, logit_pi=None, log_tau=None, pool=True, **kwargs):
         """Propose pi (tau), and return the tuple (pi, tau) consistent with
 self.model.pve
 
@@ -67,7 +67,7 @@ self.model.pve
                 tau = numpy.repeat(((1 - pve.sum()) * (pi * self.model.var_x).sum()) /
                                    pve.sum(), pve.shape[0]).astype(_real)
             else:
-                tau = ((1 - pve) * pi[i] * self.model.var_x) / pve
+                tau = ((1 - pve) * pi * self.model.var_x) / pve
         elif log_tau is not None:
             tau = numpy.atleast_1d(10 ** log_tau)
             if pool:
@@ -134,7 +134,7 @@ sampling.
     def __init__(self, model, **kwargs):
         super().__init__(model)
 
-    def fit(self, proposals=None, propose_tau=False, **kwargs):
+    def fit(self, proposals=None, propose_tau=False, pool=True, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
 
         proposals - list of proposals for pi
@@ -160,7 +160,7 @@ sampling.
         best_elbo = float('-inf')
         logger.info('Finding best initialization')
         for hyper in proposals:
-            self.propose(hyper, propose_tau)
+            self.propose(hyper, propose_tau=propose_tau, pool=pool)
             elbo_, params_ = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
             if elbo_ > best_elbo:
                 params = params_
@@ -186,7 +186,8 @@ NIPS 2016)."""
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
 
-    def fit(self, init_samples=20, max_samples=40, propose_tau=False, propose_null=False, atol=0.1, **kwargs):
+    def fit(self, init_samples=20, max_samples=40, propose_tau=False,
+            propose_null=False, pool=True, vtol=0.1, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
@@ -213,11 +214,11 @@ NIPS 2016)."""
             self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
             self.proposal = self.hyperprior
         hyperparam[:init_samples, :] = self.proposal.rvs(size=init_samples).reshape(-1, m)
-        self.evidence_gp = WSABI(m=m, hyperprior=self.hyperprior, proposal=self.proposal)
+        self.evidence_gp = ctra.model.wsabi.WSABI(m=m, hyperprior=self.hyperprior, proposal=self.proposal)
         for i in range(max_samples):
             if propose_null:
                 hyperparam[i] = numpy.repeat(hyperparam[i][0], pve.shape[0])
-            self.propose(hyperparam[i], propose_tau)
+            self.propose(hyperparam[i], propose_tau=propose_tau, pool=pool)
             llik[i], _params = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
             # This is needed for the IS estimator
             self.elbo_vals.append(llik[i])
@@ -229,12 +230,12 @@ NIPS 2016)."""
             if i + 1 >= init_samples:
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.transform(hyperparam[:i], llik[:i]).fit()
-                logger.info('Sample {}: Z={}'.format(i + 1, self.evidence_gp))
+                logger.info('Sample {}: phi={}, Z={}'.format(i + 1, hyperparam[i], self.evidence_gp))
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))
                     break
-                elif v <= atol:
+                elif v <= vtol:
                     logger.info('Finished active sampling after {} samples (tolerance reached)'.format(i))
                     break
                 elif i + 1 < max_samples:
