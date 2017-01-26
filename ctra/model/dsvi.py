@@ -37,7 +37,7 @@ class DSVI(Algorithm):
 
     """
     def __init__(self, X_, y_, a_, pve, minibatch_n=None, stoch_samples=None,
-                 learning_rate=None, *params, **kwargs):
+                 learning_rate=None, warmup_rate=1e-3, *params, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, pve)
 
@@ -68,6 +68,10 @@ class DSVI(Algorithm):
         # than taking balanced subsamples, we take a sliding window over a
         # permutation which is balanced in expectation.
         epoch = T.iscalar(name='epoch')
+        # We need to warm up the objective function in order to avoid
+        # degenerate solutions where all variational free parameters go to
+        # zero. The idea is given in Sønderby et al., NIPS 2016
+        temperature = _S(numpy.array(0, dtype=_real))
         if minibatch_n is not None:
             perm = _S(_R.permutation(n).astype('int32'))
             sample_minibatch = epoch % (n // minibatch_n)
@@ -99,9 +103,9 @@ class DSVI(Algorithm):
         elbo = (
             # The log likelihood is for the minibatch, but we need to scale up
             # to the full dataset size
-            self._llik(y_s, eta) * (n // minibatch_n)
-            + .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
-            - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
+            self._llik(y_s, eta) * (n // minibatch_n) + temperature *
+            (.5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
+             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref))))
         )
         self._elbo = elbo
 
@@ -128,10 +132,10 @@ class DSVI(Algorithm):
             learning_rate = numpy.array(5e-2 / minibatch_n, dtype=_real)
         logger.debug('Minibatch size = {}'.format(minibatch_n))
         logger.debug('Initial learning rate = {}'.format(learning_rate))
-        self.vb_step = _F(inputs=[epoch],
-                          outputs=elbo,
-                          updates=[(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
-                                   for p_, g, cv in zip(self.params, grad, control)])
+        _sgd_updates = [(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
+                         for p_, g, cv in zip(self.params, grad, control)]
+        _sgd_updates.append((temperature, T.clip(temperature + warmup_rate, 0, 1)))
+        self.vb_step = _F(inputs=[epoch], outputs=elbo, updates=_sgd_updates)
 
         self._opt = _F(inputs=[], outputs=[alpha, beta])
         logger.debug('Finished initializing')
