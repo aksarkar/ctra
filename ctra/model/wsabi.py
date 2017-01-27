@@ -13,23 +13,6 @@ import GPy
 
 logger = logging.getLogger(__name__)
 
-class _mvuniform():
-    """Multidimensional uniform distribution
-
-    Convenience wrapper to allow sampling m-dimensional vectors using the same
-    API as scipy.stats.multivariate_normal
-
-    """
-    def __init__(self, a, b, m):
-        self.m = m
-        self.uniform = scipy.stats.uniform(loc=a, scale=b - a)
-
-    def rvs(self, size):
-        return self.uniform.rvs(size=self.m * size).reshape(-1, self.m)
-
-    def logpdf(self, x):
-        return self.uniform.logpdf(x).sum()
-
 def _sqdist(a, b, V):
     """Return (a - b)' V^-1 (a - b) for all pairs (a, b)"""
     _D = scipy.spatial.distance.cdist

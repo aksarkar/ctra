@@ -192,13 +192,30 @@ sampling.
         return (numpy.log(numpy.exp(self.elbo_vals - self.elbo_vals.max()).mean()) +
                 self.elbo_vals.max())
 
+class _mvuniform():
+    """Multidimensional uniform distribution
+
+    Convenience wrapper to allow sampling m-dimensional vectors using the same
+    API as scipy.stats.multivariate_normal
+
+    """
+    def __init__(self, a, b, m):
+        self.m = m
+        self.uniform = scipy.stats.uniform(loc=a, scale=b - a)
+
+    def rvs(self, size):
+        return self.uniform.rvs(size=self.m * size).reshape(-1, self.m)
+
+    def logpdf(self, x):
+        return self.uniform.logpdf(x).sum()
+
 class ActiveSampler(Model):
     """Estimate the posterior p(pi, tau | X, y, A) using WSABI-L (Gunter et al.,
 NIPS 2016)."""
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
 
-    def fit(self, init_samples=20, max_samples=40, propose_tau=False,
+    def fit(self, init_samples=10, max_samples=40, propose_tau=False,
             propose_null=False, pool=True, vtol=0.1, **kwargs):
         """Draw samples from the hyperposterior
 
