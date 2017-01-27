@@ -150,8 +150,8 @@ sampling.
         """
         if proposals is None:
             if propose_tau:
-                # Propose log(tau)
-                proposals = list(itertools.product(*[list(numpy.arange(-3, 1, 0.5))
+                # Propose log(tau^-1)
+                proposals = list(itertools.product(*[list(numpy.arange(0, 3, 0.5))
                                                     for p_k in self.model.p]))
             else:
                 # Propose logit(pi)
@@ -179,7 +179,7 @@ sampling.
 
         logger.info('Performing importance sampling')
         for pi, tau in zip(self.pi_grid, self.tau_grid):
-            elbo_, params_ = self.model.log_weight(pi=pi, tau=tau, params=params, **kwargs)
+            elbo_, params_ = self.model.log_weight(pi=pi, tau=tau, **kwargs)
             self.elbo_vals.append(elbo_)
             self.params.append(params_)
 
@@ -236,9 +236,9 @@ NIPS 2016)."""
             # specify a log-uniform prior and use importance reweighting to
             # work with a Gaussian prior
             self.hyperprior = scipy.stats.multivariate_normal(cov=numpy.eye(m))
-            # Set minimum tau as tau corresponding to pi = 1e-5
-            a = -5
-            self.proposal = _mvuniform(a, numpy.log(self.model.var_x.sum()), m)
+            # Set minimum log10(tau) as log10(tau) corresponding to pi = 1e-5. Set
+            # maximum log10(tau) as log10(tau) corresponding to pi = 1
+            self.proposal = _mvuniform(-5, numpy.log10(self.model.var_x.sum()), m)
         else:
             self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
             self.proposal = self.hyperprior
