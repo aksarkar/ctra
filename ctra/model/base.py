@@ -259,7 +259,7 @@ NIPS 2016)."""
             if i + 1 >= init_samples:
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.fit(hyperparam[:i], llik[:i])
-                logger.info('Sample {}: phi={}, Z={}'.format(i + 1, hyperparam[i], self.evidence_gp))
+                logger.debug('Sample {}: phi={}, Z={}'.format(i + 1, hyperparam[i], self.evidence_gp))
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))

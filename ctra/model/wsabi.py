@@ -81,7 +81,7 @@ class GPRBF(GP):
         self.x = x
         self.f = y
         self.gp = GPy.models.GPRegression(self.x, self.f, self.K)
-        self.gp.optimize_restarts()
+        self.gp.optimize_restarts(verbose=False)
         # Pre-compute things
         A = self.gp.rbf.lengthscale * self.I
         Ainv = self.I / self.gp.rbf.lengthscale
