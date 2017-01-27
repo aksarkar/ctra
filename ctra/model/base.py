@@ -48,7 +48,7 @@ class Model:
         self.pi_grid = []
         self.tau_grid = []
 
-    def propose(self, logit_pi=None, log_tau=None, pool=True, **kwargs):
+    def propose(self, hyper, propose_tau=False, pool=True, **kwargs):
         """Propose pi (tau), and return the tuple (pi, tau) consistent with
 self.model.pve
 
@@ -61,22 +61,20 @@ self.model.pve
         # et al., Ann Appl Stat 2011; Carbonetto et al., Bayesian Anal
         # 2012)
         pve = self.model.pve
-        if logit_pi is not None:
-            pi = _expit(numpy.atleast_1d(logit_pi))
-            if pool:
-                tau = numpy.repeat(((1 - pve.sum()) * (pi * self.model.var_x).sum()) /
-                                   pve.sum(), pve.shape[0]).astype(_real)
-            else:
-                tau = ((1 - pve) * pi * self.model.var_x) / pve
-        elif log_tau is not None:
-            tau = numpy.atleast_1d(10 ** log_tau)
+        if propose_tau:
+            tau = numpy.atleast_1d(10 ** numpy.atleast_1d(hyper))
             if pool:
                 pi = numpy.repeat(pve.sum() / (1 - pve.sum()) / (self.model.var_x / tau).sum(),
                                   pve.shape[0])
             else:
                 pi = pve / (1 - pve) / (self.model.var_x / tau)
         else:
-            raise ValueError('At least one of pi or tau must be proposed')
+            pi = _expit(numpy.atleast_1d(hyper))
+            if pool:
+                tau = numpy.repeat(((1 - pve.sum()) * (pi * self.model.var_x).sum()) /
+                                   pve.sum(), pve.shape[0]).astype(_real)
+            else:
+                tau = ((1 - pve) * pi * self.model.var_x) / pve
         self.pi_grid.append(pi.astype(_real))
         self.tau_grid.append(tau.astype(_real))
 
