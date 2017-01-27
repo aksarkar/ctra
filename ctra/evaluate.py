@@ -337,23 +337,8 @@ def evaluate():
                     print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
                                          w), file=f)
         if args.validation is not None:
-            theta = numpy.array([alpha * beta for alpha, beta, *_ in m.params]).T
-            if args.model == 'logistic' and method == 'dsvi':
-                y_hat += numpy.array([var.get_value() for _, _, var in m.params]).dot(m.weights)
-            y_hat = x.dot(theta.dot(m.weights))
-            with open('training.txt', 'w') as f:
-                for i in zip(y, y_hat):
-                    print(*i, file=f)
-            r, _ = scipy.stats.pearsonr(y, y_hat)
-            logger.info('Training set correlation = {:.3f}'.format(r ** 2))
-            y_hat = x_validate.dot(theta.dot(m.weights))
-            if args.model == 'logistic' and method == 'dsvi':
-                y_hat += numpy.array([var.get_value() for _, _, var in m.params]).dot(m.weights)
-            with open('validation.txt', 'w') as f:
-                for i in zip(y_validate, y_hat):
-                    print(*i, file=f)
-            r, _ = scipy.stats.pearsonr(y_validate, y_hat)
-            logger.info('Validation set correlation = {:.3f}'.format(r ** 2))
+            logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
+            logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
         if args.interact:
