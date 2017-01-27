@@ -199,12 +199,11 @@ class _mvuniform():
     API as scipy.stats.multivariate_normal
 
     """
-    def __init__(self, a, b, m):
-        self.m = m
+    def __init__(self, a, b):
         self.uniform = scipy.stats.uniform(loc=a, scale=b - a)
 
     def rvs(self, size):
-        return self.uniform.rvs(size=self.m * size).reshape(-1, self.m)
+        return self.uniform.rvs(size=(size, self.m))
 
     def logpdf(self, x):
         return self.uniform.logpdf(x).sum()
@@ -238,7 +237,10 @@ NIPS 2016)."""
             self.hyperprior = scipy.stats.multivariate_normal(cov=numpy.eye(m))
             # Set minimum log10(tau) as log10(tau) corresponding to pi = 1e-5. Set
             # maximum log10(tau) as log10(tau) corresponding to pi = 1
-            self.proposal = _mvuniform(-5, numpy.log10(self.model.var_x.sum()), m)
+            if pool:
+                self.proposal = _mvuniform(-5, numpy.repeat(numpy.log10(self.model.var_x.sum()), m))
+            else:
+                self.proposal = _mvuniform(-5, numpy.log10(self.model.var_x))
         else:
             self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
             self.proposal = self.hyperprior
