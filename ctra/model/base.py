@@ -272,6 +272,9 @@ NIPS 2016)."""
                 elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
                     hyperparam[i + 1] = next(self.evidence_gp)
+                    while propose_tau or hyperparam[i + 1] in (0, 1):
+                        # Handle case where pi takes a boundary value
+                        hyperparam[i + 1] = next(self.evidence_gp)
         self._handle_converged()
         return self
 
