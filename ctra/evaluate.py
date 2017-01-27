@@ -8,6 +8,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
 import argparse
+import code
 import collections
 import contextlib
 import itertools
@@ -16,6 +17,7 @@ import pdb
 import pprint
 import os
 import os.path
+import signal
 import sys
 
 import matplotlib
@@ -33,6 +35,12 @@ _A = argparse.ArgumentTypeError
 
 # Set up things for plotting interactively
 matplotlib.pyplot.switch_backend('pdf')
+
+def interrupt(signal, frame):
+    """Catch SIGINT to terminate model fitting early"""
+    code.interact(banner='', local=dict(globals(), **locals()))
+
+signal.signal(signal.SIGINT, interrupt)
 
 def _parser():
     def Annotation(arg):
@@ -349,8 +357,7 @@ def evaluate():
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
         if args.interact:
-            import code
-            code.interact(local=dict(globals(), **locals()))
+            code.interact(banner='', local=dict(globals(), **locals()))
         if args.fit_null:
             m = m0
         if args.propose_tau:
