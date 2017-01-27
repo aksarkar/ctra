@@ -64,6 +64,9 @@ class GP:
                  (self.gp.kern.K(query) - schur_comp.dot(K_x_query.T)) *
                  (self.offset + .5 * schur_comp.dot(self.f)))
 
+    def plot(self, *args, **kwargs):
+        return self.gp.plot(*args, **kwargs)
+
     def __repr__(self):
         return '{}(mean={}, var={})'.format(self.__name__, self.mean(), self.var())
 
@@ -186,6 +189,9 @@ class WSABI:
     def var(self):
         """Return the posterior variance \int_X Cov(x, x') p(x) p(x') dx dx' """
         return self.gp.var()
+
+    def plot(self, *args, **kwargs):
+        return self.gp.plot(*args, **kwargs)
 
     def __repr__(self):
         return 'WSABI(mean={}, var={})'.format(self.mean(), self.var())
