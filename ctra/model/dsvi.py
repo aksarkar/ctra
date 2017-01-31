@@ -116,7 +116,7 @@ class DSVI(Algorithm):
 
         logger.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[pi, tau], outputs=[],
-                             updates=[(alpha_raw, _Z(p)), (beta, _N(p)),
+                             updates=[(alpha_raw, _Z(p)), (beta, _Z(p)),
                                       (pi_deref, T.basic.choose(a, pi)),
                                       (tau_deref, T.basic.choose(a, tau))])
         alpha_ = T.vector()
