@@ -50,7 +50,7 @@ def _parser():
     req_args = parser.add_argument_group('Required arguments', '')
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
-    req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi'], help='Method to fit model', required=True)
+    req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi', 'sklearn'], help='Method to fit model', required=True)
     req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi'], help='Outer method (for hyperparameters)', required=True, default='is')
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
@@ -305,6 +305,14 @@ def evaluate():
         elif args.method == 'varbvs':
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper', **kwargs)
+        elif args.method == 'sklearn':
+            import sklearn.linear_model
+            logger.info('Fitting sklearn model')
+            if args.model == 'gaussian':
+                m = sklearn.linear_model.ElasticNetCV(l1_ratio=numpy.arange(0, 1, .2),
+                                                      fit_intercept=not args.center).fit(x, y)
+            else:
+                m = sklearn.linear_model.LogisticRegressionCV(fit_intercept=True).fit(x, y)
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
