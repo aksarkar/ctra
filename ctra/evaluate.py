@@ -74,6 +74,11 @@ def _parser():
     hyper_args.add_argument('--no-pool', action='store_false', dest='pool', help='Propose per-annotation pi and tau', default=True)
     hyper_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
 
+    wsabi_args = parser.add_argument_group('WSABI', 'Parameters for Warped Sequential Approximate Bayesian Inference')
+    wsabi_args.add_argument('--init-samples', type=int, help='Inital random samples', default=10)
+    wsabi_args.add_argument('--max-samples', type=int, help='Inital random samples', default=40)
+    wsabi_args.add_argument('--wsabi-tolerance', type=float, help='Maximum posterior variance in model evidence (for active sampling)', default=1e-2)
+
 
     sim_args = parser.add_argument_group('Simulation', 'Parameters for generating synthetic data')
     sim_args.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
@@ -92,7 +97,6 @@ def _parser():
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
     vb_args.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
-    vb_args.add_argument('--wsabi-tolerance', type=float, help='Maximum posterior variance in model evidence (for active sampling)', default=1e-2)
     vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
 
     bootstrap_args = parser.add_mutually_exclusive_group()
@@ -147,6 +151,10 @@ def _validate(args):
         raise _A('VB tolerance must be positive')
     if args.wsabi_tolerance <= 0:
         raise _A('Active sampling tolerance must be positive')
+    if args.init_samples <= 0:
+        raise _A('Number of initial hyperparameter samples must be positive')
+    if args.max_samples < args.init_samples:
+        raise _A('Maximum number hyperparameter samples must be >= initial number ({})'.format(args.init_samples))
     if not 0 < args.ewma_weight < 1:
         raise _A('Moving average weight must be in (0, 1)')
     if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
@@ -319,6 +327,8 @@ def evaluate():
             m = outer(inner).fit(atol=args.tolerance,
                                  pool=args.pool,
                                  poll_iters=args.poll_iters,
+                                 init_samples=args.init_samples,
+                                 max_samples=args.max_samples,
                                  vtol=args.wsabi_tolerance,
                                  weight=args.ewma_weight,
                                  **kwargs)
