@@ -199,7 +199,8 @@ class _mvuniform():
     API as scipy.stats.multivariate_normal
 
     """
-    def __init__(self, a, b):
+    def __init__(self, a, b, m):
+        self.m = m
         self.uniform = scipy.stats.uniform(loc=a, scale=b - a)
 
     def rvs(self, size):
@@ -213,6 +214,7 @@ class ActiveSampler(Model):
 NIPS 2016)."""
     def __init__(self, model, **kwargs):
         super().__init__(model, **kwargs)
+        self.evidence_gp = None
 
     def fit(self, init_samples=10, max_samples=40, propose_tau=False,
             propose_null=False, pool=True, vtol=0.1, **kwargs):
@@ -238,9 +240,9 @@ NIPS 2016)."""
             # Set minimum log10(tau) as log10(tau) corresponding to pi = 1e-5. Set
             # maximum log10(tau) as log10(tau) corresponding to pi = 1
             if pool:
-                self.proposal = _mvuniform(-5, numpy.repeat(numpy.log10(self.model.var_x.sum()), m))
+                self.proposal = _mvuniform(-5, numpy.repeat(numpy.log10(self.model.var_x.sum()), m), m)
             else:
-                self.proposal = _mvuniform(-5, numpy.log10(self.model.var_x))
+                self.proposal = _mvuniform(-5, numpy.log10(self.model.var_x), m)
         else:
             self.hyperprior = scipy.stats.multivariate_normal(mean=-2 * numpy.ones(m), cov=2 * numpy.eye(m))
             self.proposal = self.hyperprior
@@ -272,9 +274,6 @@ NIPS 2016)."""
                 elif i + 1 < max_samples:
                     # Get the next hyperparameter sample
                     hyperparam[i + 1] = next(self.evidence_gp)
-                    while propose_tau or hyperparam[i + 1] in (0, 1):
-                        # Handle case where pi takes a boundary value
-                        hyperparam[i + 1] = next(self.evidence_gp)
         self._handle_converged()
         return self
 
