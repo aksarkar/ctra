@@ -36,11 +36,12 @@ _A = argparse.ArgumentTypeError
 # Set up things for plotting interactively
 matplotlib.pyplot.switch_backend('pdf')
 
-def interrupt(signal, frame):
+def interrupt(s, f):
     """Catch SIGINT to terminate model fitting early"""
+    signal.signal(signal.SIGINT, old_sigint)
     code.interact(banner='', local=dict(globals(), **locals()))
 
-signal.signal(signal.SIGINT, interrupt)
+old_sigint = signal.signal(signal.SIGINT, interrupt)
 
 def _parser():
     def Annotation(arg):
