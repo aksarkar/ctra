@@ -252,7 +252,7 @@ def evaluate():
             else:
                 logger.debug('Burning in {} samples for parametric bootstrap sample {}'.format(args.num_samples * args.parametric_bootstrap, args.parametric_bootstrap))
             for _ in range(args.parametric_bootstrap + 1):
-                if args.prevalence is not None:
+                if args.model == 'logistic':
                     x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
                 else:
                     x, y = s.sample_gaussian(n=args.num_samples)
