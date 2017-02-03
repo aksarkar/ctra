@@ -44,6 +44,8 @@ sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sampl
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/one-empty-coord-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-sample-size.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-pcgc-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
     result <- (read.table(gzfile(result_file), se=' ') %>%
@@ -76,7 +78,8 @@ equal_effect <- function(result_file) {
     print(p)
     dev.off()
 }
-equal_effect('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
+equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect.txt.gz')
+equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect-no-pool.txt.gz')
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-effect.txt.gz')
 
 equal_effect_ratio_prop <- function(result_file) {
@@ -99,7 +102,8 @@ equal_effect_ratio_prop <- function(result_file) {
     print(p)
     dev.off()
 }
-equal_effect_ratio_prop('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-effect.txt.gz')
+equal_effect_ratio_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect.txt.gz')
+equal_effect_ratio_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect-no-pool.txt.gz')
 
 equal_prop <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
@@ -126,7 +130,8 @@ equal_prop <- function(result_file) {
     print(p)
     dev.off()
 }
-equal_prop('/broad/compbio/aksarkar/projects/ctra/results/coord-gaussian-equal-prop.txt.gz')
+equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop.txt.gz')
+equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop-no-pool.txt.gz')
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-prop.txt.gz')
 
 ascertainment <- function(result_file) {
