@@ -11,6 +11,7 @@ import argparse
 import code
 import collections
 import contextlib
+import gzip
 import itertools
 import logging
 import pdb
@@ -62,6 +63,7 @@ def _parser():
     data_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     data_args.add_argument('-A', '--load-annotations', help='Annotation vector')
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
+    data_args.add_argument('--write-sfba-data', help='Directory to write out data for SFBA', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     data_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     data_args.add_argument('--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
@@ -282,6 +284,35 @@ def evaluate():
                 numpy.savetxt(f, y, fmt='%.3f')
             with open(os.path.join(args.write_data, 'theta.txt'), 'wb') as f:
                 numpy.savetxt(f, s.theta, fmt='%.3f')
+            return
+        if args.write_sfba_data is not None:
+            if not os.path.exists(args.write_sfba_data):
+                os.mkdir(args.write_sfba_data)
+            with gzip.open(os.path.join(args.write_sfba_data, 'test.geno.gz'), 'wt') as f:
+                print('##fileformat=VCFv4.2', file=f)
+                print('#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT',
+                      '\t'.join('s{}'.format(i) for i in range(x.shape[0])), sep='\t',
+                      file=f)
+                gt = ('0/0', '0/1', '0/2')
+                for i, row in enumerate(x):
+                    print('1', i, 'rs{}'.format(i), 'A', 'C', '.', '.', '.', 'GT', '\t'.join(gt[int(x_j)] for x_j in row), sep='\t', file=f)
+            with open(os.path.join(args.write_sfba_data, 'phenotypes.txt'), 'wt') as f:
+                for i, p in enumerate(y):
+                    print('s{}'.format(i), p, file=f)
+            with gzip.open(os.path.join(args.write_sfba_data, 'Anno_test.gz'), 'wt') as f:
+                print('ID	#CHROM	POS', file=f)
+                for i, a in enumerate(args.annotation):
+                    print('rs{}'.format(i), '1', i, a, sep='\t', file=f)
+                    with open(os.path.join(args.write_sfba_data, 'AnnoCode.txt'), 'w') as f:
+                        print('#n_type', len(args.annotation), sep='\t', file=f)
+                        for i, a in enumerate(args.annotation):
+                            print('a{}'.format(i), i, file=f)
+            with open(os.path.join(args.write_sfba_data, 'fileheads.txt'), 'w') as f:
+                print('test', file=f)
+            with open(os.path.join(args.write_sfba_data, 'hyperparameters.txt'), 'w') as f:
+                print('pi', 'sigma2', sep='\t', file=f)
+                for a in args.annotation:
+                    print(1e-6, 10, file=f)
             return
         if args.validation is not None:
             x_validate = x[-args.validation:]
