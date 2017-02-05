@@ -51,7 +51,7 @@ def _parser():
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi', 'sklearn'], help='Method to fit model', required=True)
-    req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi'], help='Outer method (for hyperparameters)', required=True, default='is')
+    req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi', 'vae'], help='Outer method (for hyperparameters)', required=True, default='is')
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
@@ -313,6 +313,12 @@ def evaluate():
                                                       fit_intercept=not args.center).fit(x, y)
             else:
                 m = sklearn.linear_model.LogisticRegressionCV(fit_intercept=True).fit(x, y)
+        elif args.outer_method == 'vae':
+            if args.model == 'gaussian':
+                model = ctra.model.GaussianVAE
+            else:
+                model = ctra.model.LogisticVAE
+            m = model(x, y, s.annot, pve, learning_rate=args.learning_rate, warmup_rate=args.warmup_rate).fit()
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
