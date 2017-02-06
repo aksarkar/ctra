@@ -283,10 +283,12 @@ def evaluate():
                 numpy.savetxt(f, s.theta, fmt='%.3f')
             return
         if args.validation is not None:
-            x_validate = x[-args.validation:]
-            y_validate = y[-args.validation:]
-            x = x[:-args.validation]
-            y = y[:-args.validation]
+            validation = numpy.zeros(args.num_samples, dtype='bool')
+            validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
+            x_validate = x[validation]
+            y_validate = y[validation]
+            x = x[~validation]
+            y = y[~validation]
 
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
@@ -318,7 +320,7 @@ def evaluate():
                 model = ctra.model.GaussianVAE
             else:
                 model = ctra.model.LogisticVAE
-            m = model(x, y, s.annot, pve, learning_rate=args.learning_rate, warmup_rate=args.warmup_rate, random_state=s.random).fit()
+            m = model(x, y, s.annot, learning_rate=args.learning_rate, warmup_rate=args.warmup_rate, random_state=s.random).fit()
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
@@ -369,9 +371,7 @@ def evaluate():
             code.interact(banner='', local=dict(globals(), **locals()))
         if args.fit_null:
             m = m0
-        if args.propose_tau:
-            logger.info('Writing posterior mean tau')
-            numpy.savetxt(sys.stdout.buffer, m.tau, fmt='%.3g')
-        else:
-            logger.info('Writing posterior mean pi')
-            numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
+        logger.info('Writing posterior mean pi')
+        numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
+        logger.info('Writing posterior mean tau')
+        numpy.savetxt(sys.stdout.buffer, m.tau, fmt='%.3g')
