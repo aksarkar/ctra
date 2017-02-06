@@ -304,10 +304,12 @@ def evaluate():
                     print(1e-6, 10, file=f)
             return
         if args.validation is not None:
-            x_validate = x[-args.validation:]
-            y_validate = y[-args.validation:]
-            x = x[:-args.validation]
-            y = y[:-args.validation]
+            validation = numpy.zeros(args.num_samples, dtype='bool')
+            validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
+            x_validate = x[validation]
+            y_validate = y[validation]
+            x = x[~validation]
+            y = y[~validation]
 
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
