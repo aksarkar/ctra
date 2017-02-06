@@ -190,14 +190,15 @@ class LogisticVAE(VAE):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        bias_mean = _S(_Z(1))
+        self.bias_mean = _S(_Z(1))
         bias_logit_prec = _S(_Z(1))
-        bias_prec = 1e4 * T.nnet.sigmoid(bias_logit_prec)
-        super().__init__(X, y, a, hyperparam_means=[bias_mean],
+        self.bias_prec = 1000 * T.nnet.sigmoid(bias_logit_prec)
+        super().__init__(X, y, a, hyperparam_means=[self.bias_mean],
                          hyperparam_logit_precs=[bias_logit_prec],
                          **kwargs)
 
-    def _llik(self, y, eta, phi):
+    def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
+        phi = T.addbroadcast(T.nnet.softplus(self.bias_mean + T.sqrt(1 / self.bias_prec) * phi_raw), 1)
         F = y * (eta + phi) - T.nnet.softplus(eta + phi)
         return T.mean(T.sum(F, axis=1))
