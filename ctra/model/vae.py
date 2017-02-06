@@ -69,6 +69,7 @@ needed for specific likelihoods.
 
         self.hyperprior_means = [numpy.repeat(-2, m).astype(_real), _Z(m)]
         self.hyperprior_logit_precs = [_Z(m), _Z(m)]
+        self.hyperprior_max_prec = 10
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
@@ -94,7 +95,7 @@ needed for specific likelihoods.
         # We need to generate independent noise samples for the hyperparameters
         phi_minibatch = (epoch + 1) % 5
         phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:m]
-        phi = [T.addbroadcast(mean + T.sqrt(1e-2 / T.nnet.sigmoid(logit_prec)) * phi_raw, 1).dimshuffle(0, 'x')
+        phi = [T.addbroadcast(mean + T.sqrt(1 / (self.hyperprior_max_prec * T.nnet.sigmoid(logit_prec))) * phi_raw, 1).dimshuffle(0, 'x')
                for mean, logit_prec in zip(self.hyperparam_means, self.hyperparam_logit_precs)]
 
         # We need to warm up the objective function in order to avoid
@@ -125,8 +126,9 @@ needed for specific likelihoods.
         trace_outputs = ([epoch, kl, error, q_z.max(), T.mean(eta.var(axis=1))] +
                          self.hyperparam_means + self.hyperparam_logit_precs)
         self.trace = _F(inputs=[epoch], outputs=trace_outputs, givens=sgd_givens)
-        self.opt = _F(inputs=[epoch], outputs=[elbo, T.nnet.sigmoid(q_logit_pi_mean),
-                                               T.exp(q_log_tau_mean), q_z, q_theta_mean], givens=sgd_givens)
+        opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), 1 / T.nnet.sigmoid(q_logit_pi_logit_prec),
+                       T.nnet.softplus(q_log_tau_mean), 1 / T.nnet.sigmoid(q_log_tau_logit_prec)]
+        self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
 
     def _llik(self, *args):
@@ -153,7 +155,7 @@ needed for specific likelihoods.
             else:
                 error_, kl_ = error, kl
         logger.info('Converged at epoch {}'.format(t))
-        self._evidence, self.pi, self.tau, self.pip, self.q_theta_mean = self.opt(epoch=t)
+        self._evidence, self.pip, self.q_theta_mean, self.pi, self.logit_pi_var, self.tau, self.log_tau_var = self.opt(epoch=t)
         self.theta = self.pip * self.q_theta_mean
         return self
 
