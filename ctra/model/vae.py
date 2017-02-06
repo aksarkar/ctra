@@ -169,7 +169,7 @@ needed for specific likelihoods.
                     numpy.square(y - y.mean()).sum())
 
 class GaussianVAE(VAE):
-    def __init__(self, X, y, a, pve, **kwargs):
+    def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
         self.log_sigma2_mean = _S(_Z(1))
@@ -202,3 +202,16 @@ class LogisticVAE(VAE):
         phi = T.addbroadcast(T.nnet.softplus(self.bias_mean + T.sqrt(1 / self.bias_prec) * phi_raw), 1)
         F = y * (eta + phi) - T.nnet.softplus(eta + phi)
         return T.mean(T.sum(F, axis=1))
+
+    def predict(self, x):
+        raise NotImplementedError
+
+    def fit(self, *args, **kwargs):
+        super().fit(*args, **kwargs)
+        # This depends on local Theano tensors, so compile it here
+        self.predict = _F(inputs=[self.X], outputs=[T.nnet.sigmoid(T.dot(self.X, self.theta) + T.addbroadcast(self.bias_mean, 0))])
+        return self
+
+    def score(self, x, y):
+        yhat = (numpy.array(self.predict(x)) > 0.5)
+        return numpy.asscalar((y == yhat).sum() / y.shape[0])
