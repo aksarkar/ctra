@@ -11,6 +11,7 @@ import scipy.special
 import theano
 import theano.tensor as T
 
+from matplotlib.pyplot import *
 from .base import Algorithm
 
 logger = logging.getLogger(__name__)
@@ -27,12 +28,13 @@ class VAE(Algorithm):
 needed for specific likelihoods.
 
     """
-    def __init__(self, X_, y_, a_, stoch_samples=100, learning_rate=1e-4,
+    def __init__(self, X_, y_, a_, stoch_samples=500, learning_rate=1e-4,
                  warmup_rate=1e-3, hyperparam_means=None,
                  hyperparam_logit_precs=None, random_state=None, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, None)
         self.warmup_rate = warmup_rate
+        self.max_prec = 1e3
 
         logger.debug('Building the Theano graph')
 
@@ -42,34 +44,37 @@ needed for specific likelihoods.
         y = T.fvector(name='y')
         a = T.ivector(name='a')
 
-        # Variational parameters
-        n, p = X_.shape
-        q_logit_z = _S(_Z(p), name='q_logit_z')
-        q_z = T.cast(T.clip(T.nnet.sigmoid(q_logit_z), self.eps, 1 - self.eps), _real)
-        q_theta_mean = _S(_Z(p), name='q_theta_mean')
-        q_theta_logit_prec = _S(_Z(p), name='q_theta_logit_prec')
-        q_theta_prec = 1e4 * T.nnet.sigmoid(q_theta_logit_prec)
-        self.params = [q_logit_z, q_theta_mean, q_theta_logit_prec]
-
         # Variational surrogate for target hyperposterior
         m = self.p.shape[0]
         q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
-        q_logit_pi_logit_prec = _S(_Z(m), name='q_logit_pi_logit')
+        q_logit_pi_logit_prec = _S(_Z(m), name='q_logit_pi_logit_prec')
         q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
-        q_log_tau_logit_prec = _S(_Z(m), name='q_log_tau_logit')
+        q_log_tau_logit_prec = _S(_Z(m), name='q_log_tau_logit_prec')
+
+        # Variational parameters
+        n, p = X_.shape
+        q_logit_z = _S(_Z(p), name='q_logit_z')
+        q_z = T.nnet.sigmoid(q_logit_z)
+        q_theta_mean = _S(_Z(p), name='q_theta_mean')
+        q_theta_logit_prec = _S(_Z(p), name='q_theta_logit_prec')
+        q_theta_prec = self.max_prec * T.nnet.sigmoid(q_theta_logit_prec)
+        self.params = [q_logit_z, q_theta_mean, q_theta_logit_prec]
 
         # These will include model-specific terms. Assume everything is
         # Gaussian on the variational side to simplify
         self.hyperparam_means = [q_logit_pi_mean, q_log_tau_mean]
+        self.hyperparam_logit_precs = [q_logit_pi_logit_prec, q_log_tau_logit_prec]
         if hyperparam_means is not None:
             self.hyperparam_means.extend(hyperparam_means)
-        self.hyperparam_logit_precs = [q_logit_pi_logit_prec, q_log_tau_logit_prec]
         if hyperparam_logit_precs is not None:
             self.hyperparam_logit_precs.extend(hyperparam_logit_precs)
 
         self.hyperprior_means = [numpy.repeat(-2, m).astype(_real), _Z(m)]
         self.hyperprior_logit_precs = [_Z(m), _Z(m)]
-        self.hyperprior_max_prec = 10
+        for _ in hyperparam_means:
+            self.hyperprior_means.append(_Z(m))
+            self.hyperprior_logit_precs.append(_Z(m))
+        self.hyperprior_max_prec = 100
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
@@ -103,13 +108,17 @@ needed for specific likelihoods.
         # zero. The idea is given in Sønderby et al., NIPS 2016
         temperature = T.clip(T.cast(warmup_rate * epoch, _real), 0, 1)
         error = self._llik(y, eta, phi_raw)
-        pi = T.clip(T.nnet.sigmoid(phi[0]), 1e-8, 1 - 1e-8)
-        kl = temperature * T.mean(.5 * T.sum(q_z * (1 + phi[1] - T.log(q_theta_prec) -
-                                                    phi[1] * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
-                                  - T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi))))
-        for mean, logit_prec in zip(self.hyperparam_means, self.hyperparam_logit_precs):
-            kl += .5 * T.sum(T.nnet.sigmoid(logit_prec) * (T.sqr(mean) + 1 / T.nnet.sigmoid(logit_prec)))
-        elbo = error - kl
+        pi = T.addbroadcast(T.nnet.sigmoid(q_logit_pi_mean), 0)
+        tau = T.addbroadcast(T.nnet.softplus(q_log_tau_mean), 0)
+        kl = (.5 * T.sum(q_z * (1 + tau - T.log(q_theta_prec) -
+                                tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
+              - T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi))))
+        kl_hyper = 0
+        for mean, logit_prec, prior_mean, prior_logit_prec in zip(self.hyperparam_means, self.hyperparam_logit_precs, self.hyperprior_means, self.hyperprior_logit_precs):
+            prec = self.max_prec * T.nnet.sigmoid(logit_prec)
+            prior_prec = self.hyperprior_max_prec * T.nnet.sigmoid(prior_logit_prec)
+            kl_hyper += .5 * T.sum(1 + T.log(prior_prec) - T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
+        elbo = error - temperature * (kl + kl_hyper)
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, _Z(p)) for param in self.params]
@@ -117,19 +126,34 @@ needed for specific likelihoods.
         init_updates += [(param, val) for param, val in zip(self.hyperparam_logit_precs, self.hyperprior_logit_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
-        variational_params = self.params + self.hyperparam_means + self.hyperparam_logit_precs
-        grad = T.grad(elbo, variational_params)
         sgd_updates = [(param, param + numpy.array(learning_rate, dtype=_real) * g)
-                       for param, g in zip(variational_params, grad)]
+                       for param, g in zip(self.params, T.grad(elbo, self.params))]
+        sgd_updates += [(param, param + numpy.array(learning_rate, dtype=_real) * g)
+                        for param, g in zip(self.hyperparam_means + self.hyperparam_logit_precs,
+                                            T.grad(elbo, self.hyperparam_means + self.hyperparam_logit_precs))]
         sgd_givens = {X: X_.astype(_real), y: y_.astype(_real), a: a_}
-        self.sgd_step = _F(inputs=[epoch], outputs=[error, kl], updates=sgd_updates, givens=sgd_givens)
-        trace_outputs = ([epoch, kl, error, q_z.max(), T.mean(eta.var(axis=1))] +
-                         self.hyperparam_means + self.hyperparam_logit_precs)
+        self.sgd_step = _F(inputs=[epoch], outputs=[error, kl + kl_hyper], updates=sgd_updates, givens=sgd_givens)
+        trace_outputs = ([epoch, error, kl, kl_hyper, q_theta_prec.max(), q_z.max()] + self.hyperparam_means)
         self.trace = _F(inputs=[epoch], outputs=trace_outputs, givens=sgd_givens)
         opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), 1 / T.nnet.sigmoid(q_logit_pi_logit_prec),
                        T.nnet.softplus(q_log_tau_mean), 1 / T.nnet.sigmoid(q_log_tau_logit_prec)]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
+
+        test_point = T.fvector()
+        query_givens = sgd_givens
+        query_givens[epoch] = numpy.array(0, dtype='int32')
+        query_givens[q_logit_z] = test_point
+        query = _F(inputs=[test_point], outputs=T.grad(error, q_logit_z), givens=query_givens)
+        grid = numpy.mgrid[-10:10:1, -10:10:1].astype(_real)
+        z = numpy.array([query(x) for x in numpy.rollaxis(grid, 0, 3).reshape(-1, 2)])
+        z = numpy.rollaxis(z.reshape(20, 20, 2), 2)
+        figure()
+        quiver(grid[0], grid[1], z[0], z[1], pivot='mid')
+        xlabel('logit(alpha0)')
+        ylabel('logit(alpha1)')
+        savefig('test.pdf')
+        sys.exit(0)
 
     def _llik(self, *args):
         raise NotImplementedError
@@ -147,8 +171,11 @@ needed for specific likelihoods.
             t += 1
             error, kl = self.sgd_step(epoch=t)
             assert numpy.isfinite(kl) and numpy.isfinite(error)
+            if not t % 50:
+                logger.debug('\t'.join(['epoch', 'error', 'kl', 'klh', 'vars', 'pip', 'pi', 'tau', 'sigma2']))
             logger.debug('\t'.join('{:.5g}'.format(numpy.asscalar(x)) for x in self.trace(t)))
-            if (error - kl) < (error_ - kl_):
+            if t > 1 / self.warmup_rate and (error - kl) < (error_ - kl_):
+                logger.debug('ELBO decreased')
                 break
             elif numpy.isclose(kl, kl_, atol=atol) and numpy.isclose(error, error_, atol=atol):
                 break
