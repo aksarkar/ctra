@@ -100,25 +100,28 @@ needed for specific likelihoods.
         # We need to generate independent noise samples for the hyperparameters
         phi_minibatch = (epoch + 1) % 5
         phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:m]
-        phi = [T.addbroadcast(mean + T.sqrt(1 / (self.hyperprior_max_prec * T.nnet.sigmoid(logit_prec))) * phi_raw, 1).dimshuffle(0, 'x')
-               for mean, logit_prec in zip(self.hyperparam_means, self.hyperparam_logit_precs)]
 
         # We need to warm up the objective function in order to avoid
         # degenerate solutions where all variational free parameters go to
         # zero. The idea is given in Sønderby et al., NIPS 2016
         temperature = T.clip(T.cast(warmup_rate * epoch, _real), 0, 1)
         error = self._llik(y, eta, phi_raw)
+        # We don't need to use the hyperparameter noise samples for these
+        # parameters because we can deal with them analytically
         pi = T.addbroadcast(T.nnet.sigmoid(q_logit_pi_mean), 0)
         tau = T.addbroadcast(T.nnet.softplus(q_log_tau_mean), 0)
-        kl = (.5 * T.sum(q_z * (1 + tau - T.log(q_theta_prec) -
-                                tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
-              - T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi))))
+        # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
+        # notation)
+        kl_qtheta_ptheta = .5 * T.sum(q_z * (1 + T.log(tau) - T.log(q_theta_prec) + tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
+        # Rasmussen and Williams, Eq. A.22
+        kl_qz_pz = T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi)))
         kl_hyper = 0
-        for mean, logit_prec, prior_mean, prior_logit_prec in zip(self.hyperparam_means, self.hyperparam_logit_precs, self.hyperprior_means, self.hyperprior_logit_precs):
-            prec = self.max_prec * T.nnet.sigmoid(logit_prec)
-            prior_prec = self.hyperprior_max_prec * T.nnet.sigmoid(prior_logit_prec)
+        for mean, log_prec, prior_mean, prior_log_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_log_precs):
+            prec = T.nnet.softplus(log_prec)
+            prior_prec = T.nnet.softplus(prior_log_prec)
             kl_hyper += .5 * T.sum(1 + T.log(prior_prec) - T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
-        elbo = error - temperature * (kl + kl_hyper)
+        kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
+        elbo = error - temperature * kl
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, _Z(p)) for param in self.params]
@@ -126,34 +129,15 @@ needed for specific likelihoods.
         init_updates += [(param, val) for param, val in zip(self.hyperparam_logit_precs, self.hyperprior_logit_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
-        sgd_updates = [(param, param + numpy.array(learning_rate, dtype=_real) * g)
-                       for param, g in zip(self.params, T.grad(elbo, self.params))]
-        sgd_updates += [(param, param + numpy.array(learning_rate, dtype=_real) * g)
-                        for param, g in zip(self.hyperparam_means + self.hyperparam_logit_precs,
-                                            T.grad(elbo, self.hyperparam_means + self.hyperparam_logit_precs))]
+        variational_params = self.params + self.hyperparam_means[-1:] + self.hyperparam_log_precs[-1:]
+        sgd_updates = [(param, param + T.cast(learning_rate, dtype=_real) * g)
+                       for param, g in zip(variational_params, T.grad(elbo, variational_params))]
         sgd_givens = {X: X_.astype(_real), y: y_.astype(_real), a: a_}
-        self.sgd_step = _F(inputs=[epoch], outputs=[error, kl + kl_hyper], updates=sgd_updates, givens=sgd_givens)
-        trace_outputs = ([epoch, error, kl, kl_hyper, q_theta_prec.max(), q_z.max()] + self.hyperparam_means)
-        self.trace = _F(inputs=[epoch], outputs=trace_outputs, givens=sgd_givens)
-        opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), 1 / T.nnet.sigmoid(q_logit_pi_logit_prec),
-                       T.nnet.softplus(q_log_tau_mean), 1 / T.nnet.sigmoid(q_log_tau_logit_prec)]
+        self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
+        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta] + variational_params, givens=sgd_givens)
+        opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), T.nnet.softplus(q_log_tau_mean)]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
-
-        test_point = T.fvector()
-        query_givens = sgd_givens
-        query_givens[epoch] = numpy.array(0, dtype='int32')
-        query_givens[q_logit_z] = test_point
-        query = _F(inputs=[test_point], outputs=T.grad(error, q_logit_z), givens=query_givens)
-        grid = numpy.mgrid[-10:10:1, -10:10:1].astype(_real)
-        z = numpy.array([query(x) for x in numpy.rollaxis(grid, 0, 3).reshape(-1, 2)])
-        z = numpy.rollaxis(z.reshape(20, 20, 2), 2)
-        figure()
-        quiver(grid[0], grid[1], z[0], z[1], pivot='mid')
-        xlabel('logit(alpha0)')
-        ylabel('logit(alpha1)')
-        savefig('test.pdf')
-        sys.exit(0)
 
     def _llik(self, *args):
         raise NotImplementedError
@@ -164,25 +148,18 @@ needed for specific likelihoods.
     def fit(self, atol=1e-3, **kwargs):
         self.initialize()
         t = 0
-        logger.debug(' '.join('{:.3g}'.format(numpy.asscalar(x)) for x in self.trace(t)))
-        error_ = float('-inf')
-        kl_ = float('-inf')
+        elbo_ = float('-inf')
+        self.trace = []
         while t < 1000:
             t += 1
-            error, kl = self.sgd_step(epoch=t)
-            assert numpy.isfinite(kl) and numpy.isfinite(error)
-            if not t % 50:
-                logger.debug('\t'.join(['epoch', 'error', 'kl', 'klh', 'vars', 'pip', 'pi', 'tau', 'sigma2']))
-            logger.debug('\t'.join('{:.5g}'.format(numpy.asscalar(x)) for x in self.trace(t)))
-            if t > 1 / self.warmup_rate and (error - kl) < (error_ - kl_):
-                logger.debug('ELBO decreased')
-                break
-            elif numpy.isclose(kl, kl_, atol=atol) and numpy.isclose(error, error_, atol=atol):
-                break
-            else:
-                error_, kl_ = error, kl
+            elbo = self.sgd_step(epoch=t)
+            logger.debug('Epoch {}: {}'.format(t, elbo))
+            self.trace.append(self._trace(t))
+            if not numpy.isfinite(elbo):
+                import pdb; pdb.set_trace()
+                sys.exit(1)
         logger.info('Converged at epoch {}'.format(t))
-        self._evidence, self.pip, self.q_theta_mean, self.pi, self.logit_pi_var, self.tau, self.log_tau_var = self.opt(epoch=t)
+        self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
         self.theta = self.pip * self.q_theta_mean
         return self
 
