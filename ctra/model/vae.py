@@ -30,7 +30,7 @@ needed for specific likelihoods.
     """
     def __init__(self, X_, y_, a_, stoch_samples=500, learning_rate=1e-4,
                  warmup_rate=1e-3, hyperparam_means=None,
-                 hyperparam_logit_precs=None, random_state=None, **kwargs):
+                 hyperparam_log_precs=None, random_state=None, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, None)
         self.warmup_rate = warmup_rate
@@ -47,34 +47,33 @@ needed for specific likelihoods.
         # Variational surrogate for target hyperposterior
         m = self.p.shape[0]
         q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
-        q_logit_pi_logit_prec = _S(_Z(m), name='q_logit_pi_logit_prec')
+        q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
         q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
-        q_log_tau_logit_prec = _S(_Z(m), name='q_log_tau_logit_prec')
+        q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
 
         # Variational parameters
         n, p = X_.shape
         q_logit_z = _S(_Z(p), name='q_logit_z')
         q_z = T.nnet.sigmoid(q_logit_z)
         q_theta_mean = _S(_Z(p), name='q_theta_mean')
-        q_theta_logit_prec = _S(_Z(p), name='q_theta_logit_prec')
-        q_theta_prec = self.max_prec * T.nnet.sigmoid(q_theta_logit_prec)
-        self.params = [q_logit_z, q_theta_mean, q_theta_logit_prec]
+        q_theta_log_prec = _S(_Z(p), name='q_theta_log_prec')
+        q_theta_prec = T.nnet.softplus(q_theta_log_prec)
+        self.params = [q_logit_z, q_theta_mean, q_theta_log_prec]
 
         # These will include model-specific terms. Assume everything is
         # Gaussian on the variational side to simplify
         self.hyperparam_means = [q_logit_pi_mean, q_log_tau_mean]
-        self.hyperparam_logit_precs = [q_logit_pi_logit_prec, q_log_tau_logit_prec]
+        self.hyperparam_log_precs = [q_logit_pi_log_prec, q_log_tau_log_prec]
         if hyperparam_means is not None:
             self.hyperparam_means.extend(hyperparam_means)
-        if hyperparam_logit_precs is not None:
-            self.hyperparam_logit_precs.extend(hyperparam_logit_precs)
+        if hyperparam_log_precs is not None:
+            self.hyperparam_log_precs.extend(hyperparam_log_precs)
 
         self.hyperprior_means = [numpy.repeat(-2, m).astype(_real), _Z(m)]
-        self.hyperprior_logit_precs = [_Z(m), _Z(m)]
+        self.hyperprior_log_precs = [_Z(m), _Z(m)]
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(m))
-            self.hyperprior_logit_precs.append(_Z(m))
-        self.hyperprior_max_prec = 100
+            self.hyperprior_log_precs.append(_Z(m))
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
@@ -126,7 +125,7 @@ needed for specific likelihoods.
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, _Z(p)) for param in self.params]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_means, self.hyperprior_means)]
-        init_updates += [(param, val) for param, val in zip(self.hyperparam_logit_precs, self.hyperprior_logit_precs)]
+        init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
         variational_params = self.params + self.hyperparam_means[-1:] + self.hyperparam_log_precs[-1:]
@@ -134,7 +133,7 @@ needed for specific likelihoods.
                        for param, g in zip(variational_params, T.grad(elbo, variational_params))]
         sgd_givens = {X: X_.astype(_real), y: y_.astype(_real), a: a_}
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
-        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta] + variational_params, givens=sgd_givens)
+        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + variational_params, givens=sgd_givens)
         opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), T.nnet.softplus(q_log_tau_mean)]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
@@ -177,11 +176,11 @@ class GaussianVAE(VAE):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
         self.log_sigma2_mean = _S(_Z(1))
-        log_sigma2_logit_prec = _S(_Z(1))
-        self.log_sigma2_prec = 1000 * T.nnet.sigmoid(log_sigma2_logit_prec)
+        log_sigma2_log_prec = _S(_Z(1))
+        self.log_sigma2_prec = T.nnet.softplus(log_sigma2_log_prec)
         super().__init__(X, y, a,
                          hyperparam_means=[self.log_sigma2_mean],
-                         hyperparam_logit_precs=[log_sigma2_logit_prec],
+                         hyperparam_log_precs=[log_sigma2_log_prec],
                          **kwargs)
 
     def _llik(self, y, eta, phi_raw):
@@ -195,10 +194,10 @@ class LogisticVAE(VAE):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
         self.bias_mean = _S(_Z(1))
-        bias_logit_prec = _S(_Z(1))
-        self.bias_prec = 1000 * T.nnet.sigmoid(bias_logit_prec)
+        bias_log_prec = _S(_Z(1))
+        self.bias_prec = T.nnet.softplus(bias_log_prec)
         super().__init__(X, y, a, hyperparam_means=[self.bias_mean],
-                         hyperparam_logit_precs=[bias_logit_prec],
+                         hyperparam_log_precs=[bias_log_prec],
                          **kwargs)
 
     def _llik(self, y, eta, phi_raw):
