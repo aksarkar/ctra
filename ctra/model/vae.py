@@ -190,7 +190,7 @@ class GaussianVAE(VAE):
 
     def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""
-        phi = T.addbroadcast(T.nnet.softplus(self.log_sigma2_mean + T.sqrt(1 / self.log_sigma2_prec) * phi_raw), 1)
+        phi = T.exp(T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_sigma2_mean + T.sqrt(1 / self.log_sigma2_prec) * phi_raw), 1))
         F = -.5 * (T.log(phi) + T.sqr(y - eta) / phi)
         return T.mean(T.sum(F, axis=1))
 
