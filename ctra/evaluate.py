@@ -356,6 +356,27 @@ def evaluate():
                               learning_rate=args.learning_rate,
                               minibatch_n=args.minibatch_size)
                 m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
+        if args.interact:
+            P = matplotlib.pyplot
+            P.figure();
+            P.plot(numpy.arange(len(m.trace)), [x[3:6] for x in m.trace]);
+            P.legend(['KL(z)', 'KL(theta)', 'KL(hyper)']);
+            P.savefig('kl.pdf');
+            P.close()
+
+            P.figure();
+            P.plot(numpy.arange(len(m.trace)), [x[1] for x in m.trace]);
+            P.legend(['ELBO']);
+            P.savefig('elbo.pdf');
+            P.close()
+
+            P.figure();
+            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-6:-3] for x in m.trace]).sum(axis=2))
+            P.legend(['logit(pi)', 'log(tau)', 'log(sigma2)'])
+            P.savefig('hyper.pdf')
+            P.close()
+
+            code.interact(banner='', local=dict(globals(), **locals()))
         if args.write_weights is not None:
             logger.info('Writing importance weights:')
             with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
@@ -367,8 +388,6 @@ def evaluate():
             logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
-        if args.interact:
-            code.interact(banner='', local=dict(globals(), **locals()))
         if args.fit_null:
             m = m0
         logger.info('Writing posterior mean pi')
