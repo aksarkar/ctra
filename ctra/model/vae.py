@@ -57,7 +57,8 @@ needed for specific likelihoods.
         q_z = T.nnet.sigmoid(q_logit_z)
         q_theta_mean = _S(_Z(p), name='q_theta_mean')
         q_theta_log_prec = _S(_Z(p), name='q_theta_log_prec')
-        q_theta_prec = T.nnet.softplus(q_theta_log_prec)
+        self.min_prec = 1e-3
+        q_theta_prec = self.min_prec + T.nnet.softplus(q_theta_log_prec)
         self.params = [q_logit_z, q_theta_mean, q_theta_log_prec]
 
         # These will include model-specific terms. Assume everything is
@@ -108,7 +109,7 @@ needed for specific likelihoods.
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
         pi = T.addbroadcast(T.nnet.sigmoid(q_logit_pi_mean), 0)
-        tau = T.addbroadcast(T.nnet.softplus(q_log_tau_mean), 0)
+        tau = T.addbroadcast(T.exp(q_log_tau_mean), 0)
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
         kl_qtheta_ptheta = .5 * T.sum(q_z * (1 + T.log(tau) - T.log(q_theta_prec) + tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
@@ -116,8 +117,8 @@ needed for specific likelihoods.
         kl_qz_pz = T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi)))
         kl_hyper = 0
         for mean, log_prec, prior_mean, prior_log_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_log_precs):
-            prec = T.nnet.softplus(log_prec)
-            prior_prec = T.nnet.softplus(prior_log_prec)
+            prec = self.min_prec + T.nnet.softplus(log_prec)
+            prior_prec = self.min_prec + T.nnet.softplus(prior_log_prec)
             kl_hyper += .5 * T.sum(1 + T.log(prior_prec) - T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
         kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
         elbo = error - temperature * kl
@@ -128,13 +129,16 @@ needed for specific likelihoods.
         init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
-        variational_params = self.params + self.hyperparam_means[-1:] + self.hyperparam_log_precs[-1:]
+        self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
+        all_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
+        grad = T.grad(elbo, self.variational_params)
         sgd_updates = [(param, param + T.cast(learning_rate, dtype=_real) * g)
-                       for param, g in zip(variational_params, T.grad(elbo, variational_params))]
+                       for param, g in zip(self.variational_params, grad)]
         sgd_givens = {X: X_.astype(_real), y: y_.astype(_real), a: a_}
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
-        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + variational_params, givens=sgd_givens)
-        opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), T.nnet.softplus(q_log_tau_mean)]
+        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
+        self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
+        opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), T.exp(q_log_tau_mean)]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
 
@@ -149,14 +153,15 @@ needed for specific likelihoods.
         t = 0
         elbo_ = float('-inf')
         self.trace = []
+        self.trace_grad = []
         while t < 1000:
             t += 1
+            self.trace.append(self._trace(t))
+            self.trace_grad.append(self._trace_grad(t))
             elbo = self.sgd_step(epoch=t)
             logger.debug('Epoch {}: {}'.format(t, elbo))
-            self.trace.append(self._trace(t))
             if not numpy.isfinite(elbo):
-                import pdb; pdb.set_trace()
-                sys.exit(1)
+                return self
         logger.info('Converged at epoch {}'.format(t))
         self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
         self.theta = self.pip * self.q_theta_mean
@@ -177,7 +182,7 @@ class GaussianVAE(VAE):
         # graph since self._llik refers to it
         self.log_sigma2_mean = _S(_Z(1))
         log_sigma2_log_prec = _S(_Z(1))
-        self.log_sigma2_prec = T.nnet.softplus(log_sigma2_log_prec)
+        self.log_sigma2_prec = 1e-3 + T.nnet.softplus(log_sigma2_log_prec)
         super().__init__(X, y, a,
                          hyperparam_means=[self.log_sigma2_mean],
                          hyperparam_log_precs=[log_sigma2_log_prec],
