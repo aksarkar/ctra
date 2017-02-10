@@ -12,6 +12,7 @@ y = x + e
 
 X = theano.shared(x)
 Y = theano.shared(y)
+n = y.shape[0]
 
 mu_mean = theano.shared(numpy.zeros(x.shape), name='mu_mean')
 mu_log_prec = theano.shared(numpy.ones(x.shape), name='mu_log_prec')
@@ -38,20 +39,24 @@ phi_raw = noise[batch * 10:(batch + 1) * 10]
 phi = T.exp(T.addbroadcast(log_sigma2_mean + phi_raw * T.sqrt(1 / log_sigma2_prec), 1))
 
 llik = -.5 * T.mean(T.sum(T.log(phi) + T.sqr(Y - eta) / phi, axis=1))
-kl = .5 * T.sum(1 + T.log(mu_prior_prec) - T.log(mu_prec) + mu_prior_prec * (T.sqr(mu_mean - mu_prior_mean) + 1 / mu_prior_prec))
-kl += .5 * T.sum(1 + T.log(log_sigma2_prior_prec) - T.log(log_sigma2_prec) + log_sigma2_prior_prec * (T.sqr(log_sigma2_mean - log_sigma2_prior_mean) + 1 / log_sigma2_prior_prec))
-elbo = llik - kl
-
+kl_mu = .5 * T.sum(1 + T.log(mu_prior_prec) - T.log(mu_prec) + mu_prior_prec * (T.sqr(mu_mean - mu_prior_mean) + 1 / mu_prior_prec))
+kl_sigma2 = .5 * T.sum(1 + T.log(log_sigma2_prior_prec) - T.log(log_sigma2_prec) + log_sigma2_prior_prec * (T.sqr(log_sigma2_mean - log_sigma2_prior_mean) + 1 / log_sigma2_prior_prec))
+elbo = llik - kl_mu - kl_sigma2
 params = [mu_mean, mu_log_prec, log_sigma2_mean, log_sigma2_log_prec]
 grad = T.grad(elbo, params)
-step = theano.function(inputs=[epoch], outputs=[elbo, llik, kl, log_sigma2_mean], updates=[(p, p + 1e-3 * g) for p, g in zip(params, grad)])
-trace = numpy.array([step(t) for t in range(1000)])
+step = theano.function(inputs=[epoch], outputs=[llik, kl_mu, kl_sigma2, T.sqr(mu_mean - X).sum()] + params, updates=[(p, p + 1e-3 * g) for p, g in zip(params, grad)])
 
-fig, axes = subplots(2, 1)
-axes[0].plot(numpy.arange(1000), trace[:,:3])
-axes[0].legend(['ELBO', 'Neg. error', 'KL'])
-axes[1].plot(numpy.arange(1000), trace[:,3])
-axes[1].axhline(2)
-axes[1].set_title('log(sigma2)')
+nsteps = 2000
+trace = [step(t) for t in range(nsteps)]
+
+fig, axes = subplots(3, 1)
+fig.set_size_inches(9, 12)
+axes[0].plot(numpy.arange(nsteps), [x[:3] for x in trace])
+axes[0].legend(['Neg. error', 'KL(mu)', 'KL(sigma2)'])
+axes[1].plot(numpy.arange(nsteps), [x[-2] for x in trace])
+axes[1].axhline(numpy.log(2), color='black')
+axes[1].legend(['log(sigma2)'])
+axes[2].plot(numpy.arange(nsteps), [x[3] for x in trace])
+axes[2].legend(['Loss'])
 savefig('llik.pdf')
 close()
