@@ -36,17 +36,24 @@ class DSVI(Algorithm):
     compiled function across hyperparameter samples.
 
     """
-    def __init__(self, X_, y_, a_, pve, minibatch_n=None, stoch_samples=None,
-                 learning_rate=None, warmup_rate=1e-3, *params, **kwargs):
+    def __init__(self, X_, y_, a_, pve, minibatch_n=None, stoch_samples=10,
+                 learning_rate=1e-3, *params, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, pve)
 
         logger.debug('Building the Theano graph')
         # Observed data
         n, p = X_.shape
-        X = _S(X_.astype(_real))
-        y = _S(y_.astype(_real))
-        a = _S(a_.astype('int8'))
+        self.X = _S(X_)
+        self.y = _S(y_)
+        self.a = _S(a_)
+
+        # Minibatch
+        self.minibatch_n = minibatch_n
+        self.scale_n = n // minibatch_n
+        X = T.matrix()
+        y = T.vector()
+        a = T.bvector()
 
         # Hyperparameters
         pi = T.vector(name='pi')
@@ -68,20 +75,6 @@ class DSVI(Algorithm):
         # than taking balanced subsamples, we take a sliding window over a
         # permutation which is balanced in expectation.
         epoch = T.iscalar(name='epoch')
-        # We need to warm up the objective function in order to avoid
-        # degenerate solutions where all variational free parameters go to
-        # zero. The idea is given in Sønderby et al., NIPS 2016
-        temperature = T.clip(numpy.array(warmup_rate).astype(_real) * epoch, 0, 1)
-        if minibatch_n is not None:
-            perm = _S(_R.permutation(n).astype('int32'))
-            sample_minibatch = epoch % (n // minibatch_n)
-            index = perm[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]
-            X_s = X[index]
-            y_s = y[index]
-        else:
-            minibatch_n = n
-            X_s = X
-            y_s = y
 
         # Variational approximation (re-parameterize eta = X theta). This is a
         # "Gaussian reconstruction" in that we characterize its expectation and
@@ -90,51 +83,51 @@ class DSVI(Algorithm):
         # We need to take the gradient of an intractable integral, so we re-write
         # it as a Monte Carlo integral which is differentiable, following Kingma &
         # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114).
-        mu = T.dot(X_s, alpha * beta)
-        nu = T.dot(T.sqr(X_s), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
-        if stoch_samples is None and minibatch_n > 10:
-            stoch_samples = 1
-        else:
-            stoch_samples = 10
-        eta_raw = _S(numpy.random.normal(size=(stoch_samples, minibatch_n)).astype(_real))
+        mu = T.dot(X, alpha * beta)
+        nu = T.dot(T.sqr(X), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
+
+        if minibatch_n is None:
+            minibatch_n = n
+
+        # Pre-compute the SGVB samples
+        noise = _S(_R.normal(size=(5 * stoch_samples, minibatch_n)).astype(_real))
+        noise_minibatch = epoch % 5
+        eta_raw = noise[noise_minibatch * stoch_samples:(noise_minibatch + 1) * stoch_samples]
         eta = mu + T.sqrt(nu) * eta_raw
 
         # Objective function
         elbo = (
             # The log likelihood is for the minibatch, but we need to scale up
             # to the full dataset size
-            self._llik(y_s, eta) * (n // minibatch_n) + temperature *
+            self._llik(y, eta) * self.scale_n +
             (.5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
              - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref))))
         )
         self._elbo = elbo
 
-        eta_mean = T.addbroadcast(T.mean(eta, keepdims=True), (True))
-        control = [self._llik(y_s, eta_mean) * g
-                   for g in T.grad(T.mean(-T.sqr(eta_mean - mu) / T.sqrt(nu)),
-                                   self.params)]
-
         logger.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[pi, tau], outputs=[],
                              updates=[(alpha_raw, _Z(p)), (beta, _Z(p)),
                                       (pi_deref, T.basic.choose(a, pi)),
-                                      (tau_deref, T.basic.choose(a, tau))])
+                                      (tau_deref, T.basic.choose(a, tau))],
+                             givens=[(a, self.a)])
         alpha_ = T.vector()
         beta_ = T.vector()
         self._initialize = _F(inputs=[alpha_, beta_, pi, tau], outputs=[],
                               updates=[(alpha_raw, alpha_), (beta, beta_),
                                        (pi_deref, T.basic.choose(a, pi)),
                                        (tau_deref, T.basic.choose(a, tau))],
+                              givens=[(a, self.a)],
                               allow_input_downcast=True)
 
         grad = T.grad(elbo, self.params)
-        if learning_rate is None:
-            learning_rate = numpy.array(5e-2 / minibatch_n, dtype=_real)
-        logger.debug('Minibatch size = {}'.format(minibatch_n))
-        logger.debug('Initial learning rate = {}'.format(learning_rate))
-        _sgd_updates = [(p_, T.cast(p_ + 10 ** -(epoch // 1e5) * learning_rate * (g - cv), _real))
-                         for p_, g, cv in zip(self.params, grad, control)]
-        self.vb_step = _F(inputs=[epoch], outputs=elbo, updates=_sgd_updates)
+        sgd_updates = [(param, param + learning_rate * g)
+                       for param, g in zip(self.params, grad)]
+        sample_minibatch = epoch % (n // minibatch_n)
+        sgd_givens = [(X, self.X[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]),
+                      (y, self.y[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]),
+                      (a, self.a)]
+        self.vb_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
 
         self._opt = _F(inputs=[], outputs=[alpha, beta])
         logger.debug('Finished initializing')
@@ -142,11 +135,9 @@ class DSVI(Algorithm):
     def _llik(self, *args):
         raise NotImplementedError
 
-    def log_weight(self, pi, tau, params=None, weight=0.5, poll_iters=1000,
-                   min_iters=100000, atol=1, true_causal=None, **kwargs):
+    def log_weight(self, pi, tau, max_epochs=4000, true_causal=None, **kwargs):
         """Return optimum ELBO and variational parameters which achieve it.
 
-        params - Initial setting of the variational parameters (default: randomize)
         weight - weight for exponential moving average of ELBO
         poll_iters - number of iterations before polling objective function
         min_iters - minimum number of iterations
@@ -157,32 +148,13 @@ class DSVI(Algorithm):
         hyperparams = {'pi': pi, 'tau': tau}
         logger.debug('Starting SGD given {}'.format(hyperparams))
         # Re-initialize, otherwise everything breaks
-        if params is None:
-            self._randomize(**hyperparams)
-        else:
-            alpha, beta = params
-            self._initialize(scipy.special.expit(alpha), beta, **hyperparams)
-        converged = False
+        self._randomize(**hyperparams)
         t = 0
-        ewma = 0
-        ewma_ = ewma
-        while not converged:
+        while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.vb_step(epoch=t)
             assert numpy.isfinite(elbo)
-            if t < poll_iters:
-                ewma += elbo / poll_iters
-            else:
-                ewma *= (1 - weight)
-                ewma += weight * elbo
-            if not t % poll_iters:
-                logger.debug('Iteration = {}, EWMA = {}'.format(t, ewma))
-                if ewma_ < 0 and (ewma < ewma_ or numpy.isclose(ewma, ewma_, atol=atol)):
-                    converged = True
-                else:
-                    ewma_ = ewma
-                    alpha, beta = self._opt()
-        return ewma, (alpha, beta)
+        return elbo, self._opt()
 
 class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):

@@ -96,12 +96,9 @@ def _parser():
     vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
     vb_args.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
-    vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-4)
-    vb_args.add_argument('-R', '--warmup-rate', type=float, help='Warmup rate for variational regularizer', default=1e-4)
+    vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-3)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
-    vb_args.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
-    vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
-    vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    vb_args.add_argument('-i', '--max-epochs', type=int, help='Maximum number of full batch epochs for SGD', default=4000)
 
     bootstrap_args = parser.add_mutually_exclusive_group()
     bootstrap_args.add_argument('--resample', action='store_true', help='Resample genotypes to desired sample size')
@@ -140,27 +137,17 @@ def _validate(args):
         raise _A('Learning rate must be positive')
     if args.learning_rate > 0.05:
         logger.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
-    if args.warmup_rate < 0:
-        raise _A('Warmup rate must be non-negative')
-    if args.warmup_rate >= 1:
-        logger.warn('Warmup rate set to {}. This is probably too large'.format(args.warmup_rate))
     if args.minibatch_size <= 0:
         raise _A('Minibatch size must be positive')
     if args.minibatch_size > args.num_samples:
         logger.warn('Setting minibatch size to sample size')
         args.minibatch_size = args.num_samples
-    if args.poll_iters <= 0:
-        raise _A('Polling interval must be positive')
-    if args.tolerance <= 0:
-        raise _A('VB tolerance must be positive')
     if args.wsabi_tolerance <= 0:
         raise _A('Active sampling tolerance must be positive')
     if args.init_samples <= 0:
         raise _A('Number of initial hyperparameter samples must be positive')
     if args.max_samples < args.init_samples:
         raise _A('Maximum number hyperparameter samples must be >= initial number ({})'.format(args.init_samples))
-    if not 0 < args.ewma_weight < 1:
-        raise _A('Moving average weight must be in (0, 1)')
     if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
         raise _A('Minimum PVE must be larger than float tolerance')
     max_ = args.num_variants // len(args.annotation)
@@ -171,7 +158,7 @@ def _validate(args):
             raise _A('Annotation {} must have positive effect size variance'.format(i))
 
     # Check if desired method is supported
-    if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'poll_iters', 'ewma_weight', 'warmup_rate')):
+    if args.method != 'dsvi' and any(k in args for k in ('learning_rate', 'minibatch_size', 'max_epochs')):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
     if args.method in ('varbvs',) and len(args.annotation) > 1:
         raise _A('Method {} does not support multiple annotations'.format(args.method))
@@ -357,21 +344,18 @@ def evaluate():
                     model = ctra.model.GaussianDSVI
                 else:
                     model = ctra.model.LogisticDSVI
-            inner = model(x, y, s.annot, pve, learning_rate=args.learning_rate,
-                          warmup_rate=args.warmup_rate,
+            inner = model(x.astype('float32'), y.astype('float32'), s.annot.astype('int8'), pve, learning_rate=args.learning_rate,
                           minibatch_n=args.minibatch_size)
             if args.outer_method == 'is':
                 outer = ctra.model.ImportanceSampler
             else:
                 outer = ctra.model.ActiveSampler
             logger.info('Fitting alternate model')
-            m = outer(inner).fit(atol=args.tolerance,
-                                 pool=args.pool,
-                                 poll_iters=args.poll_iters,
+            m = outer(inner).fit(pool=args.pool,
                                  init_samples=args.init_samples,
+                                 max_epochs=args.max_epochs,
                                  max_samples=args.max_samples,
                                  vtol=args.wsabi_tolerance,
-                                 weight=args.ewma_weight,
                                  **kwargs)
             if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')
