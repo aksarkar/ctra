@@ -53,7 +53,7 @@ equal_effect <- function(result_file) {
                dplyr::group_by(p1, comp) %>%
                dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
     p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat,
-                                  ymin=pmax(pi_hat - se, 1e-3),
+                                  ymin=pmax(pi_hat - se, 5e-4),
                                   ymax=pi_hat + se, group=comp,
                                   color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
@@ -110,7 +110,7 @@ equal_prop <- function(result_file) {
                    dplyr::select(p=V1, seed=V2, comp=V3, prop=V4) %>%
                    dplyr::group_by(p, comp) %>%
                    dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
-    p <- (ggplot(result, aes(x=p/500, y=pi_hat, ymin=pi_hat - se, ymax=pi_hat + se,
+    p <- (ggplot(result, aes(x=p/500, y=pi_hat, ymin=pmax(pi_hat - se, 5e-4), ymax=pi_hat + se,
                              group=comp, color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
