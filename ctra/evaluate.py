@@ -395,9 +395,5 @@ def evaluate():
             code.interact(banner='', local=dict(globals(), **locals()))
         if args.fit_null:
             m = m0
-        if args.propose_tau:
-            logger.info('Writing posterior mean tau')
-            numpy.savetxt(sys.stdout.buffer, m.tau, fmt='%.3g')
-        else:
-            logger.info('Writing posterior mean pi')
-            numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
+        logger.info('Writing posterior mean pi')
+        numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')

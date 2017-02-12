@@ -134,6 +134,34 @@ equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-e
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop-no-pool.txt.gz')
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-prop.txt.gz')
 
+equal_prop_propose_tau <- function(result_file) {
+    result <- (read.table(gzfile(result_file), sep=' ') %>%
+               dplyr::select(p=V1, seed=V2, comp=V3, prop=V4) %>%
+               dplyr::filter(comp == 1) %>%
+               dplyr::group_by(p, comp) %>%
+               dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
+    p <- (ggplot(result, aes(x=p/1000, y=pi_hat, ymin=pmax(pi_hat - se, 5e-4), ymax=pi_hat + se,
+                             group=comp, color=factor(comp))) +
+          labs(x=expression(paste('True ', pi)),
+               y=expression(paste('Posterior mean ', pi)), color='Annotation') +
+          geom_line() +
+          geom_linerange(size=.25, position=position_dodge(width=0.02)) +
+          geom_abline(intercept=0, slope=1, color='black', size=I(.1),
+                      linetype='dashed') +
+          scale_color_brewer(palette='Dark2') +
+          scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
+          theme_nature +
+          theme(legend.position=c(.6, 1),
+                legend.justification=c(1, 1),
+                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
+          height=panelheight, width=panelheight, units='mm')
+    print(p)
+    dev.off()
+}
+equal_prop_propose_tau('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop-propose-tau.txt.gz')
+
 ascertainment <- function(result_file) {
     pihat <- (read.table(gzfile(result_file), sep=' ') %>%
               dplyr::select(n=V1, k=V3, seed=V4, pi_=V6) %>%
