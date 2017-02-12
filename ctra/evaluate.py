@@ -21,7 +21,7 @@ import os.path
 import signal
 import sys
 
-import matplotlib
+from matplotlib.pyplot import *
 import numpy
 import scipy.stats
 import scipy.linalg
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 _A = argparse.ArgumentTypeError
 
 # Set up things for plotting interactively
-matplotlib.pyplot.switch_backend('pdf')
+switch_backend('pdf')
 
 def interrupt(s, f):
     """Catch SIGINT to terminate model fitting early"""
@@ -65,6 +65,7 @@ def _parser():
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
     data_args.add_argument('--write-sfba-data', help='Directory to write out data for SFBA', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
+    data_args.add_argument('--plot', help='File to plot active samples to', default=None)
     data_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     data_args.add_argument('--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
@@ -386,6 +387,20 @@ def evaluate():
                 for p, w in zip(m.pi_grid, m.weights):
                     print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
                                          w), file=f)
+        if args.plot:
+            figure()
+            m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
+            close()
+
+            fig, ax = subplots(2, 1)
+            xlabel('Causal variant')
+            q = len(s.theta[s.theta != 0])
+            ax[0].bar(range(q), s.genetic_var[s.theta != 0])
+            ax[0].set_ylabel('Genetic variance')
+            ax[1].bar(range(q), m.pip[s.theta != 0])
+            ax[1].set_ylabel('PIP')
+            savefig('{}-pip.pdf'.format(args.plot))
+            close()
         if args.validation is not None:
             logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
             logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
