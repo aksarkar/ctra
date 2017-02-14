@@ -152,34 +152,36 @@ class DSVI(Algorithm):
         while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.vb_step(epoch=t)
+            if not t % 1000:
+                logger.debug('ELBO\t{}\t{:.6g}'.format(t, numpy.asscalar(elbo)))
             assert numpy.isfinite(elbo)
         return elbo, self._opt()
 
 class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
-        # This needs to be instantiated before building the rest of the Theano
-        # graph since self._llik refers to it
-        _sigma2 = theano.shared(numpy.array([(1 - pve.sum()) * y.var()],
-                                            dtype=_real))
-        self.sigma2 = T.addbroadcast(_sigma2, 0)
-        logger.debug('Fixing sigma2 to {}'.format(_sigma2.get_value()))
-        super().__init__(X, y, a, pve, params=[self.sigma2], **kwargs)
+        self._elbo = 0
+        super().__init__(X, y, a, pve, **kwargs)
 
     def _llik(self, y, eta):
-        """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""
-        F = -.5 * (T.log(self.sigma2) + T.sqr(y - eta) / self.sigma2)
+        """Return E_q[ln p(y | eta, theta_0)] assuming a linear link.
+
+        Fix sigma^2 to 1. Empirically, this works although we have no proof.
+
+        """
+        F = -.5 * T.sqr(y - eta)
         return T.mean(T.sum(F, axis=1))
 
 class LogisticDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        _bias = theano.shared(numpy.array([0], dtype=_real))
-        self.bias = T.addbroadcast(_bias, 0)
-        super().__init__(X, y, a, pve, params=[self.bias], **kwargs)
-        # Now add terms to ELBO for the bias: q(bias) ~ N(bias; theta_0,
-        # 2.5^2), q(theta_0) ~ N(0, 2.5^2)
-        self._elbo += self.bias / 2.5
+        self.bias_mean = theano.shared(numpy.array([0], dtype=_real))
+        self.bias_log_prec = theano.shared(numpy.array([0], dtype=_real))
+        self.bias_prec = 1e-3 + T.nnet.softplus(self.bias_log_prec)
+        self.bias = T.addbroadcast(self.bias_mean, 0)
+        # Variational surrogate for the bias term. p(bias) = N(0, 2.5); q(bias) = N(m, v^-1)
+        self._elbo = -.5 * (1 + .2 + T.log(self.bias_prec) + .2 * T.sqr(self.bias_mean))
+        super().__init__(X, y, a, pve, params=[self.bias_mean, self.bias_log_prec], **kwargs)
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
