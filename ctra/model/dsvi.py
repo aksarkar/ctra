@@ -49,6 +49,8 @@ class DSVI(Algorithm):
         self.a = _S(a_)
 
         # Minibatch
+        if minibatch_n is None:
+            minibatch_n = n
         self.minibatch_n = minibatch_n
         self.scale_n = n // minibatch_n
         X = T.matrix()
@@ -85,9 +87,6 @@ class DSVI(Algorithm):
         # Welling, ICLR 2014 (http://arxiv.org/abs/1312.6114).
         mu = T.dot(X, alpha * beta)
         nu = T.dot(T.sqr(X), alpha / gamma + alpha * (1 - alpha) * T.sqr(beta))
-
-        if minibatch_n is None:
-            minibatch_n = n
 
         # Pre-compute the SGVB samples
         noise = _S(_R.normal(size=(5 * stoch_samples, minibatch_n)).astype(_real))
