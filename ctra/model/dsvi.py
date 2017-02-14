@@ -63,10 +63,10 @@ class DSVI(Algorithm):
 
         # Variational parameters
         alpha_raw = _S(_Z(p))
-        alpha = T.cast(T.clip(T.nnet.sigmoid(alpha_raw), self.eps, 1 - self.eps), _real)
+        alpha = T.nnet.sigmoid(alpha_raw)
         beta = _S(_N(p))
         gamma_raw = _S(_Z(p))
-        gamma = 1e5 * T.nnet.sigmoid(gamma_raw)
+        gamma = 1e-3 + T.nnet.softplus(gamma_raw)
 
         self.params = [alpha_raw, beta, gamma_raw]
         self.params.extend(params)
