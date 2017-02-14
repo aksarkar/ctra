@@ -377,9 +377,10 @@ def evaluate():
                     print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
                                          w), file=f)
         if args.plot:
-            figure()
-            m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
-            close()
+            if args.outer_method == 'wsabi':
+                figure()
+                m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
+                close()
 
             fig, ax = subplots(2, 1)
             xlabel('Causal variant')
