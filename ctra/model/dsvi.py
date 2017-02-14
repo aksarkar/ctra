@@ -95,14 +95,16 @@ class DSVI(Algorithm):
         eta = mu + T.sqrt(nu) * eta_raw
 
         # Objective function
-        elbo = (
-            # The log likelihood is for the minibatch, but we need to scale up
-            # to the full dataset size
-            self._llik(y, eta) * self.scale_n +
-            (.5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
-             - T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref))))
-        )
-        self._elbo = elbo
+        if 'elbo' not in self.__dict__:
+            self.elbo = 0
+        # The log likelihood is for the minibatch, but we need to scale up
+        # to the full dataset size
+        error = self._llik(y, eta) * self.scale_n
+        # KL(q(theta) || p(theta))
+        kl_theta = .5 * T.sum(alpha * (1 + T.log(tau_deref) - T.log(gamma) - tau_deref * (T.sqr(beta) + 1 / gamma)))
+        # KL(q(z) || p(z))
+        kl_z = T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
+        self.elbo += error - kl_theta - kl_z
 
         logger.debug('Compiling the Theano functions')
         self._randomize = _F(inputs=[pi, tau], outputs=[],
@@ -119,14 +121,14 @@ class DSVI(Algorithm):
                               givens=[(a, self.a)],
                               allow_input_downcast=True)
 
-        grad = T.grad(elbo, self.params)
+        grad = T.grad(self.elbo, self.params)
         sgd_updates = [(param, param + learning_rate * g)
                        for param, g in zip(self.params, grad)]
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = [(X, self.X[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]),
                       (y, self.y[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]),
                       (a, self.a)]
-        self.vb_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
+        self.vb_step = _F(inputs=[epoch], outputs=self.elbo, updates=sgd_updates, givens=sgd_givens)
 
         self._opt = _F(inputs=[], outputs=[alpha, beta])
         logger.debug('Finished initializing')
@@ -159,7 +161,7 @@ class DSVI(Algorithm):
 
 class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
-        self._elbo = 0
+        self.elbo = 0
         super().__init__(X, y, a, pve, **kwargs)
 
     def _llik(self, y, eta):
@@ -175,15 +177,14 @@ class LogisticDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        self.bias_mean = theano.shared(numpy.array([0], dtype=_real))
-        self.bias_log_prec = theano.shared(numpy.array([0], dtype=_real))
+        self.bias_mean = theano.shared(numpy.array(0, dtype=_real))
+        self.bias_log_prec = theano.shared(numpy.array(0, dtype=_real))
         self.bias_prec = 1e-3 + T.nnet.softplus(self.bias_log_prec)
-        self.bias = T.addbroadcast(self.bias_mean, 0)
         # Variational surrogate for the bias term. p(bias) = N(0, 2.5); q(bias) = N(m, v^-1)
-        self._elbo = -.5 * (1 + .2 + T.log(self.bias_prec) + .2 * T.sqr(self.bias_mean))
+        self.elbo = -.5 * (1 + .4 - T.log(self.bias_prec) - .4 * T.sqr(self.bias_mean))
         super().__init__(X, y, a, pve, params=[self.bias_mean, self.bias_log_prec], **kwargs)
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
-        F = y * (eta + self.bias) - T.nnet.softplus(eta + self.bias)
+        F = y * (eta + self.bias_mean) - T.nnet.softplus(eta + self.bias_mean)
         return T.mean(T.sum(F, axis=1))
