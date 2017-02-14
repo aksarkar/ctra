@@ -345,6 +345,10 @@ def evaluate():
                     model = ctra.model.GaussianDSVI
                 else:
                     model = ctra.model.LogisticDSVI
+                    # This is a hack
+                    perm = s.random.permutation(y.shape[0])
+                    x = x[perm]
+                    y = y[perm]
             inner = model(x.astype('float32'), y.astype('float32'), s.annot.astype('int8'), pve, learning_rate=args.learning_rate,
                           minibatch_n=args.minibatch_size)
             if args.outer_method == 'is':
