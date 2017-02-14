@@ -333,6 +333,7 @@ def evaluate():
                                                       fit_intercept=not args.center).fit(x, y)
             else:
                 m = sklearn.linear_model.LogisticRegressionCV(fit_intercept=True).fit(x, y)
+                m.pip = m.coef_[0]
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
