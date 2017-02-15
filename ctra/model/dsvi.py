@@ -100,7 +100,7 @@ class DSVI(Algorithm):
         if 'elbo' not in self.__dict__:
             # This is a hack to allow subclasses to modify the graph before we
             # compile the Theano functions
-            self.elbo = 0
+            self.elbo = T.as_tensor_variable(0)
         kl_hyper = -self.elbo
         # The log likelihood is for the minibatch, but we need to scale up
         # to the full dataset size
@@ -165,7 +165,6 @@ class DSVI(Algorithm):
 
 class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
-        self.elbo = 0
         super().__init__(X, y, a, pve, **kwargs)
 
     def _llik(self, y, eta):
