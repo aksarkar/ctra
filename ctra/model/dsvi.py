@@ -177,17 +177,25 @@ class GaussianDSVI(DSVI):
         return T.mean(T.sum(F, axis=1))
 
 class LogisticDSVI(DSVI):
-    def __init__(self, X, y, a, pve, **kwargs):
+    def __init__(self, X, y, a, pve, K, P, **kwargs):
+        # Neuhaus, 2002 (eq. 3)
+        self.rate_ratio = P * (1 - K) / (K * (1 - P))
+        logger.debug('Rate ratio = {:.3g}'.format(self.rate_ratio))
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
         self.bias_mean = theano.shared(numpy.array(0, dtype=_real))
         self.bias_log_prec = theano.shared(numpy.array(0, dtype=_real))
         self.bias_prec = 1e-3 + T.nnet.softplus(self.bias_log_prec)
         # Variational surrogate for the bias term. p(bias) = N(0, 1); q(bias) = N(m, v^-1)
-        self.elbo = -.5 * (1 + 1 - T.log(self.bias_prec) - T.sqr(self.bias_mean))
+        self.elbo = -.5 * (1 - 1 + T.log(self.bias_prec) + T.sqr(self.bias_mean))
         super().__init__(X, y, a, pve, params=[self.bias_mean, self.bias_log_prec], **kwargs)
+
+    def _link(self, eta):
+        # Neuhaus, 2002 (eq. 3-5)
+        mu = T.nnet.sigmoid(eta + self.bias_mean)
+        return self.rate_ratio * mu / (1 + mu * (self.rate_ratio - 1))
 
     def _llik(self, y, eta):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
-        F = y * (eta + self.bias_mean) - T.nnet.softplus(eta + self.bias_mean)
+        F = y * T.log(self._link(eta)) + (1 - y) * T.log(1 - self._link(eta))
         return T.mean(T.sum(F, axis=1))

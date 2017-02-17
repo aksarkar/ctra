@@ -349,8 +349,14 @@ def evaluate():
                     perm = s.random.permutation(y.shape[0])
                     x = x[perm]
                     y = y[perm]
-            inner = model(x.astype('float32'), y.astype('float32'), s.annot.astype('int8'), pve, learning_rate=args.learning_rate,
-                          minibatch_n=args.minibatch_size)
+            inner = model(x.astype('float32'),
+                          y.astype('float32'),
+                          s.annot.astype('int8'),
+                          pve,
+                          learning_rate=args.learning_rate,
+                          minibatch_n=args.minibatch_size,
+                          K=args.prevalence,
+                          P=args.study_prop)
             if args.outer_method == 'is':
                 outer = ctra.model.ImportanceSampler
             else:
