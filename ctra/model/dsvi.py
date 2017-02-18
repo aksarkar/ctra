@@ -187,7 +187,7 @@ class LogisticDSVI(DSVI):
         self.bias_log_prec = theano.shared(numpy.array(0, dtype=_real))
         self.bias_prec = 1e-3 + T.nnet.softplus(self.bias_log_prec)
         # Variational surrogate for the bias term. p(bias) = N(0, 1); q(bias) = N(m, v^-1)
-        self.elbo = -.5 * (1 - 1 + T.log(self.bias_prec) + T.sqr(self.bias_mean))
+        self.elbo = -.5 * (1 - 1 + T.log(self.bias_prec) + T.sqr(self.bias_mean) + 1 / self.bias_prec)
         super().__init__(X, y, a, pve, params=[self.bias_mean, self.bias_log_prec], **kwargs)
 
     def _link(self, eta):
