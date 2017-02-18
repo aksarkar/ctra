@@ -94,6 +94,7 @@ def _parser():
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
     vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
+    vb_args.add_argument('--warm-start', action='store_true', help='Warm start the optimization', default=False)
     vb_args.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
     vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-3)
@@ -367,6 +368,7 @@ def evaluate():
                                  max_epochs=args.max_epochs,
                                  max_samples=args.max_samples,
                                  vtol=args.wsabi_tolerance,
+                                 warm_start=args.warm_start,
                                  **kwargs)
             if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')

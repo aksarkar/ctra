@@ -141,7 +141,7 @@ sampling.
     def __init__(self, model, **kwargs):
         super().__init__(model)
 
-    def fit(self, proposals=None, propose_tau=False, pool=True, **kwargs):
+    def fit(self, proposals=None, propose_tau=False, pool=True, warm_start=True, **kwargs):
         """Return the posterior mean estimates of the hyperparameters
 
         proposals - list of proposals for pi
@@ -168,13 +168,15 @@ sampling.
             logger.info('Using specified initialization')
             params = kwargs['params']
         else:
+            params = []
             best_elbo = float('-inf')
             logger.info('Finding best initialization')
             for hyper in proposals:
                 self.propose(hyper, propose_tau=propose_tau, pool=pool)
-                elbo_, params_ = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
-                if elbo_ > best_elbo:
-                    params = params_
+                if warm_start:
+                    elbo_, params_ = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
+                    if elbo_ > best_elbo:
+                        params = params_
             kwargs['params'] = params
 
         logger.info('Performing importance sampling')
