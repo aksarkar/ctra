@@ -310,6 +310,11 @@ def evaluate():
             y_validate = y[validation]
             x = x[~validation]
             y = y[~validation]
+            if args.center:
+                x_validate -= x_validate.mean(axis=0)
+                y_validate -= y_validate.mean()
+                x -= x.mean(axis=0)
+                y -= y.mean()
 
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
