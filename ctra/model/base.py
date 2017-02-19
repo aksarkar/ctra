@@ -34,7 +34,7 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 # This is needed for models implemented as standalone functions rather than
 # instance methods
-result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params'])
+result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params', 'pip', 'theta'])
 
 matplotlib.pyplot.switch_backend('pdf')
 

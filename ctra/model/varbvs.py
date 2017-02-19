@@ -48,5 +48,11 @@ def varbvs(x, y, pve, function, *args):
         alpha = numpy.loadtxt(os.path.join(data, 'alpha.txt')).T
         beta = numpy.loadtxt(os.path.join(data, 'mu.txt')).T
         params = list(zip(alpha, beta))
+        pip = weights.dot(alpha)
+        theta = weights.dot(alpha * beta)
+        pi = numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1)
+        return result(pi=pi,
                       pi_grid=numpy.arange(-3, 0.25, 0.25).reshape(-1, 1),
-                      weights=weights, params=params)
+                      weights=weights, params=params,
+                      pip=pip,
+                      theta=theta)
