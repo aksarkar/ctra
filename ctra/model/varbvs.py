@@ -44,14 +44,9 @@ def varbvs(x, y, pve, function, *args):
             raise RuntimeError('Matlab process exited with an error')
         for line in str(out, 'utf-8').split('\n'):
             logger.debug(line)
-        if function == 'bvsmcmc':
-            weights = None
-            params = None
-        else:
-            weights = numpy.loadtxt(os.path.join(data, 'weights.txt'))
-            alpha = numpy.loadtxt(os.path.join(data, 'alpha.txt')).T
-            beta = numpy.loadtxt(os.path.join(data, 'mu.txt')).T
-            params = list(zip(alpha, beta))
-        return result(pi=numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1),
+        weights = numpy.loadtxt(os.path.join(data, 'weights.txt'))
+        alpha = numpy.loadtxt(os.path.join(data, 'alpha.txt')).T
+        beta = numpy.loadtxt(os.path.join(data, 'mu.txt')).T
+        params = list(zip(alpha, beta))
                       pi_grid=numpy.arange(-3, 0.25, 0.25).reshape(-1, 1),
                       weights=weights, params=params)
