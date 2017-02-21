@@ -178,12 +178,12 @@ class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        self.log_sigma2_mean = theano.shared(numpy.array(0, dtype=_real))
-        self.log_sigma2_log_prec = theano.shared(numpy.array(0, dtype=_real))
-        self.log_sigma2_prec = 1e-3 + T.nnet.softplus(self.log_sigma2_log_prec)
-        # Variational surrogate for log(sigma2) term. p(log(sigma2)) = N(0, 1); q(log(sigma2)) = N(m, v^-1)
-        self.elbo = -.5 * (1 - 1 + T.log(self.log_sigma2_prec) + T.sqr(self.log_sigma2_mean) + 1 / self.log_sigma2_prec)
-        super().__init__(X, y, a, pve, params=[self.log_sigma2_mean, self.log_sigma2_log_prec], **kwargs)
+        self.log_lambda_mean = theano.shared(numpy.array(0, dtype=_real))
+        self.log_lambda_log_prec = theano.shared(numpy.array(0, dtype=_real))
+        self.log_lambda_prec = 1e-3 + T.nnet.softplus(self.log_lambda_log_prec)
+        # Variational surrogate for log(lambda) term. p(log(lambda)) = N(0, 1); q(log(lambda)) = N(m, v^-1)
+        self.elbo = -.5 * (1 + T.log(self.log_lambda_prec) + (T.sqr(self.log_lambda_mean) + 1 / self.log_lambda_prec))
+        super().__init__(X, y, a, pve, params=[self.log_lambda_mean, self.log_lambda_log_prec], **kwargs)
 
     def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a linear link.
@@ -191,8 +191,8 @@ class GaussianDSVI(DSVI):
         Fix sigma^2 to 1. Empirically, this works although we have no proof.
 
         """
-        phi = 1e-3 + T.nnet.softplus(self.log_sigma2_mean + phi_raw * T.sqrt(1 / self.log_sigma2_prec)).dimshuffle(0, 'x')
-        F = -.5 * (T.log(phi) + T.sqr(y - eta) / phi)
+        phi = 1e-3 + T.nnet.softplus(self.log_lambda_mean + phi_raw * T.sqrt(1 / self.log_lambda_prec)).dimshuffle(0, 'x')
+        F = -.5 * (-T.log(phi) + phi * T.sqr(y - eta))
         return T.mean(T.sum(F, axis=1))
 
 class LogisticDSVI(DSVI):
