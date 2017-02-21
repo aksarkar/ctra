@@ -96,6 +96,10 @@ class DSVI(Algorithm):
         eta_raw = noise[noise_minibatch * stoch_samples:(noise_minibatch + 1) * stoch_samples]
         eta = mu + T.sqrt(nu) * eta_raw
 
+        # Independent noise for hyperparameters
+        phi_minibatch = (epoch + 1) % 5
+        phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples, 0]
+
         # Objective function
         if 'elbo' not in self.__dict__:
             # This is a hack to allow subclasses to modify the graph before we
@@ -104,7 +108,7 @@ class DSVI(Algorithm):
         kl_hyper = -self.elbo
         # The log likelihood is for the minibatch, but we need to scale up
         # to the full dataset size
-        error = self._llik(y, eta) * self.scale_n
+        error = self._llik(y, eta, phi_raw) * self.scale_n
         # KL(q(theta) || p(theta))
         kl_theta = .5 * T.sum(alpha * (1 - T.log(tau_deref) + T.log(gamma) + tau_deref * (T.sqr(beta) + 1 / gamma)))
         # KL(q(z) || p(z))
@@ -129,7 +133,7 @@ class DSVI(Algorithm):
 
         self._trace = _F(inputs=[epoch], outputs=[self.elbo, error, kl_theta, kl_z, kl_hyper, alpha, beta, gamma] + params, givens=sgd_givens)
 
-        self._opt = _F(inputs=[], outputs=[alpha, beta])
+        self._opt = _F(inputs=[], outputs=[alpha, beta, gamma] + params)
         logger.debug('Finished initializing')
 
     def _llik(self, *args):
@@ -165,15 +169,23 @@ class DSVI(Algorithm):
 
 class GaussianDSVI(DSVI):
     def __init__(self, X, y, a, pve, **kwargs):
-        super().__init__(X, y, a, pve, **kwargs)
+        # This needs to be instantiated before building the rest of the Theano
+        # graph since self._llik refers to it
+        self.log_sigma2_mean = theano.shared(numpy.array(0, dtype=_real))
+        self.log_sigma2_log_prec = theano.shared(numpy.array(0, dtype=_real))
+        self.log_sigma2_prec = 1e-3 + T.nnet.softplus(self.log_sigma2_log_prec)
+        # Variational surrogate for log(sigma2) term. p(log(sigma2)) = N(0, 1); q(log(sigma2)) = N(m, v^-1)
+        self.elbo = -.5 * (1 - 1 + T.log(self.log_sigma2_prec) + T.sqr(self.log_sigma2_mean) + 1 / self.log_sigma2_prec)
+        super().__init__(X, y, a, pve, params=[self.log_sigma2_mean, self.log_sigma2_log_prec], **kwargs)
 
-    def _llik(self, y, eta):
+    def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a linear link.
 
         Fix sigma^2 to 1. Empirically, this works although we have no proof.
 
         """
-        F = -.5 * T.sqr(y - eta)
+        phi = 1e-3 + T.nnet.softplus(self.log_sigma2_mean + phi_raw * T.sqrt(1 / self.log_sigma2_prec)).dimshuffle(0, 'x')
+        F = -.5 * (T.log(phi) + T.sqr(y - eta) / phi)
         return T.mean(T.sum(F, axis=1))
 
 class LogisticDSVI(DSVI):
@@ -190,12 +202,13 @@ class LogisticDSVI(DSVI):
         self.elbo = -.5 * (1 - 1 + T.log(self.bias_prec) + T.sqr(self.bias_mean) + 1 / self.bias_prec)
         super().__init__(X, y, a, pve, params=[self.bias_mean, self.bias_log_prec], **kwargs)
 
-    def _link(self, eta):
+    def _link(self, eta, phi_raw):
         # Neuhaus, 2002 (eq. 3-5)
-        mu = T.nnet.sigmoid(eta + self.bias_mean)
+        phi = (self.log_bias_mean + phi_raw * T.sqrt(1 / self.bias_prec)).dimshuffle(0, 'x')
+        mu = T.nnet.sigmoid(eta + phi)
         return self.rate_ratio * mu / (1 + mu * (self.rate_ratio - 1))
 
-    def _llik(self, y, eta):
+    def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
         F = y * T.log(self._link(eta)) + (1 - y) * T.log(1 - self._link(eta))
         return T.mean(T.sum(F, axis=1))
