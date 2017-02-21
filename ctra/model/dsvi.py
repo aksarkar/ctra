@@ -133,7 +133,14 @@ class DSVI(Algorithm):
 
         self._trace = _F(inputs=[epoch], outputs=[self.elbo, error, kl_theta, kl_z, kl_hyper, alpha, beta, gamma] + params, givens=sgd_givens)
 
-        self._opt = _F(inputs=[], outputs=[alpha, beta, gamma] + params)
+        # Need to return full batch likelihood to get correct optimum
+        self._opt = _F(inputs=[],
+                       outputs=[alpha, beta, gamma] + params,
+                       givens=[(phi_raw, numpy.array([0], dtype=_real)),
+                               (eta_raw, numpy.array([0], dtype=_real)),
+                               (X, self.X),
+                               (y, self.y),
+                               (a, self.a)])
         logger.debug('Finished initializing')
 
     def _llik(self, *args):
