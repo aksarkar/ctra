@@ -16,7 +16,7 @@ EVALUATE := ctra-evaluate $(FLAGS)
 
 define ONE_COMPONENT
 BEGIN {
-    for (logp=3; logp < 5; logp += 1) {
+    for (logp=3; logp < 4; logp += 1) {
         for (np=.25; np <= 1; np += 0.25) {
             for (seed=0; seed < 10; seed += 1) {
                 m=int(10 ^ (logp - 2));
