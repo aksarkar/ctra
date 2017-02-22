@@ -25,6 +25,8 @@ from matplotlib.pyplot import *
 import numpy
 import scipy.stats
 import scipy.linalg
+import sklearn.linear_model
+import sklearn.metrics
 
 import ctra.algorithms
 import ctra.formats
@@ -334,7 +336,6 @@ def evaluate():
             m = ctra.model.varbvs(x, y, pve, 'multisnphyper' if args.model ==
                                   'gaussian' else 'multisnpbinhyper', **kwargs)
         elif args.method == 'sklearn':
-            import sklearn.linear_model
             logger.info('Fitting sklearn model')
             if args.model == 'gaussian':
                 m = sklearn.linear_model.ElasticNetCV(l1_ratio=numpy.arange(0, 1, .2),
@@ -407,8 +408,16 @@ def evaluate():
             savefig('{}-pip.pdf'.format(args.plot))
             close()
         if args.validation is not None:
-            logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
-            logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
+            if model == 'gaussian':
+                logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
+                logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
+            else:
+                y_hat = m.predict(x)
+                y_hat = scipy.special.expit(m.model.rate_ratio * y_hat / (1 + y_hat * (m.model.rate_ratio - 1)))
+                logger.info('Training set loss = {:.3f}'.format(sklearn.metrics.log_loss(y, y_hat)))
+                y_validate_hat = m.predict(x_validate)
+                y_validate_hat = scipy.special.expit(m.model.rate_ratio * y_validate_hat / (1 + y_validate_hat * (m.model.rate_ratio - 1)))
+                logger.info('Validation set loss = {:.3f}'.format(sklearn.metrics.log_loss(y_validate, y_validate_hat)))
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
         if args.interact:
