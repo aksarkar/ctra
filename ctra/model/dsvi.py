@@ -211,11 +211,11 @@ class LogisticDSVI(DSVI):
 
     def _link(self, eta, phi_raw):
         # Neuhaus, 2002 (eq. 3-5)
-        phi = (self.log_bias_mean + phi_raw * T.sqrt(1 / self.bias_prec)).dimshuffle(0, 'x')
+        phi = (self.bias_mean + phi_raw * T.sqrt(1 / self.bias_prec)).dimshuffle(0, 'x')
         mu = T.nnet.sigmoid(eta + phi)
         return self.rate_ratio * mu / (1 + mu * (self.rate_ratio - 1))
 
     def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
-        F = y * T.log(self._link(eta)) + (1 - y) * T.log(1 - self._link(eta))
+        F = y * T.log(self._link(eta, phi_raw)) + (1 - y) * T.log(1 - self._link(eta, phi_raw))
         return T.mean(T.sum(F, axis=1))
