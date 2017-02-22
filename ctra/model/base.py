@@ -81,6 +81,7 @@ self.model.pve
     def _handle_converged(self):
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
+        self.elbo_vals = numpy.array(self.elbo_vals)
         self.weights = self.elbo_vals - max(self.elbo_vals)
         self.weights = numpy.exp(self.weights - scipy.misc.logsumexp(self.weights))
         self.pip = self.weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
