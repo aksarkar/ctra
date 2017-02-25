@@ -41,10 +41,7 @@ switch_backend('pdf')
 
 def interrupt(s, f):
     """Catch SIGINT to terminate model fitting early"""
-    signal.signal(signal.SIGINT, old_sigint)
-    code.interact(banner='', local=dict(globals(), **locals()))
-
-old_sigint = signal.signal(signal.SIGINT, interrupt)
+    sys.exit(1)
 
 def _parser():
     def Annotation(arg):
