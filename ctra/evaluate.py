@@ -405,7 +405,7 @@ def evaluate():
             savefig('{}-pip.pdf'.format(args.plot))
             close()
         if args.validation is not None:
-            if model == 'gaussian':
+            if args.model == 'gaussian':
                 logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
                 logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
             else:
