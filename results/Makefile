@@ -16,6 +16,7 @@ EVALUATE := ctra-evaluate $(FLAGS)
 
 define ONE_COMPONENT
 BEGIN {
+    i = 0
     for (logp=3; logp < 4; logp += 1) {
         for (np=.25; np <= 1; np += 0.25) {
             for (seed=0; seed < 10; seed += 1) {
@@ -23,8 +24,9 @@ BEGIN {
                 p = 10^logp; n=np * p;
 		if (n < 16120 || "$(GENO)" == "") {
 	            sink = ">$(word 2, $(METHOD))-$(word 2, $(MODEL))-sample-size-%d-%d-%d.txt\n"
-                    command = "$(EVALUATE) -a %d,1 $(EMPTY) -n %d -p %d $(GENO) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
-                    printf command, m, n, p, seed, n, p, seed
+                    command = "$(EVALUATE) --write-model %d -a %d,1 $(EMPTY) -n %d -p %d $(GENO) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
+                    printf command, i, m, n, p, seed, n, p, seed
+                    i += 1
 		}
             }
         }

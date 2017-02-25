@@ -64,6 +64,7 @@ def _parser():
     data_args.add_argument('--write-data', help='Directory to write out data', default=None)
     data_args.add_argument('--write-sfba-data', help='Directory to write out data for SFBA', default=None)
     data_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
+    data_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
     data_args.add_argument('--plot', help='File to plot active samples to', default=None)
     data_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     data_args.add_argument('--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
@@ -375,6 +376,10 @@ def evaluate():
                                  vtol=args.wsabi_tolerance,
                                  warm_start=args.warm_start,
                                  **kwargs)
+            if args.write_model is not None:
+                with open('{}'.format(args.write_model), 'wb') as f:
+                    for row in zip(m.pip, m.theta, s.genetic_var, s.theta):
+                        print ('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row))
             if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')
                 proposals = numpy.array(m.pi_grid).dot(inner.p) / inner.p.sum()
