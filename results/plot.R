@@ -19,17 +19,14 @@ pcgc_example('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-exam
 
 sample_size <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
-               dplyr::select(n=V1, p=V2, seed=V3, pi_=V5) %>%
-               dplyr::group_by(n, p) %>%
-               dplyr::summarize(se=sqrt(var(pi_)), pi_=mean(pi_)))
-    my_plot <- (ggplot(result, aes(x=n/p, y=pi_, ymin=pi_-se, ymax=pi_+se,
-                                   color=factor(p))) +
+               dplyr::select(n=V1, p=V2, seed=V3, pi_=V5))
+    my_plot <- (ggplot(result, aes(x=n/p, y=pi_, group=n/p)) +
                 labs(x='Samples n / Variants p',
                      y=expression(paste('Posterior mean ', pi)), color='p') +
                 scale_color_brewer(palette='Dark2') +
-                geom_line(size=.25) +
-                geom_linerange(size=.25, position=position_dodge(width=0.05)) +
+                geom_boxplot(size=I(.1), width=.1, outlier.size=.1) +
                 geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
+                scale_x_continuous(breaks=c(.25, .5, .75, 1)) +
                 theme_nature +
                 theme(legend.position=c(1, 1),
                       legend.justification=c(1, 1)))
@@ -38,14 +35,7 @@ sample_size <- function(result_file) {
     print(my_plot)
     dev.off()
 }
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/pcgc-gaussian-sample-size.txt.gz')
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-sample-size.txt.gz')
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/matlab-logistic-sample-size.txt.gz')
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-sample-size.txt.gz')
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/one-empty-coord-gaussian-sample-size.txt.gz')
 sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-sample-size.txt.gz')
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-pcgc-sample-size.txt.gz')
 
 equal_effect <- function(result_file) {
     result <- (read.table(gzfile(result_file), se=' ') %>%
@@ -162,28 +152,31 @@ equal_prop_propose_tau <- function(result_file) {
 }
 equal_prop_propose_tau('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop-propose-tau.txt.gz')
 
-ascertainment <- function(result_file) {
-    pihat <- (read.table(gzfile(result_file), sep=' ') %>%
-              dplyr::select(n=V1, k=V3, seed=V4, pi_=V6) %>%
-              dplyr::group_by(n, k) %>%
-              dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_))))
-    p <- (ggplot(pihat, aes(x=k, y=pi_hat, ymin=pi_hat-se, ymax=pi_hat+se,
-                            color=factor(n))) +
-          labs(x='Population prevalence',
+ascertainment <- function(varbvs_file, dsvi_file) {
+    varbvs <- (read.table(gzfile(varbvs_file), sep=' ') %>%
+               dplyr::select(n=V1, k=V3, seed=V4, varbvs=V6))
+    dsvi <- (read.table(gzfile(dsvi_file), sep=' ') %>%
+             dplyr::select(n=V1, k=V3, seed=V4, dsvi=V6) %>%
+             dplyr::inner_join(varbvs, by=c('n', 'k', 'seed')))
+    p <- (ggplot(dsvi, aes(x=seed, y=dsvi)) +
+          labs(x='Trial',
                y=expression(paste('Posterior mean ', pi)), color='n') +
-          geom_line(size=.25) +
+          geom_point(size=.1) +
+          geom_linerange(aes(ymax=pmax(dsvi, varbvs), ymin=pmin(dsvi, varbvs)), size=.25) +
           geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
+          scale_x_continuous(breaks=seq(1, 10)) +
           scale_color_brewer(palette='Dark2') +
+          facet_wrap(n ~ k, scales='free') +
           theme_nature +
-          theme(legend.position=c(1, 1),
-                legend.justification=c(1, 1)))
-    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf', height=panelheight,
-          width=panelheight, units='mm')
+          theme(panel.margin=unit(2, 'mm'),
+                panel.background=element_rect(colour='black'))
+    )
+    Cairo(file=sub('.txt.gz', '.pdf', dsvi_file), type='pdf', height=4 * panelheight,
+          width=5 * panelheight, units='mm')
     print(p)
     dev.off()
 }
-ascertainment('/broad/compbio/aksarkar/projects/ctra/results/varbvs-logistic-ascertained.txt.gz')
-ascertainment('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained.txt.gz')
+ascertainment('/broad/compbio/aksarkar/projects/ctra/results/varbvs-logistic-ascertained.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
 
 joint_posterior <- function(weights_file) {
     weights <- read.table(weights_file, header=F, sep=' ')
