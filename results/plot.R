@@ -161,14 +161,14 @@ ascertainment <- function(varbvs_file, dsvi_file) {
     p <- (ggplot(dsvi, aes(x=seed, y=dsvi)) +
           labs(x='Trial',
                y=expression(paste('Posterior mean ', pi)), color='n') +
-          geom_point(size=.1) +
+          geom_point(size=I(.5)) +
           geom_linerange(aes(ymax=pmax(dsvi, varbvs), ymin=pmin(dsvi, varbvs)), size=.25) +
           geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
           scale_x_continuous(breaks=seq(1, 10)) +
           scale_color_brewer(palette='Dark2') +
-          facet_wrap(n ~ k, scales='free') +
+          facet_wrap(n ~ k, scales='free', nrow=3) +
           theme_nature +
-          theme(panel.margin=unit(2, 'mm'),
+          theme(panel.margin=grid::unit(2, 'mm'),
                 panel.background=element_rect(colour='black'))
     )
     Cairo(file=sub('.txt.gz', '.pdf', dsvi_file), type='pdf', height=4 * panelheight,
@@ -176,7 +176,7 @@ ascertainment <- function(varbvs_file, dsvi_file) {
     print(p)
     dev.off()
 }
-ascertainment('/broad/compbio/aksarkar/projects/ctra/results/varbvs-logistic-ascertained.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
+ascertainment('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-ignore-prevalence.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
 
 joint_posterior <- function(weights_file) {
     weights <- read.table(weights_file, header=F, sep=' ')

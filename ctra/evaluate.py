@@ -77,6 +77,7 @@ def _parser():
     hyper_args = parser.add_mutually_exclusive_group()
     hyper_args.add_argument('--no-pool', action='store_false', dest='pool', help='Propose per-annotation pi and tau', default=True)
     hyper_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
+    hyper_args.add_argument('--ignore-prevalence', action='store_true', help="Don't correct for ascertainment", default=False)
 
     wsabi_args = parser.add_argument_group('WSABI', 'Parameters for Warped Sequential Approximate Bayesian Inference')
     wsabi_args.add_argument('--init-samples', type=int, help='Inital random samples', default=10)
@@ -362,7 +363,7 @@ def evaluate():
                           pve,
                           learning_rate=args.learning_rate,
                           minibatch_n=args.minibatch_size,
-                          K=args.prevalence,
+                          K=args.prevalence if not args.ignore_prevalence else args.study_prop,
                           P=args.study_prop)
             if args.outer_method == 'is':
                 outer = ctra.model.ImportanceSampler
@@ -377,9 +378,9 @@ def evaluate():
                                  warm_start=args.warm_start,
                                  **kwargs)
             if args.write_model is not None:
-                with open('{}'.format(args.write_model), 'wb') as f:
+                with open('{}'.format(args.write_model), 'w') as f:
                     for row in zip(m.pip, m.theta, s.genetic_var, s.theta):
-                        print ('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row))
+                        print('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row), file=f)
             if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')
                 proposals = numpy.array(m.pi_grid).dot(inner.p) / inner.p.sum()
