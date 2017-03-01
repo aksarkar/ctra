@@ -39,37 +39,28 @@ sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-
 
 equal_effect <- function(result_file) {
     result <- (read.table(gzfile(result_file), se=' ') %>%
-               dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5) %>%
-               dplyr::group_by(p1, comp) %>%
-               dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
-    p <- (ggplot(data=result, aes(x=p1 / 500, y=pi_hat,
-                                  ymin=pmax(pi_hat - se, 5e-4),
-                                  ymax=pi_hat + se, group=comp,
-                                  color=factor(comp))) +
+               dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5))
+    p <- (ggplot(data=result, aes(x=p1 / 500, y=prop, color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
-          geom_line() +
-          geom_linerange(size=.25, position=position_dodge(width=0.02)) +
-          geom_abline(data=data.frame(comp=c(1, 2), intercept=c(0, log10(3)),
-                                      slope=c(1, 1)),
-                      aes(slope=slope, intercept=intercept, group=factor(comp),
-                          color=factor(comp)),
-                      size=I(.1), linetype='dashed') +
-          scale_color_brewer(palette='Dark2') +
+          geom_boxplot(aes(group=interaction(p1, comp)), width=.25, size=.1, outlier.size=.25) +
+          geom_abline(intercept=0, slope=1, aes(color=factor(1)), linetype='dashed') +
+          geom_abline(intercept=log10(3), slope=1, aes(color=factor(2)), linetype='dashed') +
+          scale_color_brewer(palette='Dark2') + #
           scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
           scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10',
                              oob=scales::squish) +
           theme_nature +
-          theme(legend.position=c(.6, 1),
+          theme(legend.position=c(.7, 1.1),
                 legend.justification=c(1, 1),
-                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+                plot.margin=grid::unit(c(0, 2, 0, 0), 'mm')))
     Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
           height=panelheight, width=panelheight, units='mm')
     print(p)
     dev.off()
 }
-equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect.txt.gz')
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect-no-pool.txt.gz')
+equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect.txt.gz')
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-effect.txt.gz')
 
 equal_effect_ratio_prop <- function(result_file) {
@@ -86,7 +77,7 @@ equal_effect_ratio_prop <- function(result_file) {
           theme_nature +
           theme(legend.position=c(.6, 1),
                 legend.justification=c(1, 1),
-                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+                plot.margin=grid::unit(c(0, 2, 0, 0), 'mm')))
     Cairo(file=sub('.txt.gz', '-ratio-prop.pdf', result_file), type='pdf',
           height=panelheight, width=panelheight, units='mm')
     print(p)
@@ -97,45 +88,38 @@ equal_effect_ratio_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coo
 
 equal_prop <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
-                   dplyr::select(p=V1, seed=V2, comp=V3, prop=V4) %>%
-                   dplyr::group_by(p, comp) %>%
-                   dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
-    p <- (ggplot(result, aes(x=p/500, y=pi_hat, ymin=pmax(pi_hat - se, 5e-4), ymax=pi_hat + se,
-                             group=comp, color=factor(comp))) +
+                   dplyr::select(p=V1, seed=V2, comp=V3, prop=V4))
+    p <- (ggplot(result, aes(x=p/500, y=prop, color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
-          geom_line() +
-          geom_linerange(size=.25, position=position_dodge(width=0.02)) +
+          geom_boxplot(aes(group=interaction(p, comp)), width=.25, size=.1, outlier.size=.25) +
           geom_abline(intercept=0, slope=1, color='black', size=I(.1),
                       linetype='dashed') +
           scale_color_brewer(palette='Dark2') +
           scale_x_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
           scale_y_continuous(breaks=10 ^ seq(-3, 0, 1), trans='log10') +
           theme_nature +
-          theme(legend.position=c(.6, 1),
+          theme(legend.position=c(.65, 1.1),
                 legend.justification=c(1, 1),
-                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+                plot.margin=grid::unit(c(0, 2, 0, 0), 'mm')))
     Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
           height=panelheight, width=panelheight, units='mm')
     print(p)
     dev.off()
 }
-equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop.txt.gz')
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop-no-pool.txt.gz')
+equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop.txt.gz')
+
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-prop.txt.gz')
 
 equal_prop_propose_tau <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
                dplyr::select(p=V1, seed=V2, comp=V3, prop=V4) %>%
-               dplyr::filter(comp == 1) %>%
-               dplyr::group_by(p, comp) %>%
-               dplyr::summarize(pi_hat=mean(prop), se=sqrt(var(prop))))
-    p <- (ggplot(result, aes(x=p/1000, y=pi_hat, ymin=pmax(pi_hat - se, 5e-4), ymax=pi_hat + se,
-                             group=comp, color=factor(comp))) +
+               dplyr::filter(comp == 1))
+    p <- (ggplot(result, aes(x=p/1000, y=prop, color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
-          geom_line() +
-          geom_linerange(size=.25, position=position_dodge(width=0.02)) +
+          geom_boxplot(aes(group=interaction(p, comp)), width=.25, size=.1, outlier.size=.25) +
           geom_abline(intercept=0, slope=1, color='black', size=I(.1),
                       linetype='dashed') +
           scale_color_brewer(palette='Dark2') +
@@ -144,7 +128,7 @@ equal_prop_propose_tau <- function(result_file) {
           theme_nature +
           theme(legend.position=c(.6, 1),
                 legend.justification=c(1, 1),
-                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+                plot.margin=grid::unit(c(0, 2, 0, 0), 'mm')))
     Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
           height=panelheight, width=panelheight, units='mm')
     print(p)
@@ -166,16 +150,17 @@ ascertainment <- function(varbvs_file, dsvi_file) {
           geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
           scale_x_continuous(breaks=seq(1, 10)) +
           scale_color_brewer(palette='Dark2') +
-          facet_wrap(n ~ k, scales='free', nrow=3) +
+          facet_wrap(n ~ k, scales='free', nrow=4) +
           theme_nature +
           theme(panel.margin=grid::unit(2, 'mm'),
                 panel.background=element_rect(colour='black'))
     )
-    Cairo(file=sub('.txt.gz', '.pdf', dsvi_file), type='pdf', height=4 * panelheight,
+    Cairo(file=sub('.txt.gz', '.pdf', varbvs_file), type='pdf', height=4 * panelheight,
           width=5 * panelheight, units='mm')
     print(p)
     dev.off()
 }
+ascertainment('/broad/compbio/aksarkar/projects/ctra/results/varbvs-logistic-ascertained.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
 ascertainment('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-ignore-prevalence.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
 
 joint_posterior <- function(weights_file) {
@@ -186,19 +171,20 @@ joint_posterior <- function(weights_file) {
                y=expression(paste(log[10], p, "(", pi[0], "|", x, ",", pi[1], ")"))) +
           facet_wrap(~ V2, nrow=1) +
           theme_nature +
-          theme(panel.margin=unit(3, 'mm')))
+          theme(panel.margin=grid::unit(3, 'mm')))
     p1 <- (ggplot(weights, aes(x=V2, y=log10(V3))) +
           geom_line() +
           labs(x=expression(pi[1]),
                y=expression(paste(log[10], p, "(", pi[1], "|", x, ",", pi[0], ")"))) +
           facet_wrap(~ V1, nrow=1) +
           theme_nature +
-          theme(panel.margin=unit(3, 'mm')))
+          theme(panel.margin=grid::unit(3, 'mm')))
     Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
           height=2 * panelheight, width=7 * panelheight, units='mm')
     gridExtra::grid.arrange(p0, p1, nrow=2)
     dev.off()
 }
+
 joint_posterior('/broad/hptmp/aksarkar/ctra-evaluate/weights.txt')
 
 pi_versus_h2 <- function(result_file) {
@@ -241,7 +227,7 @@ pi_prior <- function() {
           facet_wrap(~pve, scales='free', nrow=1) +
           theme_nature +
           theme(legend.position='right',
-                panel.margin=unit(4, 'mm')))
+                panel.margin=grid::unit(4, 'mm')))
     Cairo(file='test.pdf', type='pdf', width=120, height=40, units='mm')
     print(p)
     dev.off()
@@ -306,7 +292,7 @@ posterior_contour <- function(args) {
           scale_y_continuous(expand=c(0, 0)) +
           theme_nature +
           theme(plot.title=element_text(),
-                plot.margin=unit(c(0, 2, 0, 0), 'mm')))
+                plot.margin=grid::unit(c(0, 2, 0, 0), 'mm')))
     Cairo(file=paste(dir_, 'llik.pdf', sep='/'), type='pdf', width=panelheight,
           height=panelheight, units='mm')
     print(p)
@@ -358,7 +344,7 @@ pi_posterior <- function(weights_file) {
           scale_x_continuous(trans='log10') +
           scale_y_continuous(trans='log10') +
           theme_nature +
-          theme(plot.margin=unit(rep(1, 4), 'mm')))
+          theme(plot.margin=grid::unit(rep(1, 4), 'mm')))
     Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
           width=panelheight, height=panelheight, units='mm')
     print(p)
