@@ -23,6 +23,7 @@ import sys
 
 import h5py
 from matplotlib.pyplot import *
+import memory_profiler
 import numpy
 import scipy.stats
 import scipy.linalg
@@ -44,6 +45,7 @@ def interrupt(s, f):
     """Catch SIGINT to terminate model fitting early"""
     sys.exit(1)
 
+@memory_profiler.profile
 def _parser():
     def Annotation(arg):
         num, var = arg.split(',')
@@ -116,6 +118,7 @@ def _parser():
 
     return parser
 
+@memory_profiler.profile
 def _validate(args):
     # Check argument values
     if args.num_samples <= 0:
@@ -185,6 +188,7 @@ def _validate(args):
     if args.propose_tau and args.method not in ('coord', 'dsvi'):
         raise _A('Proposing tau not supported for method {}'.format(args.method))
 
+@memory_profiler.profile
 def _load_data(args, s):
     if args.min_maf is not None or args.max_maf is not None:
         if args.min_maf is None:
@@ -271,6 +275,7 @@ def _load_data(args, s):
         x = rotation.dot(x)
     return x, y
 
+@memory_profiler.profile
 def _fit(args, s, x, y, x_validate=None, y_validate=None):
     if args.true_pve:
         pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
@@ -385,6 +390,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
     logger.info('Writing posterior mean pi')
     numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
 
+@memory_profiler.profile
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
     args = _parser().parse_args()

@@ -163,9 +163,8 @@ class DSVI(Algorithm):
         self.trace = []
         t = 0
         while t < max_epochs * self.scale_n:
-            self.trace.append(self._trace(t))
             if not t % 1000:
-                logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in self.trace[-1][:5]))
+                logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in self._trace(t)[:5]))
             t += 1
             elbo = self.vb_step(epoch=t)
             if not numpy.isfinite(elbo):
