@@ -40,25 +40,33 @@ needed for specific likelihoods.
         # TODO: borrow, GPU transfer, HDF5 transfer
         self.X_ = _S(X_.astype(_real))
         self.y_ = _S(y_.astype(_real))
-        self.a_ = _S(a_.astype(_real))
+
+        # One-hot encode the annotations
+        n, p = X_.shape
+        m = self.p.shape[0]
+        A = numpy.zeros((p, m)).astype('i1')
+        A[range(p), a_] = 1
+        self.A = _S(A)
+
         self.X = T.fmatrix(name='X')
         self.y = T.fvector(name='y')
-        self.a = T.ivector(name='a')
 
-        n, p = X_.shape
         if minibatch_n is None:
             minibatch_n = n
         self.scale_n = n / minibatch_n
-        logger.debug('Scale = {}'.format(self.scale_n))
 
         # Variational surrogate for target hyperposterior
-        m = self.p.shape[0]
         self.q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
         self.q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
         self.q_pi_mean = T.nnet.sigmoid(self.q_logit_pi_mean)
         self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
         self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
         self.q_tau_mean = T.exp(self.q_log_tau_mean)
+
+        # We don't need to use the hyperparameter noise samples for these
+        # parameters because we can deal with them analytically
+        pi = T.dot(self.A, self.q_pi_mean)
+        tau = T.dot(self.A, self.q_tau_mean)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
@@ -114,11 +122,6 @@ needed for specific likelihoods.
         # zero. The idea is given in Sønderby et al., NIPS 2016
         error = self._llik(self.y, eta, phi_raw)
 
-        # We don't need to use the hyperparameter noise samples for these
-        # parameters because we can deal with them analytically
-        pi = T.addbroadcast(self.q_pi_mean, 0)
-        tau = T.addbroadcast(self.q_tau_mean, 0)
-
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
         kl_qtheta_ptheta = .5 * T.sum(self.q_z * (1 - T.log(tau) + T.log(self.q_theta_prec) + tau * (T.sqr(self.q_theta_mean) + 1 / self.q_theta_prec)))
@@ -146,8 +149,7 @@ needed for specific likelihoods.
                        for param, g in zip(self.variational_params, grad)]
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
-                      self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
-                      self.a: self.a_}
+                      self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
