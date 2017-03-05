@@ -161,7 +161,7 @@ needed for specific likelihoods.
     def log_weight(self, *args):
         raise NotImplementedError
         
-    def fit(self, max_iters=1000, xv=None, yv=None, **kwargs):
+    def fit(self, max_iters=1000, xv=None, yv=None, trace=False, **kwargs):
         self.initialize()
         t = 0
         elbo_ = float('-inf')
@@ -169,7 +169,10 @@ needed for specific likelihoods.
         self.trace = []
         while t < max_iters * self.scale_n:
             t += 1
-            self.trace.append(self._trace(t))
+            if trace:
+                self.trace.append(self._trace(t))
+            else:
+                self.trace = [self._trace(t)]
             elbo = self.sgd_step(epoch=t)
             if not t % 1000:
                 validation_loss = self.loss(xv, yv)
