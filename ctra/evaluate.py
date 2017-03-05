@@ -93,7 +93,6 @@ def _parser():
     vb_args.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
     vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-4)
-    vb_args.add_argument('-R', '--warmup-rate', type=float, help='Warmup rate for variational regularizer', default=1e-4)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
     vb_args.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
@@ -136,10 +135,6 @@ def _validate(args):
         raise _A('Learning rate must be positive')
     if args.learning_rate > 0.05:
         logger.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
-    if args.warmup_rate < 0:
-        raise _A('Warmup rate must be non-negative')
-    if args.warmup_rate >= 1:
-        logger.warn('Warmup rate set to {}. This is probably too large'.format(args.warmup_rate))
     if args.minibatch_size <= 0:
         raise _A('Minibatch size must be positive')
     if args.minibatch_size > args.num_samples:

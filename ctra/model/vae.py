@@ -28,12 +28,11 @@ class VAE(Algorithm):
 needed for specific likelihoods.
 
     """
-    def __init__(self, X_, y_, a_, stoch_samples=500, learning_rate=1e-4,
-                 warmup_rate=1e-3, hyperparam_means=None,
-                 hyperparam_log_precs=None, random_state=None, **kwargs):
+    def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=1e-4,
+                 hyperparam_means=None, hyperparam_log_precs=None,
+                 random_state=None, minibatch_n=None, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, None)
-        self.warmup_rate = warmup_rate
         self.max_prec = 1e3
 
         logger.debug('Building the Theano graph')
@@ -104,8 +103,7 @@ needed for specific likelihoods.
         # We need to warm up the objective function in order to avoid
         # degenerate solutions where all variational free parameters go to
         # zero. The idea is given in Sønderby et al., NIPS 2016
-        temperature = T.clip(T.cast(warmup_rate * epoch, _real), 0, 1)
-        error = self._llik(y, eta, phi_raw)
+        error = self._llik(self.y, eta, phi_raw) * self.scale_n
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
         pi = T.addbroadcast(T.nnet.sigmoid(q_logit_pi_mean), 0)
