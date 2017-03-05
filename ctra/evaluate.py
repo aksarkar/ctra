@@ -29,6 +29,7 @@ import scipy.stats
 import scipy.linalg
 import sklearn.linear_model
 import sklearn.metrics
+import sklearn.model_selection
 
 import ctra.algorithms
 import ctra.formats
@@ -44,6 +45,8 @@ switch_backend('pdf')
 def interrupt(s, f):
     """Catch SIGINT to terminate model fitting early"""
     sys.exit(1)
+
+memory_profiler.profile = lambda x: x
 
 @memory_profiler.profile
 def _parser():
@@ -72,6 +75,7 @@ def _parser():
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
+    output_args.add_argument('--diagnostic', action='store_true')
     output_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     output_args.add_argument('--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
     output_args.add_argument('--write-data', help='Directory to write out data', default=None)
@@ -300,8 +304,10 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             m = sklearn.linear_model.ElasticNetCV(l1_ratio=numpy.arange(0, 1, .2),
                                                   fit_intercept=not args.center).fit(x, y)
         else:
-            m = sklearn.linear_model.LogisticRegressionCV(fit_intercept=True).fit(x, y)
-            m.pip = m.coef_[0]
+            m = sklearn.linear_model.LogisticRegression(solver='liblinear', penalty='l1', fit_intercept=True).fit(x, y)
+            m.pi = numpy.array([0])
+            m.pip = numpy.zeros(s.theta.shape)
+            m.model = collections.namedtuple('model', ['rate_ratio'])(1)
     else:
         if args.method == 'coord':
             if args.model == 'gaussian':
@@ -348,7 +354,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                       pve.sum().reshape(1, 1),
                       learning_rate=args.learning_rate,
                       minibatch_n=args.minibatch_size)
-        m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
+        m0 = outer(inner).fit(proposals=proposals, **kwargs)
     if args.write_weights is not None:
         logger.info('Writing importance weights:')
         with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
@@ -370,6 +376,9 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         ax[1].set_ylabel('PIP')
         savefig('{}-pip.pdf'.format(args.plot))
         close()
+    if args.diagnostic:
+        logger.info('#(PIP > 0.1) = {}'.format(len(m.pip[m.pip > 0.1])))
+        logger.info('Mean non-causal PIP = {}'.format(m.pip[s.theta != 0].mean()))
     if args.validation is not None:
         if args.model == 'gaussian':
             logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
