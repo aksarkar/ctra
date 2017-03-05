@@ -55,7 +55,7 @@ needed for specific likelihoods.
         m = self.p.shape[0]
         self.q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
         self.q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
-        self.q_pi_mean = T.nnet.sigmoid(2 * self.q_logit_pi_mean)
+        self.q_pi_mean = T.nnet.sigmoid(self.q_logit_pi_mean)
         self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
         self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
         self.q_tau_mean = T.exp(self.q_log_tau_mean)
@@ -78,7 +78,7 @@ needed for specific likelihoods.
         if hyperparam_log_precs is not None:
             self.hyperparam_log_precs.extend(hyperparam_log_precs)
 
-        self.hyperprior_means = [numpy.repeat(-1, m).astype(_real), _Z(m)]
+        self.hyperprior_means = [numpy.repeat(0, m).astype(_real), _Z(m)]
         self.hyperprior_log_precs = [_Z(m), _Z(m)]
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(m))
@@ -151,7 +151,7 @@ needed for specific likelihoods.
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_pi_mean, T.exp(self.q_log_tau_mean)]
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_pi_mean, self.q_tau_mean]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
 
