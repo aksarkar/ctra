@@ -53,11 +53,12 @@ needed for specific likelihoods.
 
         # Variational surrogate for target hyperposterior
         m = self.p.shape[0]
-        self.max_pi = 0.1
         self.q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
         self.q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
+        self.q_pi_mean = T.nnet.sigmoid(2 * self.q_logit_pi_mean)
         self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
         self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
+        self.q_tau_mean = T.exp(self.q_log_tau_mean)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
@@ -77,7 +78,7 @@ needed for specific likelihoods.
         if hyperparam_log_precs is not None:
             self.hyperparam_log_precs.extend(hyperparam_log_precs)
 
-        self.hyperprior_means = [numpy.repeat(-2, m).astype(_real), _Z(m)]
+        self.hyperprior_means = [numpy.repeat(-1, m).astype(_real), _Z(m)]
         self.hyperprior_log_precs = [_Z(m), _Z(m)]
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(m))
@@ -115,8 +116,8 @@ needed for specific likelihoods.
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
-        pi = T.addbroadcast(self.max_pi * T.nnet.sigmoid(self.q_logit_pi_mean), 0)
-        tau = T.addbroadcast(T.exp(self.q_log_tau_mean), 0)
+        pi = T.addbroadcast(self.q_pi_mean, 0)
+        tau = T.addbroadcast(self.q_tau_mean, 0)
 
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
@@ -150,7 +151,7 @@ needed for specific likelihoods.
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.max_pi * T.nnet.sigmoid(self.q_logit_pi_mean), T.exp(self.q_log_tau_mean)]
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_pi_mean, T.exp(self.q_log_tau_mean)]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
 
