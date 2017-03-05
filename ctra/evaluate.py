@@ -88,7 +88,7 @@ def _parser():
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
     vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-4)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
-    vb_args.add_argument('-i', '--poll-iters', type=int, help='Polling interval for SGD', default=10000)
+    vb_args.add_argument('-i', '--max-iters', type=int, help='Polling interval for SGD', default=4000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
 
@@ -134,7 +134,7 @@ def _validate(args):
     if args.minibatch_size > args.num_samples:
         logger.warn('Setting minibatch size to sample size')
         args.minibatch_size = args.num_samples
-    if args.poll_iters <= 0:
+    if args.max_iters <= 0:
         raise _A('Polling interval must be positive')
     if args.tolerance <= 0:
         raise _A('VB tolerance must be positive')
@@ -309,7 +309,7 @@ def evaluate():
                 model = ctra.model.GaussianVAE
             else:
                 model = ctra.model.LogisticVAE
-            m = model(x, y, s.annot, learning_rate=args.learning_rate, warmup_rate=args.warmup_rate, random_state=s.random).fit()
+            m = model(x, y, s.annot, learning_rate=args.learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate)
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
@@ -331,11 +331,12 @@ def evaluate():
             logger.info('Fitting alternate model')
             m = outer(inner).fit(atol=args.tolerance,
                                  pool=args.pool,
-                                 poll_iters=args.poll_iters,
+                                 max_iters=args.max_iters,
                                  init_samples=args.init_samples,
                                  max_samples=args.max_samples,
                                  vtol=args.wsabi_tolerance,
                                  weight=args.ewma_weight,
+                                 minibatch_n=args.minibatch_size,
                                  **kwargs)
             if args.bayes_factor or args.fit_null:
                 logger.info('Fitting null model')

@@ -33,15 +33,23 @@ needed for specific likelihoods.
                  random_state=None, minibatch_n=None, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, None)
-        self.max_prec = 1e3
 
         logger.debug('Building the Theano graph')
 
         # Observed data. This needs to be symbolic for minibatches
         # TODO: borrow, GPU transfer, HDF5 transfer
-        X = T.fmatrix(name='X')
-        y = T.fvector(name='y')
-        a = T.ivector(name='a')
+        self.X_ = _S(X_.astype(_real))
+        self.y_ = _S(y_.astype(_real))
+        self.a_ = _S(a_.astype(_real))
+        self.X = T.fmatrix(name='X')
+        self.y = T.fvector(name='y')
+        self.a = T.ivector(name='a')
+
+        n, p = X_.shape
+        if minibatch_n is None:
+            minibatch_n = n
+        self.scale_n = n / minibatch_n
+        logger.debug('Scale = {}'.format(self.scale_n))
 
         # Variational surrogate for target hyperposterior
         m = self.p.shape[0]
@@ -51,7 +59,6 @@ needed for specific likelihoods.
         q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
 
         # Variational parameters
-        n, p = X_.shape
         q_logit_z = _S(_Z(p), name='q_logit_z')
         q_z = T.nnet.sigmoid(q_logit_z)
         q_theta_mean = _S(_Z(p), name='q_theta_mean')
@@ -85,13 +92,13 @@ needed for specific likelihoods.
             _R = numpy.random
         else:
             _R = random_state
-        noise = _S(_R.normal(size=(5 * stoch_samples, n)).astype(_real), name='noise')
+        noise = _S(_R.normal(size=(5 * stoch_samples, minibatch_n)).astype(_real), name='noise')
 
         # Re-parameterize eta = X theta (Kingma, Salimans, & Welling NIPS
         # 2015), and backpropagate through the RNG (Kingma & Welling, ICLR
         # 2014).
-        eta_mean = T.dot(X, q_z * q_theta_mean)
-        eta_var = T.dot(T.sqr(X), q_z / q_theta_prec + q_z * (1 - q_z) * T.sqr(q_theta_mean))
+        eta_mean = T.dot(self.X, q_z * q_theta_mean)
+        eta_var = T.dot(T.sqr(self.X), q_z / q_theta_prec + q_z * (1 - q_z) * T.sqr(q_theta_mean))
         eta_minibatch = epoch % 5
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
         eta = eta_mean + T.sqrt(eta_var) * eta_raw
@@ -132,7 +139,10 @@ needed for specific likelihoods.
         grad = T.grad(elbo, self.variational_params)
         sgd_updates = [(param, param + T.cast(learning_rate, dtype=_real) * g)
                        for param, g in zip(self.variational_params, grad)]
-        sgd_givens = {X: X_.astype(_real), y: y_.astype(_real), a: a_}
+        sample_minibatch = epoch % (n // minibatch_n)
+        sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
+                      self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
+                      self.a: self.a_}
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
@@ -146,22 +156,23 @@ needed for specific likelihoods.
     def log_weight(self, *args):
         raise NotImplementedError
         
-    def fit(self, atol=1e-3, **kwargs):
+    def fit(self, max_iters=1000, xv=None, yv=None, **kwargs):
         self.initialize()
         t = 0
         elbo_ = float('-inf')
         self.trace = []
-        self.trace_grad = []
-        while t < 1000:
+        while t < max_iters * self.scale_n:
             t += 1
             self.trace.append(self._trace(t))
-            self.trace_grad.append(self._trace_grad(t))
             elbo = self.sgd_step(epoch=t)
-            logger.debug('Epoch {}: {}'.format(t, elbo))
+            if not t % 1000:
+                self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
+                self.theta = self.pip * self.q_theta_mean
+                logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in self.trace[-1][:6]))
             if not numpy.isfinite(elbo):
                 return self
-        logger.info('Converged at epoch {}'.format(t))
         self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
+        logger.info('Converged at epoch {}'.format(t))
         self.theta = self.pip * self.q_theta_mean
         return self
 
@@ -178,18 +189,18 @@ class GaussianVAE(VAE):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        self.log_sigma2_mean = _S(_Z(1))
-        log_sigma2_log_prec = _S(_Z(1))
-        self.log_sigma2_prec = 1e-3 + T.nnet.softplus(log_sigma2_log_prec)
+        self.log_lambda_mean = _S(_Z(1))
+        log_lambda_log_prec = _S(_Z(1))
+        self.log_lambda_prec = 1e-3 + T.nnet.softplus(log_lambda_log_prec)
         super().__init__(X, y, a,
-                         hyperparam_means=[self.log_sigma2_mean],
-                         hyperparam_log_precs=[log_sigma2_log_prec],
+                         hyperparam_means=[self.log_lambda_mean],
+                         hyperparam_log_precs=[log_lambda_log_prec],
                          **kwargs)
 
     def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""
-        phi = T.exp(T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_sigma2_mean + T.sqrt(1 / self.log_sigma2_prec) * phi_raw), 1))
-        F = -.5 * (T.log(phi) + T.sqr(y - eta) / phi)
+        phi = T.exp(T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda_mean + T.sqrt(1 / self.log_lambda_prec) * phi_raw), 1))
+        F = -.5 * (-T.log(phi) + T.sqr(y - eta) * phi)
         return T.mean(T.sum(F, axis=1))
 
 class LogisticVAE(VAE):
