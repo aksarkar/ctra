@@ -53,24 +53,25 @@ needed for specific likelihoods.
 
         # Variational surrogate for target hyperposterior
         m = self.p.shape[0]
-        q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
-        q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
-        q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
-        q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
+        self.max_pi = 0.1
+        self.q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
+        self.q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
+        self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
+        self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
 
         # Variational parameters
-        q_logit_z = _S(_Z(p), name='q_logit_z')
-        q_z = T.nnet.sigmoid(q_logit_z)
-        q_theta_mean = _S(_Z(p), name='q_theta_mean')
-        q_theta_log_prec = _S(_Z(p), name='q_theta_log_prec')
+        self.q_logit_z = _S(_Z(p), name='q_logit_z')
+        self.q_z = T.nnet.sigmoid(self.q_logit_z)
+        self.q_theta_mean = _S(_Z(p), name='q_theta_mean')
+        self.q_theta_log_prec = _S(_Z(p), name='q_theta_log_prec')
         self.min_prec = 1e-3
-        q_theta_prec = self.min_prec + T.nnet.softplus(q_theta_log_prec)
-        self.params = [q_logit_z, q_theta_mean, q_theta_log_prec]
+        self.q_theta_prec = self.min_prec + T.nnet.softplus(self.q_theta_log_prec)
+        self.params = [self.q_logit_z, self.q_theta_mean, self.q_theta_log_prec]
 
         # These will include model-specific terms. Assume everything is
         # Gaussian on the variational side to simplify
-        self.hyperparam_means = [q_logit_pi_mean, q_log_tau_mean]
-        self.hyperparam_log_precs = [q_logit_pi_log_prec, q_log_tau_log_prec]
+        self.hyperparam_means = [self.q_logit_pi_mean, self.q_log_tau_mean]
+        self.hyperparam_log_precs = [self.q_logit_pi_log_prec, self.q_log_tau_log_prec]
         if hyperparam_means is not None:
             self.hyperparam_means.extend(hyperparam_means)
         if hyperparam_log_precs is not None:
@@ -97,11 +98,11 @@ needed for specific likelihoods.
         # Re-parameterize eta = X theta (Kingma, Salimans, & Welling NIPS
         # 2015), and backpropagate through the RNG (Kingma & Welling, ICLR
         # 2014).
-        eta_mean = T.dot(self.X, q_z * q_theta_mean)
-        eta_var = T.dot(T.sqr(self.X), q_z / q_theta_prec + q_z * (1 - q_z) * T.sqr(q_theta_mean))
+        self.eta_mean = T.dot(self.X, self.q_z * self.q_theta_mean)
+        eta_var = T.dot(T.sqr(self.X), self.q_z / self.q_theta_prec + self.q_z * (1 - self.q_z) * T.sqr(self.q_theta_mean))
         eta_minibatch = epoch % 5
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
-        eta = eta_mean + T.sqrt(eta_var) * eta_raw
+        eta = self.eta_mean + T.sqrt(eta_var) * eta_raw
 
         # We need to generate independent noise samples for the hyperparameters
         phi_minibatch = (epoch + 1) % 5
@@ -110,23 +111,26 @@ needed for specific likelihoods.
         # We need to warm up the objective function in order to avoid
         # degenerate solutions where all variational free parameters go to
         # zero. The idea is given in Sønderby et al., NIPS 2016
-        error = self._llik(self.y, eta, phi_raw) * self.scale_n
+        error = self._llik(self.y, eta, phi_raw)
+
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
-        pi = T.addbroadcast(T.nnet.sigmoid(q_logit_pi_mean), 0)
-        tau = T.addbroadcast(T.exp(q_log_tau_mean), 0)
+        pi = T.addbroadcast(self.max_pi * T.nnet.sigmoid(self.q_logit_pi_mean), 0)
+        tau = T.addbroadcast(T.exp(self.q_log_tau_mean), 0)
+
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
-        kl_qtheta_ptheta = .5 * T.sum(q_z * (1 - T.log(tau) + T.log(q_theta_prec) + tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
+        kl_qtheta_ptheta = .5 * T.sum(self.q_z * (1 - T.log(tau) + T.log(self.q_theta_prec) + tau * (T.sqr(self.q_theta_mean) + 1 / self.q_theta_prec)))
         # Rasmussen and Williams, Eq. A.22
-        kl_qz_pz = T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi)))
+        kl_qz_pz = T.sum(self.q_z * T.log(self.q_z / pi) + (1 - self.q_z) * T.log((1 - self.q_z) / (1 - pi)))
         kl_hyper = 0
         for mean, log_prec, prior_mean, prior_log_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_log_precs):
             prec = self.min_prec + T.nnet.softplus(log_prec)
             prior_prec = self.min_prec + T.nnet.softplus(prior_log_prec)
             kl_hyper += .5 * T.sum(1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
         kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
-        elbo = error - kl
+        # Kingma & Welling 2013 (eq. 8)
+        elbo = (error - kl) * self.scale_n
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, _Z(p)) for param in self.params]
@@ -146,7 +150,7 @@ needed for specific likelihoods.
         self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
-        opt_outputs = [elbo, q_z, q_theta_mean, T.nnet.sigmoid(q_logit_pi_mean), T.exp(q_log_tau_mean)]
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.max_pi * T.nnet.sigmoid(self.q_logit_pi_mean), T.exp(self.q_log_tau_mean)]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
 
@@ -160,17 +164,26 @@ needed for specific likelihoods.
         self.initialize()
         t = 0
         elbo_ = float('-inf')
+        loss = float('inf')
         self.trace = []
         while t < max_iters * self.scale_n:
             t += 1
             self.trace.append(self._trace(t))
             elbo = self.sgd_step(epoch=t)
             if not t % 1000:
-                self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
-                self.theta = self.pip * self.q_theta_mean
-                logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in self.trace[-1][:6]))
+                validation_loss = self.loss(xv, yv)
+                if validation_loss > loss:
+                    logger.warn('Validation loss became worse. Halting')
+                    break
+                else:
+                    loss = validation_loss
+                outputs = self.trace[-1][:6]
+                outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
+                outputs.append(self.score(xv, yv))
+                logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
             if not numpy.isfinite(elbo):
-                return self
+                logger.warn('ELBO infinite. Halting')
+                break
         self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
         logger.info('Converged at epoch {}'.format(t))
         self.theta = self.pip * self.q_theta_mean
@@ -178,12 +191,11 @@ needed for specific likelihoods.
 
     def predict(self, x):
         """Return the posterior mean prediction"""
-        return x.dot(self.theta)
+        raise NotImplementedError
 
     def score(self, x, y):
         """Return the coefficient of determination of the model fit"""
-        return 1 - (numpy.square(self.predict(x) - y).sum() /
-                    numpy.square(y - y.mean()).sum())
+        raise NotImplementedError
 
 class GaussianVAE(VAE):
     def __init__(self, X, y, a, **kwargs):
@@ -196,6 +208,11 @@ class GaussianVAE(VAE):
                          hyperparam_means=[self.log_lambda_mean],
                          hyperparam_log_precs=[log_lambda_log_prec],
                          **kwargs)
+        self.lambda_ = self.min_prec + T.nnet.softplus(self.log_lambda_mean)
+        self.predict = _F(inputs=[self.X], outputs=self.eta_mean, allow_input_downcast=True)
+        R = 1 - T.sqr(self.y - self.eta_mean).sum() / T.sqr(self.y - self.y.mean()).sum()
+        self.score = _F(inputs=[self.X, self.y], outputs=R, allow_input_downcast=True)
+        self.loss = _F(inputs=[self.X, self.y], outputs=T.sqr(self.y - self.eta_mean).sum(), allow_input_downcast=True)
 
     def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""

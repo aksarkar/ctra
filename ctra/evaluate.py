@@ -374,8 +374,8 @@ def evaluate():
                     print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
                                          w), file=f)
         if args.validation is not None:
-            logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
-            logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
+            logger.info('Training set correlation = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
+            logger.info('Validation set correlation = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
         if args.bayes_factor:
             logger.info('Bayes factor = {:.3g}'.format(m.bayes_factor(m0)))
         if args.fit_null:
