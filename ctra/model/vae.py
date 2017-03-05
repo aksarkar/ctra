@@ -110,16 +110,16 @@ needed for specific likelihoods.
         tau = T.addbroadcast(T.exp(q_log_tau_mean), 0)
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
-        kl_qtheta_ptheta = .5 * T.sum(q_z * (1 + T.log(tau) - T.log(q_theta_prec) + tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
+        kl_qtheta_ptheta = .5 * T.sum(q_z * (1 - T.log(tau) + T.log(q_theta_prec) + tau * (T.sqr(q_theta_mean) + 1 / q_theta_prec)))
         # Rasmussen and Williams, Eq. A.22
         kl_qz_pz = T.sum(q_z * T.log(q_z / pi) + (1 - q_z) * T.log((1 - q_z) / (1 - pi)))
         kl_hyper = 0
         for mean, log_prec, prior_mean, prior_log_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_log_precs):
             prec = self.min_prec + T.nnet.softplus(log_prec)
             prior_prec = self.min_prec + T.nnet.softplus(prior_log_prec)
-            kl_hyper += .5 * T.sum(1 + T.log(prior_prec) - T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
+            kl_hyper += .5 * T.sum(1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
         kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
-        elbo = error - temperature * kl
+        elbo = error - kl
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, _Z(p)) for param in self.params]
