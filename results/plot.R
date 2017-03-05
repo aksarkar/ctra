@@ -24,7 +24,7 @@ sample_size <- function(result_file) {
                 labs(x='Samples n / Variants p',
                      y=expression(paste('Posterior mean ', pi)), color='p') +
                 scale_color_brewer(palette='Dark2') +
-                geom_boxplot(size=I(.1), width=.1, outlier.size=.1) +
+                geom_boxplot(size=I(.1), width=.1, outlier.size=.25) +
                 geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
                 scale_x_continuous(breaks=c(.25, .5, .75, 1)) +
                 theme_nature +
