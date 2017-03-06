@@ -151,7 +151,7 @@ needed for specific likelihoods.
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
-        self.sgd_step = _F(inputs=[epoch], outputs=[elbo], updates=sgd_updates, givens=sgd_givens)
+        self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
         opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_pi_mean, self.q_tau_mean]
@@ -165,6 +165,7 @@ needed for specific likelihoods.
         raise NotImplementedError
         
     def fit(self, max_iters=1000, xv=None, yv=None, trace=False, **kwargs):
+        logger.debug('Starting SGD')
         self.initialize()
         t = 0
         elbo_ = float('-inf')
@@ -177,19 +178,19 @@ needed for specific likelihoods.
             else:
                 self.trace = [self._trace(t)]
             elbo = self.sgd_step(epoch=t)
-            if not t % 1000:
+            if not t % (100 * self.scale_n):
                 validation_loss = self.loss(xv, yv)
-                if validation_loss > loss:
-                    logger.warn('Validation loss became worse. Halting')
+                if elbo < elbo_:
+                    logger.warn('ELBO increased, stopping early')
                     break
-                else:
-                    loss = validation_loss
+                elbo_ = elbo
+                loss = validation_loss
                 outputs = self.trace[-1][:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
             if not numpy.isfinite(elbo):
-                logger.warn('ELBO infinite. Halting')
+                logger.warn('ELBO infinite. Stopping early')
                 break
         self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
         logger.info('Converged at epoch {}'.format(t))
