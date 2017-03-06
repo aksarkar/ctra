@@ -86,7 +86,7 @@ needed for specific likelihoods.
         if hyperparam_log_precs is not None:
             self.hyperparam_log_precs.extend(hyperparam_log_precs)
 
-        self.hyperprior_means = [numpy.repeat(0, m).astype(_real), _Z(m)]
+        self.hyperprior_means = [_Z(m), _Z(m)]
         self.hyperprior_log_precs = [_Z(m), _Z(m)]
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(m))
@@ -137,7 +137,8 @@ needed for specific likelihoods.
         elbo = (error - kl) * self.scale_n
 
         logger.debug('Compiling the Theano functions')
-        init_updates = [(param, _Z(p)) for param in self.params]
+        init_updates = [(self.q_logit_z, _R.normal(size=p).astype(_real))]
+        init_updates += [(param, _Z(p)) for param in self.params[1:]]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_means, self.hyperprior_means)]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
