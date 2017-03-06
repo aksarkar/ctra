@@ -91,6 +91,7 @@ def _parser():
     vb_args.add_argument('-i', '--max-iters', type=int, help='Polling interval for SGD', default=4000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
     vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    vb_args.add_argument('--trace', action='store_true', help='Store trace')
 
     bootstrap_args = parser.add_mutually_exclusive_group()
     bootstrap_args.add_argument('--resample', action='store_true', help='Resample genotypes to desired sample size')
@@ -309,7 +310,7 @@ def evaluate():
                 model = ctra.model.GaussianVAE
             else:
                 model = ctra.model.LogisticVAE
-            m = model(x, y, s.annot, learning_rate=args.learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate)
+            m = model(x, y, s.annot, learning_rate=args.learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate, trace=args.trace)
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
