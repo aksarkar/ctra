@@ -56,9 +56,9 @@ needed for specific likelihoods.
         self.scale_n = n / minibatch_n
 
         # Variational surrogate for target hyperposterior
-        self.q_logit_pi_mean = _S(_Z(m), name='q_logit_pi_mean')
-        self.q_logit_pi_log_prec = _S(_Z(m), name='q_logit_pi_log_prec')
-        self.q_pi_mean = T.nnet.sigmoid(self.q_logit_pi_mean)
+        self.q_probit_pi_mean = _S(_Z(m), name='q_probit_pi_mean')
+        self.q_probit_pi_log_prec = _S(_Z(m), name='q_probit_pi_log_prec')
+        self.q_pi_mean = .5 * (1 + T.erf(self.q_probit_pi_mean / (2 * T.sqrt(2))))
         self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
         self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
         self.q_tau_mean = T.exp(self.q_log_tau_mean)
@@ -79,8 +79,8 @@ needed for specific likelihoods.
 
         # These will include model-specific terms. Assume everything is
         # Gaussian on the variational side to simplify
-        self.hyperparam_means = [self.q_logit_pi_mean, self.q_log_tau_mean]
-        self.hyperparam_log_precs = [self.q_logit_pi_log_prec, self.q_log_tau_log_prec]
+        self.hyperparam_means = [self.q_probit_pi_mean, self.q_log_tau_mean]
+        self.hyperparam_log_precs = [self.q_probit_pi_log_prec, self.q_log_tau_log_prec]
         if hyperparam_means is not None:
             self.hyperparam_means.extend(hyperparam_means)
         if hyperparam_log_precs is not None:
