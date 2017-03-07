@@ -154,7 +154,7 @@ needed for specific likelihoods.
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=T.grad(elbo, self.variational_params), givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_pi_mean, self.q_tau_mean]
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_theta_prec, self.q_pi_mean, self.q_tau_mean]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
 
@@ -192,7 +192,7 @@ needed for specific likelihoods.
             if not numpy.isfinite(elbo):
                 logger.warn('ELBO infinite. Stopping early')
                 break
-        self._evidence, self.pip, self.q_theta_mean, self.pi, self.tau = self.opt(epoch=t)
+        self._evidence, self.pip, self.q_theta_mean, self.q_theta_prec, self.pi, self.tau = self.opt(epoch=t)
         logger.info('Converged at epoch {}'.format(t))
         self.theta = self.pip * self.q_theta_mean
         return self
