@@ -7,6 +7,7 @@ PVE := --true-pve
 EMPTY :=
 BOOTSTRAP := parametric-bootstrap
 FLAGS :=
+TRIALS := 10
 
 DATA := $(SAMPLE) $(GENO)
 EVALUATE := ctra-evaluate $(FLAGS)
@@ -17,17 +18,17 @@ EVALUATE := ctra-evaluate $(FLAGS)
 define ONE_COMPONENT
 BEGIN {
     i = 0
-    for (logp=3; logp < 4; logp += 1) {
-        for (np=.25; np <= 1; np += 0.25) {
-            for (seed=0; seed < 10; seed += 1) {
-                m=int(10 ^ (logp - 2));
-                p = 10^logp; n=np * p;
-		if (n < 16120 || "$(GENO)" == "") {
-	            sink = ">$(word 2, $(METHOD))-$(word 2, $(MODEL))-sample-size-%d-%d-%d.txt\n"
-                    command = "$(EVALUATE) --write-model %d.model -a %d,1 $(EMPTY) -n %d -p %d $(GENO) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
-                    printf command, i, m, n, p, seed, n, p, seed
-                    i += 1
-		}
+    logp = 4
+    for (np=.25; np <= 1; np += 0.25) {
+        for (seed=0; seed < $(TRIALS); seed += 1) {
+            m=int(10 ^ (logp - 2));
+            p = 10^logp; n=np * p;
+            if (n < 16120 || "$(GENO)" == "") {
+		prefix = "$(word 2, $(METHOD))-$(word 2, $(MODEL))-sample-size-" n "-" p "-" seed
+                sink = ">" prefix ".txt\n"
+                command = "$(EVALUATE) --write-model " prefix ".model --plot " prefix " -a %d,1 $(EMPTY) -n %d -p %d $(GENO) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
+                printf command, m, n, p, seed
+                i += 1
             }
         }
     }
@@ -79,7 +80,7 @@ joblist.2:
 	awk "$$TWO_COMPONENT_EQUAL_PROP" >$@
 
 joblist.3:
-	parallel --dry-run $(EVALUATE) --write-model $(word 2, $(METHOD))-{1}-{2}-{3}.model -a 10,1 -n {1} -p 100000 -v 0.2 $(PVE) -K {2} -m logistic $(METHOD) -s {3} ">" $(word 2, $(METHOD))-logistic-ascertained-{1}-1000-{2}-{3}.txt ::: 1000 5000 10000 ::: 0.01 0.05 0.1 0.25 0.5 ::: $$(seq 1 10) >$@
+	parallel --dry-run $(EVALUATE) --write-model $(word 2, $(METHOD))-{1}-{2}-{3}.model -a 10,1 -n {1} -p 10000 -v 0.2 $(PVE) -K {2} -m logistic $(METHOD) -s {3} ">" $(word 2, $(METHOD))-logistic-ascertained-{1}-1000-{2}-{3}.txt ::: 1000 5000 10000 ::: 0.01 0.05 0.1 0.25 0.5 ::: $$(seq 1 10) >$@
 
 joblist.4: guassian-h2
 	parallel --dry-run "$(EVALUATE) -a 10,1 $(DATA) -v {1} --true-pve $(MODEL) $(METHOD) -s {2} >gaussian-h2-1000-1000-{1}-{2}.txt" ::: 0.005 0.01 0.025 0.05 0.075 0.1 0.5 ::: $$(seq 1 10) >$@
@@ -97,7 +98,7 @@ chr22.hdf5: pre
 	ctra-convert -G {58C,NBS,BD,CAD,CD,HT,RA,T1D,T2D}{-clean.sample,_22.gen.gz} -n 16162 -p 129877 -o $@
 
 joblist.7:
-	parallel --dry-run "ctra-evaluate --validation 1000 -n 1000 -p 1000 -a 10,1 -a 10,1 --no-pool -v .2 --true-pve -m gaussian --center -M coord -O wsabi -s {} --bayes-factor" ::: $$(seq 1 10) >$@
+	parallel --dry-run "ctra-evaluate --validation 1000 -n 1000 -p 1000 -a 10,1 -a 10,1 --no-pool -v .2 --true-pve -m gaussian --center -M coord -O wsabi -s {} --alt-bayes-factor" ::: $$(seq 1 10) >$@
 
 pre:
 	parallel -X ln -sf {} . ::: $(HAPLOTYPES:haplotypes=1kg-phase1)/*.{gen.gz,sample}
