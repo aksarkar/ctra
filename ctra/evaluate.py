@@ -63,6 +63,7 @@ def _parser():
     data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
     data_args.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     data_args.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
+    data_args.add_argument('--diagnostic', default=None)
 
     hyper_args = parser.add_mutually_exclusive_group()
     hyper_args.add_argument('--no-pool', action='store_false', dest='pool', help='Propose per-annotation pi and tau', default=True)
@@ -347,26 +348,56 @@ def evaluate():
                               learning_rate=args.learning_rate,
                               minibatch_n=args.minibatch_size)
                 m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
-        if args.interact:
+        if args.diagnostic is not None:
+            logger.info('Sum of Jacobian = {}'.format(sum(g.sum() for g in m._trace_grad(1000))))
+
+            q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
+            nq = numpy.count_nonzero(q)
+
+            P = matplotlib.pyplot
+            fig, ax = P.subplots(4, 1)
+            fig.set_size_inches(6, 8)
+            P.xlabel('True and false positive variants')
+            ax[0].bar(range(nq), s.maf[q])
+            ax[0].set_ylabel('MAF')
+            ax[1].bar(range(nq), s.theta[q])
+            ax[1].set_ylabel('True effect size')
+            ax[2].bar(range(nq), (m.pip * m.q_theta_mean)[q],
+                      yerr = (m.pip / m.q_theta_prec + m.pip * (1 - m.pip) * numpy.square(m.q_theta_mean))[q])
+            ax[2].set_ylabel('Estimated effect size')
+            ax[3].bar(range(nq), m.pip[q])
+            ax[3].set_ylabel('PIP')
+            P.savefig('{}-pip.pdf'.format(args.diagnostic))
+            P.close()
+        if args.trace:
+            if args.diagnostic is None:
+                args.diagnostic = 'diagnostic'
+
             P = matplotlib.pyplot
             P.figure();
             P.plot(numpy.arange(len(m.trace)), [x[3:6] for x in m.trace]);
             P.legend(['KL(z)', 'KL(theta)', 'KL(hyper)']);
-            P.savefig('kl.pdf');
+            P.savefig('{}-kl.pdf'.format(args.diagnostic));
             P.close()
 
             P.figure();
             P.plot(numpy.arange(len(m.trace)), [x[1] for x in m.trace]);
             P.legend(['ELBO']);
-            P.savefig('elbo.pdf');
+            P.savefig('{}-elbo.pdf'.format(args.diagnostic));
             P.close()
 
             P.figure();
-            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-6:-3] for x in m.trace]).sum(axis=2))
+            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-8:-5] for x in m.trace]).sum(axis=2))
             P.legend(['logit(pi)', 'log(tau)', 'log(sigma2)'])
-            P.savefig('hyper.pdf')
+            P.savefig('{}-hyper.pdf'.format(args.diagnostic))
             P.close()
 
+            P.figure();
+            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-2:] for x in m.trace]).sum(axis=2))
+            P.legend(['Training loss', 'Validation loss'])
+            P.savefig('{}-loss.pdf'.format(args.diagnostic))
+            P.close()
+        if args.interact:
             code.interact(banner='', local=dict(globals(), **locals()))
         if args.write_weights is not None:
             logger.info('Writing importance weights:')

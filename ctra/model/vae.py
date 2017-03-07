@@ -189,6 +189,8 @@ needed for specific likelihoods.
                 outputs = self.trace[-1][:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
+                if trace:
+                    self.trace[-1].extend(outputs[-2:])
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
             if not numpy.isfinite(elbo):
                 logger.warn('ELBO infinite. Stopping early')
