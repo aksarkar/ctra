@@ -349,8 +349,6 @@ def evaluate():
                               minibatch_n=args.minibatch_size)
                 m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
         if args.diagnostic is not None:
-            logger.info('Sum of Jacobian = {}'.format(sum(g.sum() for g in m._trace_grad(1000))))
-
             q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
             nq = numpy.count_nonzero(q)
 
@@ -387,13 +385,13 @@ def evaluate():
             P.close()
 
             P.figure();
-            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-8:-5] for x in m.trace]).sum(axis=2))
+            P.plot(numpy.arange(len(m.trace)), numpy.array([x[7:9] for x in m.trace]).sum(axis=2))
             P.legend(['logit(pi)', 'log(tau)', 'log(sigma2)'])
             P.savefig('{}-hyper.pdf'.format(args.diagnostic))
             P.close()
 
             P.figure();
-            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-2:] for x in m.trace]).sum(axis=2))
+            P.plot(numpy.arange(len(m.trace)), numpy.array([x[-2:] for x in m.trace]), '-')
             P.legend(['Training loss', 'Validation loss'])
             P.savefig('{}-loss.pdf'.format(args.diagnostic))
             P.close()
