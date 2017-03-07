@@ -83,6 +83,7 @@ def _parser():
     output_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     output_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
     output_args.add_argument('--plot', help='File to plot active samples to', default=None)
+    output_args.add_argument('--validation', type=int, help='Hold out validation set for posterior predictive check', default=None)
 
     hyper_args = parser.add_mutually_exclusive_group()
     hyper_args.add_argument('--no-pool', action='store_false', dest='pool', help='Propose per-annotation pi and tau', default=True)
@@ -115,7 +116,7 @@ def _parser():
     bootstrap_args.add_argument('--resample', action='store_true', help='Resample genotypes to desired sample size')
     bootstrap_args.add_argument('--parametric-bootstrap', type=int, help='Parametric bootstrap trial for frequentist standard errors', default=None)
     bootstrap_args.add_argument('--nonparametric-bootstrap', type=int, help='Nonparametric bootstrap trial for frequentist standard errors', default=None)
-    bootstrap_args.add_argument('--validation', type=int, help='Hold out validation set for posterior predictive check', default=None)
+
 
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
@@ -247,6 +248,10 @@ def _load_data(args, s):
             x = f['dosage'][:args.num_samples, :args.num_variants]
             logger.debug('Re-computing liabilities')
             s.estimate_mafs(x)
+            if args.resample:
+                logger.debug('Resampling individuals')
+                index = s.random.choice(x.shape[0], size=args.num_samples)
+                x = x[index,:]
             y = s.compute_liabilities(x)
     else:
         if args.parametric_bootstrap is None:
