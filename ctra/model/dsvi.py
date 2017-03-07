@@ -168,9 +168,9 @@ class DSVI(Algorithm):
             t += 1
             elbo = self.vb_step(epoch=t)
             if not numpy.isfinite(elbo):
-                import pdb; pdb.set_trace()
+                raise ValueError('ELBO must be finite')
             elif elbo >= 0:
-                import pdb; pdb.set_trace()
+                raise ValueError('ELBO must be negative')
         return elbo, self._opt()
 
 class GaussianDSVI(DSVI):

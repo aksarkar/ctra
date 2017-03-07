@@ -89,7 +89,6 @@ class GaussianCoordinateAscent(Algorithm):
                       (1 - alpha) * L((1 - alpha) / (1 - pi_deref))).sum())
             logger.debug('{:>8.6g} {:>8.3g} {:>8.0f}'.format(elbo, sigma2, alpha.sum()))
             if not numpy.isfinite(elbo):
-                import pdb; pdb.set_trace()
                 raise ValueError('ELBO must be finite')
             elif elbo > 0:
                 raise ValueError('ELBO must be non-positive')
