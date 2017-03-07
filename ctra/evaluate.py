@@ -350,7 +350,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                              **kwargs)
     if args.write_model is not None:
         with open('{}'.format(args.write_model), 'w') as f:
-            for row in zip(m.pip, m.theta_mean, s.genetic_var, s.theta):
+            for row in zip(m.pip, m.theta_mean, m.theta_var, s.maf, s.theta):
                 print('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row), file=f)
     if args.bayes_factor or args.fit_null:
         logger.info('Fitting null model')
