@@ -301,7 +301,7 @@ def evaluate():
             import sklearn.linear_model
             logger.info('Fitting sklearn model')
             if args.model == 'gaussian':
-                m = sklearn.linear_model.ElasticNetCV(l1_ratio=numpy.arange(0, 1, .2),
+                m = sklearn.linear_model.ElasticNetCV(l1_ratio=numpy.arange(0.2, 1, .2),
                                                       fit_intercept=not args.center).fit(x, y)
             else:
                 m = sklearn.linear_model.LogisticRegressionCV(fit_intercept=True).fit(x, y)
