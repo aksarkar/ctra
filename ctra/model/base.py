@@ -85,7 +85,9 @@ self.model.pve
         self.weights = self.elbo_vals - max(self.elbo_vals)
         self.weights = numpy.exp(self.weights - scipy.misc.logsumexp(self.weights))
         self.pip = self.weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
-        self.theta = self.weights.dot(numpy.array([alpha * beta for alpha, beta, *_ in self.params]))
+        self.theta_mean = self.weights.dot(numpy.array([alpha * beta for alpha, beta, *_ in self.params]))
+        gamma = self.weights.dot(numpy.array([gamma for _, _, gamma, *_ in self.params]))
+        self.theta_var = self.pip / gamma + self.pip * (1 - self.pip) * numpy.square(self.theta_mean)
         self.pi = self.weights.dot(self.pi_grid)
         self.tau = self.weights.dot(self.tau_grid)
 
@@ -106,7 +108,7 @@ self.model.pve
 
     def predict(self, x):
         """Return the posterior mean prediction"""
-        return x.dot(self.theta)
+        return x.dot(self.theta_mean)
 
     def score(self, x, y):
         """Return the coefficient of determination of the model fit"""

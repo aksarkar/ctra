@@ -98,7 +98,7 @@ class GaussianCoordinateAscent(Algorithm):
             elif (numpy.isclose(alpha_, alpha, atol=atol).all() and
                   numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all()):
                 converged = True
-        return elbo, (alpha, beta, sigma2)
+        return elbo, (alpha, beta, gamma, sigma2)
 
 class LogisticCoordinateAscent(Algorithm):
     def __init__(self, X, y, a, pve, **kwargs):

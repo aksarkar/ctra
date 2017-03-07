@@ -345,7 +345,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                              **kwargs)
     if args.write_model is not None:
         with open('{}'.format(args.write_model), 'w') as f:
-            for row in zip(m.pip, m.theta, s.genetic_var, s.theta):
+            for row in zip(m.pip, m.theta_mean, s.genetic_var, s.theta):
                 print('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row), file=f)
     if args.bayes_factor or args.fit_null:
         logger.info('Fitting null model')
@@ -367,13 +367,19 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
             close()
 
-        fig, ax = subplots(2, 1)
-        xlabel('Causal variant')
-        q = len(s.theta[s.theta != 0])
-        ax[0].bar(range(q), s.genetic_var[s.theta != 0])
-        ax[0].set_ylabel('Genetic variance')
-        ax[1].bar(range(q), m.pip[s.theta != 0])
-        ax[1].set_ylabel('PIP')
+        q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
+        nq = numpy.count_nonzero(q)
+        fig, ax = subplots(4, 1)
+        fig.set_size_inches(6, 8)
+        xlabel('True and false positive variants')
+        ax[0].bar(range(nq), s.maf[q])
+        ax[0].set_ylabel('MAF')
+        ax[1].bar(range(nq), s.theta[q])
+        ax[1].set_ylabel('True effect size')
+        ax[2].bar(range(nq), m.theta_mean[q], yerr=m.theta_var[q])
+        ax[2].set_ylabel('Estimated effect size')
+        ax[3].bar(range(nq), m.pip[q])
+        ax[3].set_ylabel('PIP')
         savefig('{}-pip.pdf'.format(args.plot))
         close()
     if args.diagnostic:
