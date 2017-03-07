@@ -17,25 +17,33 @@ pcgc_example <- function(result_file) {
 }
 pcgc_example('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-example.txt')
 
-sample_size <- function(result_file) {
+sample_size <- function(result_file, thresh_file=NA) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
-               dplyr::select(n=V1, p=V2, seed=V3, pi_=V5))
-    my_plot <- (ggplot(result, aes(x=n/p, y=pi_, group=n/p)) +
-                labs(x='Samples n / Variants p',
-                     y=expression(paste('Posterior mean ', pi)), color='p') +
-                scale_color_brewer(palette='Dark2') +
-                geom_boxplot(size=I(.1), width=.1, outlier.size=.25) +
+               dplyr::select(n=V1, p=V2, seed=V3, pi_=V5) %>%
+               dplyr::mutate(variable='pi'))
+    if (!is.na(thresh_file)) {
+        thresh <- (read.table(gzfile(thresh_file), sep=' ') %>%
+                   dplyr::select(n=V1, p=V2, seed=V3, pi_=V5) %>%
+                   dplyr::mutate(variable='PIP'))
+        result <- rbind(result, thresh)
+    }
+    my_plot <- (ggplot(result, aes(x=n, y=pi_, color=variable, group=interaction(factor(n), variable))) +
+                labs(x='Number of individuals',
+                     y=expression(paste('Posterior mean ', pi)), color='') +
+                scale_color_brewer(palette='Dark2', labels=c(expression(pi), expression('PIP' > 0.1))) +
+                scale_x_continuous(breaks=seq(2500, 10000, 2500)) +
+                geom_boxplot(size=I(.1), outlier.size=.25) +
                 geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
-                scale_x_continuous(breaks=c(.25, .5, .75, 1)) +
                 theme_nature +
-                theme(legend.position=c(1, 1),
-                      legend.justification=c(1, 1)))
+                theme(legend.position=c(1.2, .5),
+                      legend.justification=c(1, 1),
+                      plot.margin=grid::unit(rep(2, 4), 'mm')))
     Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
           height=panelheight, width=panelheight, units='mm')
     print(my_plot)
     dev.off()
 }
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-sample-size.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-coord-sample-size-10000.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-sample-size-pip-thresh.txt.gz')
 
 equal_effect <- function(result_file) {
     result <- (read.table(gzfile(result_file), se=' ') %>%
