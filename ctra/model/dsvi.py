@@ -108,12 +108,12 @@ class DSVI(Algorithm):
         kl_hyper = -self.elbo
         # The log likelihood is for the minibatch, but we need to scale up
         # to the full dataset size
-        error = self._llik(y, eta, phi_raw) * self.scale_n
+        error = self._llik(y, eta, phi_raw)
         # KL(q(theta) || p(theta))
         kl_theta = .5 * T.sum(alpha * (1 - T.log(tau_deref) + T.log(gamma) + tau_deref * (T.sqr(beta) + 1 / gamma)))
         # KL(q(z) || p(z))
         kl_z = T.sum(alpha * T.log(alpha / pi_deref) + (1 - alpha) * T.log((1 - alpha) / (1 - pi_deref)))
-        self.elbo += error - kl_theta - kl_z
+        self.elbo += (error - kl_theta - kl_z) * self.scale_n
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(alpha_raw, _Z(p)), (beta, _Z(p)), (gamma_raw, _Z(p)),
