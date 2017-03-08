@@ -12,6 +12,18 @@ TRIALS := 10
 DATA := $(SAMPLE) $(GENO)
 EVALUATE := ctra-evaluate $(FLAGS)
 
+%-plots.tar.gz:
+	tar cf $@ $*-*.pdf
+
+%-models.tar.gz:
+	tar cf $@ $*-*.model
+
+%-pip-thresh.txt.gz:
+	awk 'FNR == 1 {split(FILENAME, a, /[-.]/); k = a[5]" "a[6]" "a[7]} $$1 > 0.1 {n[k] += 1} END {for (k in n) {print k, 1, n[k] / 10000}}' $*-*.model | sort -k1,1n -k3,3n | gzip >$@
+
+%-score.txt.gz:
+	awk 'BEGIN {i = 1} FNR == NR {tasks[i++] = $$0; next} FNR == 1 {split(FILENAME, c, "."); split(tasks[c[3]], a, " "); split(a[6], b, /[-.]/)} /Training/ {print b[5], b[6], b[7], "training", $$NF} /Validation/ {print b[5], b[6], b[7], "validation", $$NF}' joblist $*.* | sort -k1,1n -k3,3n | gzip >$@
+
 %.txt.gz:
 	awk 'FNR == 1 {sub("./$*-", "", FILENAME); sub(".txt", "", FILENAME); gsub("-", " ", FILENAME)} !/WARNING/ {print FILENAME, FNR, $$1}' ./$*-*.txt | sort -k1,4n | gzip >$@
 
