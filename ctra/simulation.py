@@ -102,7 +102,7 @@ class Simulation:
 
     def estimate_mafs(self, x):
         logger.debug('Estimating minor allele frequencies from loaded data')
-        self.maf = x.mean(axis=1)
+        self.maf = x.mean(axis=0)
         flip = numpy.where(self.maf > 0.5)
         self.maf[flip] = 1 - self.maf[flip]
         self.x_mean = 2 * self.maf
