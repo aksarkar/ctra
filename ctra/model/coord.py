@@ -43,7 +43,7 @@ class GaussianCoordinateAscent(Algorithm):
             beta = _R.normal(size=p)
             sigma2 = y.var()
         else:
-            alpha_, beta_, sigma2_ = params
+            alpha_, beta_, gamma, sigma2_ = params
             alpha = alpha_.copy()
             beta = beta_.copy()
             sigma2 = sigma2_.copy()
