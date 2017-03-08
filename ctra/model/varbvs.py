@@ -55,4 +55,5 @@ def varbvs(x, y, pve, function, *args):
                       pi_grid=numpy.arange(-3, 0.25, 0.25).reshape(-1, 1),
                       weights=weights, params=params,
                       pip=pip,
-                      theta=theta)
+                      theta_mean=theta,
+                      theta_var=numpy.zeros(theta.shape))

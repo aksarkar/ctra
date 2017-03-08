@@ -34,7 +34,7 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 # This is needed for models implemented as standalone functions rather than
 # instance methods
-result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params', 'pip', 'theta'])
+result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params', 'pip', 'theta_mean', 'theta_var'])
 
 matplotlib.pyplot.switch_backend('pdf')
 
@@ -171,7 +171,7 @@ sampling.
             logger.info('Using specified initialization')
             params = kwargs['params']
         else:
-            params = []
+            params = None
             best_elbo = float('-inf')
             logger.info('Finding best initialization')
             for hyper in proposals:
