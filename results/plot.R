@@ -117,7 +117,6 @@ equal_prop <- function(result_file) {
 }
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop-no-pool.txt.gz')
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-prop.txt.gz')
-
 equal_prop('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-prop.txt.gz')
 
 equal_prop_propose_tau <- function(result_file) {
@@ -170,77 +169,6 @@ ascertainment <- function(varbvs_file, dsvi_file) {
 }
 ascertainment('/broad/compbio/aksarkar/projects/ctra/results/varbvs-logistic-ascertained.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
 ascertainment('/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-ignore-prevalence.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/dsvi-logistic-ascertained-1e-3-4000.txt.gz')
-
-joint_posterior <- function(weights_file) {
-    weights <- read.table(weights_file, header=F, sep=' ')
-    p0 <- (ggplot(weights, aes(x=V1, y=log10(V3))) +
-          geom_line() +
-          labs(x=expression(pi[0]),
-               y=expression(paste(log[10], p, "(", pi[0], "|", x, ",", pi[1], ")"))) +
-          facet_wrap(~ V2, nrow=1) +
-          theme_nature +
-          theme(panel.margin=grid::unit(3, 'mm')))
-    p1 <- (ggplot(weights, aes(x=V2, y=log10(V3))) +
-          geom_line() +
-          labs(x=expression(pi[1]),
-               y=expression(paste(log[10], p, "(", pi[1], "|", x, ",", pi[0], ")"))) +
-          facet_wrap(~ V1, nrow=1) +
-          theme_nature +
-          theme(panel.margin=grid::unit(3, 'mm')))
-    Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
-          height=2 * panelheight, width=7 * panelheight, units='mm')
-    gridExtra::grid.arrange(p0, p1, nrow=2)
-    dev.off()
-}
-
-joint_posterior('/broad/hptmp/aksarkar/ctra-evaluate/weights.txt')
-
-pi_versus_h2 <- function(result_file) {
-    result <- (
-        read.table(gzfile(result_file), header=F, sep=' ') %>%
-        dplyr::select(pve=V3, seed=V4, pi_=V6) %>%
-        dplyr::group_by(pve) %>%
-        dplyr::summarize(pi_hat=mean(pi_), se=sqrt(var(pi_)))
-    )
-    p <- (ggplot(result, aes(x=pve, y=pi_hat, ymin=pi_hat - se,
-                             ymax=pi_hat + se)) +
-          labs(x='Heritability', y=expression(paste('Posterior mean ', pi))) +
-          geom_line(size=.25) +
-          geom_linerange(size=.25) +
-          geom_hline(yintercept=0.01, size=I(.1), linetype='dashed') +
-          theme_nature)
-    Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
-          height=panelheight, width=panelheight, units='mm')
-    print(p)
-    dev.off()
-}
-pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/mcmc-gaussian-h2.txt.gz')
-pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/gaussian-h2.txt.gz')
-pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/corrected-tau-gaussian-h2.txt.gz')
-pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/normalized-gaussian-h2.txt.gz')
-pi_versus_h2('/broad/compbio/aksarkar/projects/ctra/results/matlab-gaussian-h2.txt.gz')
-
-
-pi_prior <- function() {
-    x <- seq(0, 1, length.out=100)
-    params <- data.frame(expand.grid(pve=c(.01, .05, .1),
-                                     nk=c(1e-3, .01, .1)))
-    data <- (params %>%
-             dplyr::mutate(b=exp(nk / pve) * (1 - pve)) %>%
-             dplyr::group_by(pve, nk) %>%
-             do({data.frame(x=x, y=dbeta(x, 1, .$b))}))
-    p <- (ggplot(as.data.frame(data), aes(x=x, y=y, color=factor(nk))) +
-          labs(x=expression(pi), y=expression(f(pi)), color='Size') +
-          geom_line() +
-          facet_wrap(~pve, scales='free', nrow=1) +
-          theme_nature +
-          theme(legend.position='right',
-                panel.margin=grid::unit(4, 'mm')))
-    Cairo(file='test.pdf', type='pdf', width=120, height=40, units='mm')
-    print(p)
-    dev.off()
-}
-pi_prior()
 
 bvs_posterior <- function(x, y, t0, t1, sigma, rho, scale) {
     llik <- (sum(dnorm(y, x[,1:2] %*% c(t0, t1), sigma, log=TRUE)) +
@@ -318,62 +246,3 @@ plot_posterior_contour <- function(root) {
               dplyr::do(plot=posterior_contour(.)))
 }
 plot_posterior_contour('/broad/hptmp/aksarkar/ctra-evaluate')
-
-ep_posterior <- function(root) {
-    x <- as.matrix(read.table(paste(root, 'genotypes.txt', sep='/')))
-    y <- as.matrix(read.table(paste(root, 'phenotypes.txt', sep='/')))
-    vx <- sum(apply(x, 2, var))
-    p0 <- logistic(seq(-3, 0, .25) * log(10))
-    models <- (data.frame(p0=p0) %>%
-               dplyr::mutate(beta=1 / var(y), v=.2 / (1 - .2) / (p0 * vx)) %>%
-               dplyr::rowwise() %>%
-               dplyr::do(logw=do.call(epBVSinternal, c(list(x, y), .))$evidence))
-    logw <- unlist(models$logw)
-    logw <- logw - max(logw)
-    logw <- logw - log(sum(exp(logw)))
-    posterior <- (ggplot(data.frame(p0=p0, logw=logw), aes(x=p0, y=logw)) +
-                  geom_line() +
-                  labs(x=expression(pi), y=expression(ln(p(pi * "|" * x)))) +
-                  theme_nature)
-    Cairo(file=paste(root, 'ep-posterior.pdf', sep='/'), type='pdf',
-          width=panelheight, height=panelheight, units='mm')
-    print(posterior)
-    dev.off()
-}
-ep_posterior('/broad/hptmp/aksarkar/ctra-evaluate')
-
-pi_posterior <- function(weights_file) {
-    weights <- (read.table(weights_file, sep=' ') %>%
-                dplyr::select(x=V1, y=V2, z=V3))
-    p <- (ggplot(weights, aes(x=x, y=y)) +
-          geom_contour(aes(z=z, color=..level..), bins=20, size=I(.1)) +
-          scale_color_gradient(low='#fee8c8', high='#e34a33') +
-          labs(x=expression(pi[1]), y=expression(pi[2])) +
-          scale_x_continuous(trans='log10') +
-          scale_y_continuous(trans='log10') +
-          theme_nature +
-          theme(plot.margin=grid::unit(rep(1, 4), 'mm')))
-    Cairo(file=sub('.txt', '.pdf', weights_file), type='pdf',
-          width=panelheight, height=panelheight, units='mm')
-    print(p)
-    dev.off()
-}
-pi_posterior('/broad/hptmp/aksarkar/ctra-evaluate/weights.txt')
-
-plot_pip <- function(pip_file) {
-    pip <- (read.table(pip_file) %>%
-            dplyr::select(pip=V1) %>%
-            dplyr::mutate(x=seq(1, along.with=.$pip)) %>%
-            head(n=100))
-    p <- (ggplot(pip, aes(x=factor(x), y=pip)) +
-          geom_point(size=.1) +
-          labs(x='Coefficient', y='PIP') +
-          theme_nature +
-          theme(panel.grid.major=element_line(color='gray70'),
-                panel.grid.major.y=element_blank()))
-    Cairo(file=sub('.txt', '.pdf', pip_file), type='pdf',
-          width=189, height=panelheight, units='mm')
-    print(p)
-    dev.off()
-}
-plot_pip('/broad/hptmp/aksarkar/ctra-evaluate/pip.txt')
