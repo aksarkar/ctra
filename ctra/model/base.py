@@ -222,7 +222,7 @@ NIPS 2016)."""
         self.evidence_gp = None
 
     def fit(self, init_samples=10, max_samples=40, propose_tau=False,
-            propose_null=False, pool=True, vtol=0.1, **kwargs):
+            propose_null=False, pool=True, vtol=0.1, trace=None, **kwargs):
         """Draw samples from the hyperposterior
 
         init_samples - initial draws from hyperprior to fit GP
@@ -269,6 +269,8 @@ NIPS 2016)."""
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.fit(hyperparam[:i], llik[:i])
                 logger.debug('Sample {}: phi={}, Z={}'.format(i + 1, hyperparam[i], self.evidence_gp))
+                if trace:
+                    self.evidence_gp.plot().get_figure().savefig('{}-gp-{}.pdf'.format(trace, i + 1))
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))

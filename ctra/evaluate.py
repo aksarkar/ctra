@@ -347,6 +347,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                              max_samples=args.max_samples,
                              vtol=args.wsabi_tolerance,
                              warm_start=args.warm_start,
+                             trace=args.plot,
                              **kwargs)
     if args.write_model is not None:
         with open('{}'.format(args.write_model), 'w') as f:
@@ -366,7 +367,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             for p, w in zip(m.pi_grid, m.weights):
                 print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
                                      w), file=f)
-    if args.plot:
+    if args.plot is not None:
         if args.outer_method == 'wsabi':
             figure()
             m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
