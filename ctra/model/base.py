@@ -13,6 +13,7 @@ import itertools
 import logging
 
 import matplotlib
+import matplotlib.pyplot
 import numpy
 import scipy.special
 import theano
@@ -270,7 +271,8 @@ NIPS 2016)."""
                 self.evidence_gp = self.evidence_gp.fit(hyperparam[:i], llik[:i])
                 logger.debug('Sample {}: phi={}, Z={}'.format(i + 1, hyperparam[i], self.evidence_gp))
                 if trace:
-                    self.evidence_gp.plot().get_figure().savefig('{}-gp-{}.pdf'.format(trace, i + 1))
+                    fig = self.evidence_gp.plot().get_figure().savefig('{}-gp-{}.pdf'.format(trace, i + 1))
+                    matplotlib.pyplot.close()
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))

@@ -382,12 +382,29 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         ax[0].set_ylabel('MAF')
         ax[1].bar(range(nq), s.theta[q])
         ax[1].set_ylabel('True effect size')
-        ax[2].bar(range(nq), m.theta_mean[q], yerr=m.theta_var[q])
+        ax[2].bar(range(nq), m.theta_mean[q])
         ax[2].set_ylabel('Estimated effect size')
         ax[3].bar(range(nq), m.pip[q])
         ax[3].set_ylabel('PIP')
         savefig('{}-pip.pdf'.format(args.plot))
         close()
+
+        if args.bayes_factor:
+            q = numpy.logical_or(m0.pip > 0.1, s.theta != 0)
+            nq = numpy.count_nonzero(q)
+            fig, ax = subplots(4, 1)
+            fig.set_size_inches(6, 8)
+            xlabel('True and false positive variants')
+            ax[0].bar(range(nq), s.maf[q])
+            ax[0].set_ylabel('MAF')
+            ax[1].bar(range(nq), s.theta[q])
+            ax[1].set_ylabel('True effect size')
+            ax[2].bar(range(nq), m0.theta_mean[q])
+            ax[2].set_ylabel('Estimated effect size')
+            ax[3].bar(range(nq), m0.pip[q])
+            ax[3].set_ylabel('PIP')
+            savefig('{}-null-pip.pdf'.format(args.plot))
+            close()
     if args.diagnostic:
         logger.info('#(PIP > 0.1) = {}'.format(len(m.pip[m.pip > 0.1])))
         logger.info('Mean non-causal PIP = {}'.format(m.pip[s.theta != 0].mean()))
@@ -395,6 +412,9 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         if args.model == 'gaussian':
             logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
             logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
+            if args.bayes_factor:
+                logger.info('Null training set correlation = {:.3f}'.format(m0.score(x, y)))
+                logger.info('Null validation set correlation = {:.3f}'.format(m0.score(x_validate, y_validate)))
         else:
             y_hat = m.predict(x)
             y_hat = scipy.special.expit(m.model.rate_ratio * y_hat / (1 + y_hat * (m.model.rate_ratio - 1)))
