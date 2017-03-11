@@ -54,16 +54,17 @@ joblist:
 
 define TWO_COMPONENT_EQUAL_EFFECT
 BEGIN {
-    for (logp = 0; logp < 3; logp += 0.5) {
+    for (logp = 1; logp < 3; logp += 0.5) {
         p1 = 10 ** logp
         p2 = 3 * p1
         if (p2 > 500) {
             continue
         }
-        for (seed = 0; seed < 10; seed++) {
-            sink = ">$(word 2, $(METHOD))-$(word 2, $(MODEL))-equal-effect-%d-%d-%d.txt\n"
-            command = "$(EVALUATE) -a %d,1 -a %d,1 $(DATA) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
-            printf command, p1, p2, seed, p1, p2, seed
+        for (seed = 0; seed < 50; seed++) {
+            target = "$(word 2, $(METHOD))-$(word 2, $(MODEL))-equal-effect-" p1 "-" p2 "-" seed
+            sink = ">" target ".txt\n"
+            command = "$(EVALUATE) --write-model " target " --plot " target " -a %d,1 -a %d,1 $(DATA) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
+            printf command, p1, p2, seed
         }
     }
 }
@@ -75,13 +76,13 @@ joblist.1:
 
 define TWO_COMPONENT_EQUAL_PROP
 BEGIN {
-    for (logp = 0; logp < 3; logp++) {
+    for (logp = 1; logp < 3; logp ++ 0.5) {
         p = 10 ** logp
-        for (seed = 0; seed < 10; seed++) {
-            sink = ">$(word 2, $(METHOD))-$(word 2, $(MODEL))-equal-prop-%d-%d.txt\n"
+        for (seed = 0; seed < 50; seed++) {
+            target = "$(word 2, $(METHOD))-$(word 2, $(MODEL))-equal-prop-" p "-" seed
+            sink = ">" target ".txt\n"
             command = "$(EVALUATE) -a %d,1 -a %d,2 $(DATA) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
-            printf command, p, p, seed, p, seed
-            printf command, 5 * p, 5 * p, seed, 5 * p, seed
+            printf command, p, p, seed
         }
     }
 }
@@ -92,7 +93,7 @@ joblist.2:
 	awk "$$TWO_COMPONENT_EQUAL_PROP" >$@
 
 joblist.3:
-	parallel --dry-run $(EVALUATE) --write-model $(word 2, $(METHOD))-{1}-{2}-{3}.model -a 10,1 -n {1} -p 10000 -v 0.2 $(PVE) -K {2} -m logistic $(METHOD) -s {3} ">" $(word 2, $(METHOD))-logistic-ascertained-{1}-1000-{2}-{3}.txt ::: 1000 5000 10000 ::: 0.01 0.05 0.1 0.25 0.5 ::: $$(seq 1 10) >$@
+	parallel --dry-run $(EVALUATE) --write-model $(word 2, $(METHOD))-logistic-ascertained-{1}-{2}-{3}.model -a 10,1 -n {1} -p 10000 -v 0.2 $(PVE) -K {2} -m logistic $(METHOD) -s {3} ">" $(word 2, $(METHOD))-logistic-ascertained-{1}-10000-{2}-{3}.txt ::: 1000 2500 5000 7500 ::: 0.01 0.05 0.1 0.25 0.5 ::: $$(seq 1 10) >$@
 
 joblist.4: guassian-h2
 	parallel --dry-run "$(EVALUATE) -a 10,1 $(DATA) -v {1} --true-pve $(MODEL) $(METHOD) -s {2} >gaussian-h2-1000-1000-{1}-{2}.txt" ::: 0.005 0.01 0.025 0.05 0.075 0.1 0.5 ::: $$(seq 1 10) >$@
@@ -104,7 +105,7 @@ joblist.5:
 	parallel --dry-run "$(EVALUATE) -a 10,1 -n 100 -p 100 -v 0.2 --true-pve -M coord -m gaussian --center --rotate -s 0 --$(BOOTSTRAP) {} >coord-gaussian-$(BOOTSTRAP)-{}.txt" ::: $$(seq 0 99) >$@
 
 joblist.6: chr22.hdf5
-	parallel --dry-run "ctra-evaluate --validation 1000 -l DEBUG --write-model imputed-chr22-is-coord-gaussian-{}.model -M coord -O is --warm-start -m gaussian --center -v 0.025 --true-pve -a 27,1 --permute-causal -H chr22.hdf5 -n 15162 -p 129877 -s {} >imputed-chr22-is-coord-gaussian-{}.txt" ::: $$(seq 1 10) >$@
+	parallel --dry-run "ctra-evaluate --validation 1000 -l DEBUG --plot imputed-chr22-wsabi-coord-gaussian-{} --write-model imputed-chr22-wsabi-coord-gaussian-{}.model -M coord -O wsabi --warm-start -m gaussian --center -v 0.2 --true-pve -a 27,1 --permute-causal -H chr22.hdf5 -n 15162 -p 129877 -s {} >imputed-chr22-wsabi-coord-gaussian-{}.txt" ::: $$(seq 1 10) >$@
 
 chr22.hdf5: pre
 	ctra-convert -G {58C,NBS,BD,CAD,CD,HT,RA,T1D,T2D}{-clean.sample,_22.gen.gz} -n 16162 -p 129877 -o $@
