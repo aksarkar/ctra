@@ -17,7 +17,7 @@ pcgc_example <- function(result_file) {
 }
 pcgc_example('/broad/compbio/aksarkar/projects/ctra/results/pcgc-enrichment-example.txt')
 
-sample_size <- function(result_file, thresh_file=NA) {
+sample_size <- function(result_file, thresh_file=NA, pos=c(0, 0)) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
                dplyr::select(n=V1, p=V2, seed=V3, pi_=V5) %>%
                dplyr::mutate(variable='pi'))
@@ -35,20 +35,23 @@ sample_size <- function(result_file, thresh_file=NA) {
                 geom_boxplot(size=I(.1), outlier.size=.25) +
                 geom_hline(yintercept=.01, size=I(.25), linetype='dashed') +
                 theme_nature +
-                theme(legend.position=c(1.2, .5),
-                      legend.justification=c(1, 1),
+                theme(legend.position=pos,
+                      legend.justification=c(0, 1),
+                      legend.margin=grid::unit(0, 'mm'),
+                      legend.text.align=0,
                       plot.margin=grid::unit(rep(2, 4), 'mm')))
     Cairo(file=sub('.txt.gz', '.pdf', result_file), type='pdf',
-          height=panelheight, width=panelheight, units='mm')
+          height=panelheight, width=panelheight+20, units='mm')
     print(my_plot)
     dev.off()
 }
-sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-coord-sample-size-10000.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-sample-size-pip-thresh.txt.gz')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/is-varbvs-gaussian-sample-size.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/is-varbvs-gaussian-sample-size-pip-thresh.txt.gz', 'right')
+sample_size('/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-coord-sample-size-10000.txt.gz', '/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-sample-size-pip-thresh.txt.gz', 'right')
 
 equal_effect <- function(result_file) {
     result <- (read.table(gzfile(result_file), se=' ') %>%
                dplyr::select(p1=V1, p2=V2, seed=V3, comp=V4, prop=V5))
-    p <- (ggplot(data=result, aes(x=p1 / 500, y=prop, color=factor(comp))) +
+    p <- (ggplot(data=result, aes(x=p1 / 5000, y=prop, color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
           geom_boxplot(aes(group=interaction(p1, comp)), width=.25, size=.1, outlier.size=.25) +
@@ -67,8 +70,8 @@ equal_effect <- function(result_file) {
     print(p)
     dev.off()
 }
+equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-gaussian-equal-effect.txt.gz')
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect-no-pool.txt.gz')
-equal_effect('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coord-gaussian-equal-effect.txt.gz')
 equal_effect('/broad/compbio/aksarkar/projects/ctra/results/realistic-coord-gaussian-equal-effect.txt.gz')
 
 equal_effect_ratio_prop <- function(result_file) {
@@ -97,7 +100,7 @@ equal_effect_ratio_prop('/broad/compbio/aksarkar/projects/ctra/results/wsabi-coo
 equal_prop <- function(result_file) {
     result <- (read.table(gzfile(result_file), sep=' ') %>%
                    dplyr::select(p=V1, seed=V2, comp=V3, prop=V4))
-    p <- (ggplot(result, aes(x=p/500, y=prop, color=factor(comp))) +
+    p <- (ggplot(result, aes(x=p/1000, y=prop, color=factor(comp))) +
           labs(x=expression(paste('True ', pi)),
                y=expression(paste('Posterior mean ', pi)), color='Annotation') +
           geom_boxplot(aes(group=interaction(p, comp)), width=.25, size=.1, outlier.size=.25) +
