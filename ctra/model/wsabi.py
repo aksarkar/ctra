@@ -55,8 +55,11 @@ class GP:
 
     def value(self, x):
         if self._mean is None:
-            raise ValueError('Must fit the model before estimating its mean')
-        return self.log_scaling + numpy.log(self.offset + 0.5 * numpy.square(self.gp.predict_noiseless(x)[0]))
+            raise ValueError('Must fit the model before evaluating the mean function')
+        # predict_noiseless expects 1 x p input, but elsewhere we use p x 1. It
+        # produces 2d output for p > 1 but we expect scalar return value
+        # elsewhere
+        return self.log_scaling + numpy.log(self.offset + 0.5 * numpy.square(self.gp.predict_noiseless(x.T)[0].ravel()))
 
     def neg_uncertainty(self, query):
         """Return -V[l(phi) pi(phi)]"""
@@ -196,7 +199,8 @@ class WSABI:
         return self.gp.var()
 
     def value(self, x):
-        return self.gp.value(x) + self.hyperprior.logpdf(x)
+        # Hyperprior uses 1 x p input, but we need p x 1 for slice sampler
+        return self.gp.value(x) + self.hyperprior.logpdf(x.T)
 
     def plot(self, *args, **kwargs):
         return self.gp.plot(*args, **kwargs)

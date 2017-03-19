@@ -258,9 +258,9 @@ marginal likelihood"""
                     fz = self.evidence_gp.value(z)
                     if fz > fw:
                         break
-                    elif z > x:
+                    elif z[k] > x[k]:
                         right[k] = z[k]
-                    elif z < x:
+                    elif z[k] < x[k]:
                         left[k] = z[k]
                     else:
                         raise ValueError('Failed to step in')
@@ -268,7 +268,8 @@ marginal likelihood"""
             fx = fz
             if i >= warmup:
                 logger.debug('Slice {}: {}'.format(i - warmup, x))
-                self.samples[i - warmup] = x
+                # In the multidimensional case, unpack the components of x
+                self.samples[i - warmup] = x.ravel()
         self.pi = _expit(self.samples.mean(axis=0))
         if self.pool:
             tau = numpy.repeat(((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) /
