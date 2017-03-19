@@ -229,14 +229,14 @@ NIPS 2016)."""
 marginal likelihood"""
         super()._handle_converged()
         logger.info('Starting slice sampling for hyperparameter estimates')
-        num_samples = 2000
+        num_samples = 10000
         # Use Gelman's terminology
-        warmup = 1000
+        warmup = 5000
         _U = numpy.random.uniform
         self.samples = numpy.zeros((num_samples, self.model.pve.shape[0]))
         x = self.pi_grid[-1].reshape(-1, 1)
         fx = self.evidence_gp.value(x)
-        for i in range(num_samples):
+        for i in range(num_samples + warmup):
             fw = fx + numpy.log(_U())
             left = x.copy()
             right = x.copy()
@@ -265,9 +265,11 @@ marginal likelihood"""
                     else:
                         raise ValueError('Failed to step in')
             x = z
-            logger.debug('Slice {}: {}'.format(i, x))
-            self.samples[i] = x
-        self.pi = _expit(self.samples[warmup:].mean(axis=0))
+            fx = fz
+            if i >= warmup:
+                logger.debug('Slice {}: {}'.format(i - warmup, x))
+                self.samples[i - warmup] = x
+        self.pi = _expit(self.samples.mean(axis=0))
         if self.pool:
             tau = numpy.repeat(((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) /
                                self.model.pve.sum(), pve.shape[0]).astype(_real)

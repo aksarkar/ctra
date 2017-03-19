@@ -374,7 +374,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             close()
 
             figure()
-            hist(m.samples[1000:])
+            hist(m.samples, bins=20)
             savefig('{}-slice.pdf'.format(args.plot))
             close()
 
