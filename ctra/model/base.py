@@ -273,10 +273,10 @@ marginal likelihood"""
         self.pi = _expit(self.samples.mean(axis=0))
         if self.pool:
             tau = numpy.repeat(((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) /
-                               self.model.pve.sum(), pve.shape[0]).astype(_real)
+                               self.model.pve.sum(), self.model.pve.shape[0]).astype(_real)
         else:
             tau = ((1 - self.model.pve) * self.pi * self.model.var_x) / self.model.pve
-                        
+
     def fit(self, init_samples=10, max_samples=40, propose_tau=False,
             propose_null=False, pool=True, vtol=0.1, trace=None, **kwargs):
         """Draw samples from the hyperposterior
