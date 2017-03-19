@@ -53,6 +53,11 @@ class GP:
             raise ValueError('Must fit the model before estimating its variance')
         return numpy.squeeze(self._var)
 
+    def value(self, x):
+        if self._mean is None:
+            raise ValueError('Must fit the model before estimating its mean')
+        return self.log_scaling + numpy.log(self.offset + 0.5 * numpy.square(self.gp.predict_noiseless(x)[0]))
+
     def neg_uncertainty(self, query):
         """Return -V[l(phi) pi(phi)]"""
         if self.gp is None:
@@ -189,6 +194,9 @@ class WSABI:
     def var(self):
         """Return the posterior variance \int_X Cov(x, x') p(x) p(x') dx dx' """
         return self.gp.var()
+
+    def value(self, x):
+        return self.gp.value(x) + self.hyperprior.logpdf(x)
 
     def plot(self, *args, **kwargs):
         return self.gp.plot(*args, **kwargs)

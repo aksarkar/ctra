@@ -373,6 +373,11 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
             close()
 
+            figure()
+            hist(m.samples[1000:])
+            savefig('{}-slice.pdf'.format(args.plot))
+            close()
+
         q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
         nq = numpy.count_nonzero(q)
         fig, ax = subplots(4, 1)

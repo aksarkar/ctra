@@ -15,6 +15,7 @@ import logging
 import matplotlib
 import matplotlib.pyplot
 import numpy
+import numpy.random
 import scipy.special
 import theano
 import GPy
@@ -61,6 +62,7 @@ self.model.pve
         # Proposing one of (pi, tau) induces a proposal for the other (Guan
         # et al., Ann Appl Stat 2011; Carbonetto et al., Bayesian Anal
         # 2012)
+        self.pool = pool
         pve = self.model.pve
         if propose_tau:
             tau = numpy.atleast_1d(10 ** numpy.atleast_1d(hyper))
@@ -222,6 +224,56 @@ NIPS 2016)."""
         super().__init__(model, **kwargs)
         self.evidence_gp = None
 
+    def _handle_converged(self):
+        """Estimate the model hyperparameters by slice sampling over the learned
+marginal likelihood"""
+        super()._handle_converged()
+        logger.info('Starting slice sampling for hyperparameter estimates')
+        num_samples = 2000
+        # Use Gelman's terminology
+        warmup = 1000
+        _U = numpy.random.uniform
+        self.samples = numpy.zeros((num_samples, self.model.pve.shape[0]))
+        x = self.pi_grid[-1].reshape(-1, 1)
+        fx = self.evidence_gp.value(x)
+        for i in range(num_samples):
+            fw = fx + numpy.log(_U())
+            left = x.copy()
+            right = x.copy()
+            z = x.copy()
+            for k in range(self.model.pve.shape[0]):
+                # Step out
+                size = _U()
+                left[k] -= size
+                while self.evidence_gp.value(left) > fw:
+                    left[k] -= 0.25
+                right[k] += 1 - size
+                while self.evidence_gp.value(right) > fw:
+                    right[k] += 0.25
+
+                # Step in
+                fz = float('-inf')
+                while fz <= fw:
+                    z[k] = left[k] + _U() * (right[k] - left[k])
+                    fz = self.evidence_gp.value(z)
+                    if fz > fw:
+                        break
+                    elif z > x:
+                        right[k] = z[k]
+                    elif z < x:
+                        left[k] = z[k]
+                    else:
+                        raise ValueError('Failed to step in')
+            x = z
+            logger.debug('Slice {}: {}'.format(i, x))
+            self.samples[i] = x
+        self.pi = _expit(self.samples[warmup:].mean(axis=0))
+        if self.pool:
+            tau = numpy.repeat(((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) /
+                               self.model.pve.sum(), pve.shape[0]).astype(_real)
+        else:
+            tau = ((1 - self.model.pve) * self.pi * self.model.var_x) / self.model.pve
+                        
     def fit(self, init_samples=10, max_samples=40, propose_tau=False,
             propose_null=False, pool=True, vtol=0.1, trace=None, **kwargs):
         """Draw samples from the hyperposterior
