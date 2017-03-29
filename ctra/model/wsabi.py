@@ -11,6 +11,8 @@ import scipy.stats
 import scipy.spatial
 import GPy
 
+import ctra.algorithms
+
 logger = logging.getLogger(__name__)
 
 def _sqdist(a, b, V):
@@ -62,15 +64,15 @@ class GP:
         return self.log_scaling + numpy.log(self.offset + 0.5 * numpy.square(self.gp.predict_noiseless(x.T)[0].ravel()))
 
     def neg_uncertainty(self, query):
-        """Return -V[l(phi) pi(phi)]"""
+        """Return V[l(phi) pi(phi)]"""
         if self.gp is None:
             raise ValueError('Must fit the model before estimating uncertainty')
-        query = numpy.atleast_2d(numpy.squeeze(query))
         K_x_query = self.gp.kern.K(query, self.x)
         schur_comp = K_x_query.dot(self.Kinv)
-        return -(numpy.square(self.hyperprior.pdf(query)) *
-                 (self.gp.kern.K(query) - schur_comp.dot(K_x_query.T)) *
-                 (self.offset + .5 * schur_comp.dot(self.f)))
+        prior = numpy.square(self.hyperprior.pdf(query)).reshape(-1, 1)
+        cov = self.gp.kern.K(query) - schur_comp.dot(K_x_query.T)
+        mean = schur_comp.dot(self.f)
+        return prior * cov.dot(mean)
 
     def plot(self, *args, **kwargs):
         return self.gp.plot(*args, **kwargs)
@@ -160,18 +162,16 @@ class WSABI:
         The active sampling scheme finds the point which contributes maximum
         variance to the current estimate of the model evidence.
 
+        Instead of finding a local minimum (requires analytical solution), use
+        slice sampling to find candidates
+
         """
         logger.debug('Actively sampling next point')
-        opt = object()
-        n = 0
-        while n < self.max_retries and not getattr(opt, 'success', False):
-            x0 = self.proposal.rvs(1)
-            logger.debug('Starting minimizer from x0={}'.format(x0))
-            opt = scipy.optimize.minimize(self.gp.neg_uncertainty, x0=x0, method='Nelder-Mead')
-            n += 1
-        if not opt.success:
-            raise ValueError('Failed to find next sample')
-        return opt.x
+        samples = ctra.algorithms.slice_sample(self.gp.value,
+                                               self.proposal.rvs(1).reshape(-1, 1),
+                                               num_samples=100,
+                                               warmup=0)
+        return samples[numpy.argmax(self.gp.neg_uncertainty(samples))]
 
     def fit(self, x, f):
         """Square root transform function values and fit the GP

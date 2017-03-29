@@ -40,12 +40,12 @@ def kwise(iterable, k):
     it = iter(iterable)
     return zip(*[it for _ in range(k)])
 
-def slice_sample(logp, init, num_samples=10000, warmup=5000):
+def slice_sample(f, init, num_samples=10000, warmup=5000):
     """Slice sampler (Neal, 2003)"""
     _U = numpy.random.uniform
     samples = numpy.zeros((num_samples, init.shape[0]))
     x = init
-    fx = logp(init)
+    fx = f(init)
     for i in range(num_samples + warmup):
         fw = fx + numpy.log(_U())
         left = x.copy()
@@ -55,17 +55,17 @@ def slice_sample(logp, init, num_samples=10000, warmup=5000):
             # Step out
             size = _U()
             left[k] -= size
-            while logp(left) > fw:
+            while f(left) > fw:
                 left[k] -= 0.25
             right[k] += 1 - size
-            while logp(right) > fw:
+            while f(right) > fw:
                 right[k] += 0.25
 
             # Step in
             fz = float('-inf')
             while fz <= fw:
                 z[k] = left[k] + _U() * (right[k] - left[k])
-                fz = logp(z)
+                fz = f(z)
                 if fz > fw:
                     break
                 elif z[k] > x[k]:
