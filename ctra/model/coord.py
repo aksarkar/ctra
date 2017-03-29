@@ -109,9 +109,9 @@ class LogisticCoordinateAscent(Algorithm):
         d = (scipy.special.expit(zeta) - .5) / (zeta + self.eps)
         bias = (self.y - .5).sum() / d.sum()
         yhat = self.y - .5 - bias * d
-        xty = self.X.T.dot(yhat)
-        xd = self.X.T.dot(d)
-        xdx = numpy.einsum('ij,ik,kj->j', self.X, numpy.diag(d), self.X) - numpy.square(xd) / d.sum()
+        xty = numpy.einsum('ij,i->j', self.X, yhat)
+        xd = numpy.einsum('ij,i->j', self.X, d)
+        xdx = numpy.einsum('ij,i,ij->j', self.X, d, self.X) - numpy.square(xd) / d.sum()
         return d, yhat, xty, xd, xdx
 
     def log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
@@ -133,7 +133,7 @@ class LogisticCoordinateAscent(Algorithm):
             beta = _R.normal(size=p)
             zeta = numpy.ones(n)
         else:
-            alpha_, beta_, zeta_ = params
+            alpha_, beta_, _, zeta_ = params
             alpha = alpha_.copy()
             beta = beta_.copy()
             zeta = zeta_.copy()
@@ -171,7 +171,7 @@ class LogisticCoordinateAscent(Algorithm):
             bias_var = a * (1 + a * (theta_var * S(xd)).sum())
             theta_bias_covar = -a * xd * theta_var
             zeta = numpy.sqrt(S(bias + eta).ravel() + bias_var +
-                              numpy.einsum('ij,j,ji->i', X, theta_var, X.T) +
+                              numpy.einsum('ij,j,ij->i', X, theta_var, X) +
                               2 * X.dot(theta_bias_covar))
             d, yhat, xty, xd, xdx = self._update_logistic_var_params(zeta)
             elbo = (L(a) / 2 + a * S((y - 0.5).sum()) / 2 + L(scipy.special.expit(zeta)).sum() +
@@ -191,4 +191,4 @@ class LogisticCoordinateAscent(Algorithm):
             elif (numpy.isclose(alpha_, alpha, atol=atol).all() and
                   numpy.isclose(alpha_ * beta_, alpha * beta, atol=atol).all()):
                 converged = True
-        return elbo, (alpha, beta, zeta)
+        return elbo, (alpha, beta, gamma, zeta)
