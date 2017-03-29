@@ -63,7 +63,7 @@ BEGIN {
         for (seed = 0; seed < 50; seed++) {
             target = "$(word 2, $(METHOD))-$(word 2, $(MODEL))-equal-effect-" p1 "-" p2 "-" seed
             sink = ">" target ".txt\n"
-            command = "$(EVALUATE) --write-model " target " --plot " target " -a %d,1 -a %d,1 $(DATA) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
+            command = "$(EVALUATE) --write-model " target ".model --plot " target " -a %d,1 -a %d,1 $(DATA) -v 0.2 $(PVE) $(METHOD) $(MODEL) -s %d " sink
             printf command, p1, p2, seed
         }
     }
