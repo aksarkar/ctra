@@ -20,6 +20,7 @@ import scipy.special
 import theano
 import GPy
 
+import ctra.algorithms
 import ctra.model.wsabi
 
 logger = logging.getLogger(__name__)
@@ -229,46 +230,8 @@ NIPS 2016)."""
 marginal likelihood"""
         super()._handle_converged()
         logger.info('Starting slice sampling for hyperparameter estimates')
-        num_samples = 10000
-        # Use Gelman's terminology
-        warmup = 5000
-        _U = numpy.random.uniform
-        self.samples = numpy.zeros((num_samples, self.model.pve.shape[0]))
-        x = self.pi_grid[-1].reshape(-1, 1)
-        fx = self.evidence_gp.value(x)
-        for i in range(num_samples + warmup):
-            fw = fx + numpy.log(_U())
-            left = x.copy()
-            right = x.copy()
-            z = x.copy()
-            for k in range(self.model.pve.shape[0]):
-                # Step out
-                size = _U()
-                left[k] -= size
-                while self.evidence_gp.value(left) > fw:
-                    left[k] -= 0.25
-                right[k] += 1 - size
-                while self.evidence_gp.value(right) > fw:
-                    right[k] += 0.25
-
-                # Step in
-                fz = float('-inf')
-                while fz <= fw:
-                    z[k] = left[k] + _U() * (right[k] - left[k])
-                    fz = self.evidence_gp.value(z)
-                    if fz > fw:
-                        break
-                    elif z[k] > x[k]:
-                        right[k] = z[k]
-                    elif z[k] < x[k]:
-                        left[k] = z[k]
-                    else:
-                        raise ValueError('Failed to step in')
-            x = z
-            fx = fz
-            if i >= warmup:
-                # In the multidimensional case, unpack the components of x
-                self.samples[i - warmup] = x.ravel()
+        self.samples = ctra.algorithms.slice_sample(self.evidence_gp.value,
+                                                    self.pi_grid[-1].reshape(-1, 1))
         self.pi = _expit(self.samples.mean(axis=0))
         if self.pool:
             tau = numpy.repeat(((1 - self.model.pve.sum()) * (self.pi * self.model.var_x).sum()) /
