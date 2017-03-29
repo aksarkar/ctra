@@ -44,6 +44,7 @@ def varbvs(x, y, pve, function, *args):
             raise RuntimeError('Matlab process exited with an error')
         for line in str(out, 'utf-8').split('\n'):
             logger.debug(line)
+        llik = numpy.loadtxt(os.path.join(data, 'llik.txt'))
         weights = numpy.loadtxt(os.path.join(data, 'weights.txt'))
         alpha = numpy.loadtxt(os.path.join(data, 'alpha.txt')).T
         beta = numpy.loadtxt(os.path.join(data, 'mu.txt')).T
@@ -51,8 +52,9 @@ def varbvs(x, y, pve, function, *args):
         pip = weights.dot(alpha)
         theta = weights.dot(alpha * beta)
         pi = numpy.loadtxt(os.path.join(data, 'pi.txt'), ndmin=1)
-        return result(pi=pi,
-                      pi_grid=numpy.arange(-3, 0.25, 0.25).reshape(-1, 1),
+        return result(elbo_vals=llik,
+                      pi=pi,
+                      pi_grid=numpy.arange(-3, 0.25, 0.5).reshape(-1, 1),
                       weights=weights, params=params,
                       pip=pip,
                       theta_mean=theta,

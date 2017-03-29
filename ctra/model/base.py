@@ -36,7 +36,7 @@ _logit = lambda x: scipy.special.logit(x) / numpy.log(10)
 
 # This is needed for models implemented as standalone functions rather than
 # instance methods
-result = collections.namedtuple('result', ['pi', 'pi_grid', 'weights', 'params', 'pip', 'theta_mean', 'theta_var'])
+result = collections.namedtuple('result', ['elbo_vals', 'pi', 'pi_grid', 'weights', 'params', 'pip', 'theta_mean', 'theta_var'])
 
 matplotlib.pyplot.switch_backend('pdf')
 
@@ -84,7 +84,7 @@ self.model.pve
     def _handle_converged(self):
         # Scale the log importance weights before normalizing to avoid numerical
         # problems
-        self.elbo_vals = numpy.array(self.elbo_vals)
+        self.elbo_vals = numpy.array(self.elbo_vals).ravel()
         self.weights = self.elbo_vals - max(self.elbo_vals)
         self.weights = numpy.exp(self.weights - scipy.misc.logsumexp(self.weights))
         self.pip = self.weights.dot(numpy.array([alpha for alpha, *_ in self.params]))
@@ -267,7 +267,6 @@ marginal likelihood"""
             x = z
             fx = fz
             if i >= warmup:
-                logger.debug('Slice {}: {}'.format(i - warmup, x))
                 # In the multidimensional case, unpack the components of x
                 self.samples[i - warmup] = x.ravel()
         self.pi = _expit(self.samples.mean(axis=0))

@@ -369,9 +369,18 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                                      w), file=f)
     if args.plot is not None:
         if args.outer_method == 'wsabi':
-            figure()
-            m.evidence_gp.plot().get_figure().savefig('{}-gp.pdf'.format(args.plot))
-            close()
+            gp = m.evidence_gp
+        elif args.method == 'varbvs':
+            gp = ctra.model.WSABI(1).fit(numpy.array(m.pi_grid).reshape(-1, 1),
+                                    m.elbo_vals.reshape(-1, 1))
+        else:
+            gp = ctra.model.WSABI(1).fit(ctra.model.base._logit(numpy.array(m.pi_grid)).reshape(-1, 1),
+                                    m.elbo_vals.reshape(-1, 1))
+        figure()
+        gp.plot()
+        axvline(x=ctra.model.base._logit(args.annotation[0][0] / args.num_variants), color='red')
+        savefig('{}-gp.pdf'.format(args.plot))
+        close()
 
         q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
         nq = numpy.count_nonzero(q)
