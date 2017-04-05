@@ -29,6 +29,7 @@ needed for specific likelihoods.
 
     """
     def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=1e-4,
+                 hyperparam_learning_rate=None,
                  hyperparam_means=None, hyperparam_log_precs=None,
                  random_state=None, minibatch_n=None, **kwargs):
         """Compile the Theano function which takes a gradient step"""
@@ -117,11 +118,7 @@ needed for specific likelihoods.
         phi_minibatch = (epoch + 1) % 5
         phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:m]
 
-        # We need to warm up the objective function in order to avoid
-        # degenerate solutions where all variational free parameters go to
-        # zero. The idea is given in Sønderby et al., NIPS 2016
         error = self._llik(self.y, eta, phi_raw)
-
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
         kl_qtheta_ptheta = .5 * T.sum(self.q_z * (1 - T.log(tau) + T.log(self.q_theta_prec) + tau * (T.sqr(self.q_theta_mean) + 1 / self.q_theta_prec)))
@@ -144,15 +141,17 @@ needed for specific likelihoods.
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
-        all_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
+        if hyperparam_learning_rate is None:
+            hyperparam_learning_rate = learning_rate
+        learning_rates = [learning_rate for _ in self.params] + [hyperparam_learning_rate for _ in self.hyperparam_means + self.hyperparam_log_precs]
         grad = T.grad(elbo, self.variational_params)
-        sgd_updates = [(param, param + T.cast(learning_rate, dtype=_real) * g)
-                       for param, g in zip(self.variational_params, grad)]
+        sgd_updates = [(param, param + T.cast(l, dtype=_real) * g)
+                       for param, l, g in zip(self.variational_params, learning_rates, grad)]
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
-        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + all_params, givens=sgd_givens)
+        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + self.variational_params, givens=sgd_givens)
         self._trace_grad = _F(inputs=[epoch], outputs=grad, givens=sgd_givens)
         self._trace_hess = _F(inputs=[epoch], outputs=theano.gradient.hessian(elbo, self.variational_params), givens=sgd_givens)
         opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_theta_prec, self.q_pi_mean, self.q_tau_mean]
@@ -174,23 +173,28 @@ needed for specific likelihoods.
         self.trace = []
         while t < max_iters * self.scale_n:
             t += 1
-            if trace:
-                self.trace.append(self._trace(t))
-            else:
-                self.trace = [self._trace(t)]
             elbo = self.sgd_step(epoch=t)
             if not t % (100 * self.scale_n):
-                validation_loss = self.loss(xv, yv)
+                elbo_ = elbo
                 if elbo < elbo_:
                     logger.warn('ELBO increased, stopping early')
                     break
-                elbo_ = elbo
+                validation_loss = self.loss(xv, yv)
+                # if validation_loss > loss:
+                #     logger.warn('Validation loss increased, stopping early')
+                #     break
                 loss = validation_loss
-                outputs = self.trace[-1][:6]
+                outputs = self._trace(t)[:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
-                if trace:
-                    self.trace[-1].extend(outputs[-2:])
+                if not self.trace or trace:
+                    self.trace.append(outputs)
+                # elif numpy.any(numpy.array(outputs[3:6]) > numpy.array(self.trace[-1][3:6])):
+                #     logger.debug(numpy.array(outputs[3:6]) > numpy.array(self.trace[-1][3:6]))
+                #     logger.warn('KL divergence increased, stopping early')
+                #     break
+                else:
+                    self.trace[0] = outputs
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
             if not numpy.isfinite(elbo):
                 logger.warn('ELBO infinite. Stopping early')

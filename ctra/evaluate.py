@@ -314,7 +314,7 @@ def evaluate():
                 model = ctra.model.GaussianVAE
             else:
                 model = ctra.model.LogisticVAE
-            m = model(x, y, s.annot, learning_rate=args.learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate, trace=args.trace)
+            m = model(x, y, s.annot, learning_rate=args.learning_rate, hyperparam_learning_rate=args.hyper_learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate, trace=args.trace)
         else:
             if args.method == 'coord':
                 if args.model == 'gaussian':
