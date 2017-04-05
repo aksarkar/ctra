@@ -87,7 +87,8 @@ def _parser():
     vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
     vb_args.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
-    vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-4)
+    vb_args.add_argument('-r', '--learning-rate', type=float, help='Learning rate for SGD', default=1e-3)
+    vb_args.add_argument('--hyper-learning-rate', type=float, help='Learning rate for hyperparameters', default=None)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
     vb_args.add_argument('-i', '--max-iters', type=int, help='Polling interval for SGD', default=4000)
     vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
@@ -129,6 +130,8 @@ def _validate(args):
         raise _A('Maximum MAF must be less than or equal to 0.5')
     if args.learning_rate <= 0:
         raise _A('Learning rate must be positive')
+    if args.hyper_learning_rate is not None and args.hyper_learning_rate <= 0:
+        raise _A('Hyperparameter learning rate must be positive')
     if args.learning_rate > 0.05:
         logger.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
     if args.minibatch_size <= 0:
@@ -360,8 +363,9 @@ def evaluate():
             ax[0].set_ylabel('MAF')
             ax[1].bar(range(nq), s.theta[q])
             ax[1].set_ylabel('True effect size')
+            theta_var = m.pip / m.q_theta_prec + m.pip * (1 - m.pip) * numpy.square(m.q_theta_mean)
             ax[2].bar(range(nq), (m.pip * m.q_theta_mean)[q],
-                      yerr = (m.pip / m.q_theta_prec + m.pip * (1 - m.pip) * numpy.square(m.q_theta_mean))[q])
+                      yerr = 1.96 * numpy.sqrt(theta_var[q]))
             ax[2].set_ylabel('Estimated effect size')
             ax[3].bar(range(nq), m.pip[q])
             ax[3].set_ylabel('PIP')
