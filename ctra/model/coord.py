@@ -24,7 +24,7 @@ class GaussianCoordinateAscent(Algorithm):
     def __init__(self, X, y, a, pve, **kwargs):
         super().__init__(X, y, a, pve)
 
-    def log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
+    def log_weight(self, pi, tau, params=None, atol=1e-4, **hyperparams):
         X = self.X
         y = self.y
         a = self.a
@@ -35,11 +35,8 @@ class GaussianCoordinateAscent(Algorithm):
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
         if params is None:
-            if true_causal is not None:
-                alpha = true_causal
-            else:
-                alpha = _R.uniform(size=p)
-                alpha /= alpha.sum()
+            alpha = _R.uniform(size=p)
+            alpha /= alpha.sum()
             beta = _R.normal(size=p)
             sigma2 = y.var()
         else:
@@ -73,8 +70,7 @@ class GaussianCoordinateAscent(Algorithm):
                 theta_j = alpha[j] * beta[j]
                 beta[j] = (xty[j] + xtx_jj[j] * theta_j - (xj * eta).sum()) / (gamma[j] * sigma2)
                 ssr = beta[j] * beta[j] * gamma[j]
-                if true_causal is None:
-                    alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(sigma2) - L(gamma[j]))), eps, 1 - eps)
+                alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(sigma2) - L(gamma[j]))), eps, 1 - eps)
                 eta += xj * (alpha[j] * beta[j] - theta_j)
             sigma2 = (numpy.square(y - eta).sum() +
                       (xtx_jj * alpha * (1 / gamma + (1 - alpha) * beta ** 2)).sum() +
@@ -114,7 +110,7 @@ class LogisticCoordinateAscent(Algorithm):
         xdx = numpy.einsum('ij,i,ij->j', self.X, d, self.X) - numpy.square(xd) / d.sum()
         return d, yhat, xty, xd, xdx
 
-    def log_weight(self, pi, tau, params=None, atol=1e-4, true_causal=None, **hyperparams):
+    def log_weight(self, pi, tau, params=None, atol=1e-4, **hyperparams):
         X = self.X
         y = self.y
         a = self.a
@@ -125,11 +121,8 @@ class LogisticCoordinateAscent(Algorithm):
         tau_deref = numpy.choose(a, tau)
         # Initial configuration
         if params is None:
-            if true_causal is not None:
-                alpha = true_causal
-            else:
-                alpha = _R.uniform(size=p)
-                alpha /= alpha.sum()
+            alpha = _R.uniform(size=p)
+            alpha /= alpha.sum()
             beta = _R.normal(size=p)
             zeta = numpy.ones(n)
         else:
@@ -159,8 +152,7 @@ class LogisticCoordinateAscent(Algorithm):
                 theta_j = alpha[j] * beta[j]
                 beta[j] = (xty[j] + xdx[j] * theta_j + xd[j] * d.T.dot(eta) / d.sum() - xj.T.dot(numpy.diag(d)).dot(eta)) / gamma[j]
                 ssr = beta[j] * beta[j] * gamma[j]
-                if true_causal is None:
-                    alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j]))), self.eps, 1 - self.eps)
+                alpha[j] = numpy.clip(scipy.special.expit(numpy.log(10) * logit_pi[j] + .5 * (ssr + L(tau_deref[j]) - L(gamma[j]))), self.eps, 1 - self.eps)
                 eta += xj * (alpha[j] * beta[j] - theta_j)
             gamma = xdx + tau_deref
             a = 1 / d.sum()

@@ -166,11 +166,6 @@ sampling.
                                                      for p_k in self.model.p]))
         pve = self.model.pve
 
-        if 'true_causal' in kwargs:
-            z = kwargs['true_causal']
-            kwargs['true_causal'] = numpy.clip(z.astype(_real), 1e-4, 1 - 1e-4)
-            assert not numpy.isclose(max(kwargs['true_causal']), 1)
-
         if 'params' in kwargs:
             logger.info('Using specified initialization')
             params = kwargs['params']

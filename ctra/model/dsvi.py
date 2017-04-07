@@ -146,7 +146,7 @@ class DSVI(Algorithm):
     def _llik(self, *args):
         raise NotImplementedError
 
-    def log_weight(self, pi, tau, max_epochs=4000, true_causal=None, trace=False, **kwargs):
+    def log_weight(self, pi, tau, max_epochs=4000, trace=False, **kwargs):
         """Return optimum ELBO and variational parameters which achieve it.
 
         weight - weight for exponential moving average of ELBO

@@ -71,16 +71,11 @@ def _parser():
     data_args = parser.add_argument_group('Data', 'Data processing options')
     data_args.add_argument('-A', '--load-annotations', help='Annotation vector')
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
-    data_args.add_argument('--normalize', action='store_true', help='Center and scale covariates to have zero mean and variance one', default=False)
-    data_args.add_argument('--rotate', action='store_true', help='Rotate data to orthogonalize covariates', default=False)
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
     output_args.add_argument('--diagnostic', action='store_true')
     output_args.add_argument('--fit-null', action='store_true', help='Fit null model', default=False)
     output_args.add_argument('--bayes-factor', action='store_true', help='Compute Bayes factor', default=False)
-    output_args.add_argument('--write-data', help='Directory to write out data', default=None)
-    output_args.add_argument('--write-sfba-data', help='Directory to write out data for SFBA', default=None)
-    output_args.add_argument('--write-weights', help='Directory to write out importance weights', default=None)
     output_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
     output_args.add_argument('--plot', help='File to plot active samples to', default=None)
     output_args.add_argument('--validation', type=int, help='Hold out validation set for posterior predictive check', default=None)
@@ -88,7 +83,6 @@ def _parser():
     hyper_args = parser.add_mutually_exclusive_group()
     hyper_args.add_argument('--no-pool', action='store_false', dest='pool', help='Propose per-annotation pi and tau', default=True)
     hyper_args.add_argument('--propose-tau', action='store_true', help='Propose per-annotation tau with shared pi', default=False)
-    hyper_args.add_argument('--ignore-prevalence', action='store_true', help="Don't correct for ascertainment", default=False)
 
     wsabi_args = parser.add_argument_group('WSABI', 'Parameters for Warped Sequential Approximate Bayesian Inference')
     wsabi_args.add_argument('--init-samples', type=int, help='Inital random samples', default=10)
@@ -106,7 +100,6 @@ def _parser():
 
     vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
     vb_args.add_argument('--warm-start', action='store_true', help='Warm start the optimization', default=False)
-    vb_args.add_argument('--true-causal', action='store_true', help='Fix causal indicator to its true value (default: False)', default=False)
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
     vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-3)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
@@ -188,8 +181,6 @@ def _validate(args):
         raise _A('Model comparison not supported for only one annotation')
     if args.bayes_factor and args.method in ('varbvs',):
         raise _A('Model comparison not supported for method {}'.format(args.method))
-    if args.true_causal and args.method not in ('coord', 'dsvi'):
-        raise _A('Fixing causal variants not supported for method {}'.format(args.method))
     if args.propose_tau and args.method not in ('coord', 'dsvi'):
         raise _A('Proposing tau not supported for method {}'.format(args.method))
 
@@ -273,15 +264,6 @@ def _load_data(args, s):
     if args.center or args.normalize:
         x -= x.mean(axis=0)
         y -= y.mean()
-    if args.normalize:
-        x /= x.var(axis=0)
-        y /= y.var()
-    if args.rotate:
-        logger.info('Computing SVD of genotypes')
-        _, v = scipy.linalg.eigh(numpy.inner(x, x))
-        rotation = scipy.linalg.inv(v)
-        y = rotation.dot(y)
-        x = rotation.dot(x)
     return x, y
 
 @memory_profiler.profile
@@ -293,8 +275,6 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         pve = ctra.model.pcgc(y, ctra.model.grm(x, s.annot), K=args.prevalence)
     pve = numpy.clip(pve, args.min_pve, 1 - args.min_pve)
     kwargs = {}
-    if args.true_causal:
-        kwargs['true_causal'] = ~numpy.isclose(s.theta, 0)
     if args.propose_tau:
         kwargs['propose_tau'] = True
     if args.method == 'pcgc':
@@ -334,7 +314,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                       pve,
                       learning_rate=args.learning_rate,
                       minibatch_n=args.minibatch_size,
-                      K=args.prevalence if not args.ignore_prevalence else args.study_prop,
+                      K=args.prevalence,
                       P=args.study_prop)
         if args.outer_method == 'is':
             outer = ctra.model.ImportanceSampler
@@ -361,21 +341,15 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                       learning_rate=args.learning_rate,
                       minibatch_n=args.minibatch_size)
         m0 = outer(inner).fit(proposals=proposals, **kwargs)
-    if args.write_weights is not None:
-        logger.info('Writing importance weights:')
-        with open(os.path.join(args.write_weights, 'weights.txt'), 'w') as f:
-            for p, w in zip(m.pi_grid, m.weights):
-                print('{} {}'.format(' '.join('{:.3g}'.format(x) for x in p),
-                                     w), file=f)
     if args.plot is not None:
         if args.outer_method == 'wsabi':
             gp = m.evidence_gp
         elif args.method == 'varbvs':
             gp = ctra.model.WSABI(1).fit(numpy.array(m.pi_grid).reshape(-1, 1),
-                                    m.elbo_vals.reshape(-1, 1))
+                                         m.elbo_vals.reshape(-1, 1))
         else:
-            gp = ctra.model.WSABI(1).fit(ctra.model.base._logit(numpy.array(m.pi_grid)).reshape(-1, 1),
-                                    m.elbo_vals.reshape(-1, 1))
+            gp = ctra.model.WSABI(2).fit(ctra.model.base._logit(numpy.array(m.pi_grid)).reshape(-1, 2),
+                                         m.elbo_vals.reshape(-1, 1))
         figure()
         gp.plot()
         axvline(x=ctra.model.base._logit(args.annotation[0][0] / args.num_variants), color='red')
@@ -439,6 +413,8 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         m = m0
     logger.info('Writing posterior mean pi')
     numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
+    if 'samples' in m.__dict__:
+        logger.info('Credible interval: {}'.format(ctra.model.base._expit(numpy.percentile(m.samples, [5, 95], axis=0))))
 
 @memory_profiler.profile
 def evaluate():
@@ -451,45 +427,6 @@ def evaluate():
         if args.validation is not None:
             args.num_samples += args.validation
         x, y = _load_data(args, s)
-        if args.write_data is not None:
-            if not os.path.exists(args.write_data):
-                os.mkdir(args.write_data)
-            with open(os.path.join(args.write_data, 'genotypes.txt'), 'wb') as f:
-                numpy.savetxt(f, x, fmt='%.3f')
-            with open(os.path.join(args.write_data, 'phenotypes.txt'), 'wb') as f:
-                numpy.savetxt(f, y, fmt='%.3f')
-            with open(os.path.join(args.write_data, 'theta.txt'), 'wb') as f:
-                numpy.savetxt(f, s.theta, fmt='%.3f')
-            return
-        if args.write_sfba_data is not None:
-            if not os.path.exists(args.write_sfba_data):
-                os.mkdir(args.write_sfba_data)
-            with gzip.open(os.path.join(args.write_sfba_data, 'test.geno.gz'), 'wt') as f:
-                print('##fileformat=VCFv4.2', file=f)
-                print('#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT',
-                      '\t'.join('s{}'.format(i) for i in range(x.shape[0])), sep='\t',
-                      file=f)
-                gt = ('0/0', '0/1', '0/2')
-                for i, row in enumerate(x):
-                    print('1', i, 'rs{}'.format(i), 'A', 'C', '.', '.', '.', 'GT', '\t'.join(gt[int(x_j)] for x_j in row), sep='\t', file=f)
-            with open(os.path.join(args.write_sfba_data, 'phenotypes.txt'), 'wt') as f:
-                for i, p in enumerate(y):
-                    print('s{}'.format(i), p, file=f)
-            with gzip.open(os.path.join(args.write_sfba_data, 'Anno_test.gz'), 'wt') as f:
-                print('ID	#CHROM	POS', file=f)
-                for i, a in enumerate(args.annotation):
-                    print('rs{}'.format(i), '1', i, a, sep='\t', file=f)
-                    with open(os.path.join(args.write_sfba_data, 'AnnoCode.txt'), 'w') as f:
-                        print('#n_type', len(args.annotation), sep='\t', file=f)
-                        for i, a in enumerate(args.annotation):
-                            print('a{}'.format(i), i, file=f)
-            with open(os.path.join(args.write_sfba_data, 'fileheads.txt'), 'w') as f:
-                print('test', file=f)
-            with open(os.path.join(args.write_sfba_data, 'hyperparameters.txt'), 'w') as f:
-                print('pi', 'sigma2', sep='\t', file=f)
-                for a in args.annotation:
-                    print(1e-6, 10, file=f)
-            return
         if args.validation is not None:
             if args.model == 'gaussian':
                 x_validate = x[-args.validation:]
