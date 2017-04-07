@@ -36,7 +36,7 @@ class DSVI(Algorithm):
     compiled function across hyperparameter samples.
 
     """
-    def __init__(self, X_, y_, a_, pve, minibatch_n=None, stoch_samples=10,
+    def __init__(self, X_, y_, a_, pve, minibatch_n=None, stoch_samples=50,
                  learning_rate=1e-3, params=None, **kwargs):
         """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, pve)
@@ -146,7 +146,7 @@ class DSVI(Algorithm):
     def _llik(self, *args):
         raise NotImplementedError
 
-    def log_weight(self, pi, tau, max_epochs=4000, true_causal=None, **kwargs):
+    def log_weight(self, pi, tau, max_epochs=4000, true_causal=None, trace=False, **kwargs):
         """Return optimum ELBO and variational parameters which achieve it.
 
         weight - weight for exponential moving average of ELBO
@@ -167,6 +167,8 @@ class DSVI(Algorithm):
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in self._trace(t)[:5]))
             t += 1
             elbo = self.vb_step(epoch=t)
+            if trace:
+                self.trace.append(self._trace(t))
             if not numpy.isfinite(elbo):
                 raise ValueError('ELBO must be finite')
             elif elbo >= 0:
@@ -185,11 +187,7 @@ class GaussianDSVI(DSVI):
         super().__init__(X, y, a, pve, params=[self.log_lambda_mean, self.log_lambda_log_prec], **kwargs)
 
     def _llik(self, y, eta, phi_raw):
-        """Return E_q[ln p(y | eta, theta_0)] assuming a linear link.
-
-        Fix sigma^2 to 1. Empirically, this works although we have no proof.
-
-        """
+        """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""
         phi = 1e-3 + T.nnet.softplus(self.log_lambda_mean + phi_raw * T.sqrt(1 / self.log_lambda_prec)).dimshuffle(0, 'x')
         F = -.5 * (-T.log(phi) + phi * T.sqr(y - eta))
         return T.mean(T.sum(F, axis=1))
