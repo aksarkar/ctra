@@ -60,7 +60,7 @@ needed for specific likelihoods.
         # Variational surrogate for target hyperposterior
         self.q_probit_pi_mean = _S(_Z(m), name='q_probit_pi_mean')
         self.q_probit_pi_log_prec = _S(_Z(m), name='q_probit_pi_log_prec')
-        self.q_pi_mean = .5 * (1 + T.erf(self.q_probit_pi_mean / (2 * T.sqrt(2))))
+        self.q_pi_mean = 0.5 + 0.5 * T.erf(self.q_probit_pi_mean / T.sqrt(2))
         self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
         self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
         self.q_tau_mean = T.exp(self.q_log_tau_mean)
