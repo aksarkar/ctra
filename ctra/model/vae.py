@@ -5,6 +5,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import logging
 
+import lasagne.updates
 import numpy
 import scipy.misc
 import scipy.special
@@ -141,19 +142,13 @@ needed for specific likelihoods.
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
-        if hyperparam_learning_rate is None:
-            hyperparam_learning_rate = learning_rate
-        learning_rates = [learning_rate for _ in self.params] + [hyperparam_learning_rate for _ in self.hyperparam_means + self.hyperparam_log_precs]
-        grad = T.grad(elbo, self.variational_params)
-        sgd_updates = [(param, param + T.cast(l, dtype=_real) * g)
-                       for param, l, g in zip(self.variational_params, learning_rates, grad)]
+        # Lasagne minimizes, so flip the sign
+        sgd_updates = lasagne.updates.rmsprop(-elbo, self.variational_params, learning_rate=learning_rate)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + self.variational_params, givens=sgd_givens)
-        self._trace_grad = _F(inputs=[epoch], outputs=grad, givens=sgd_givens)
-        self._trace_hess = _F(inputs=[epoch], outputs=theano.gradient.hessian(elbo, self.variational_params), givens=sgd_givens)
         opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_theta_prec, self.q_pi_mean, self.q_tau_mean]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
         logger.debug('Finished initializing')
