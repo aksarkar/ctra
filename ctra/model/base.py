@@ -51,7 +51,7 @@ class Model:
         self.pi_grid = []
         self.tau_grid = []
 
-    def propose(self, hyper, propose_tau=False, pool=True, **kwargs):
+    def propose(self, hyper, propose_tau=False, pool=False, **kwargs):
         """Propose pi (tau), and return the tuple (pi, tau) consistent with
 self.model.pve
 
@@ -270,7 +270,7 @@ marginal likelihood"""
             if propose_null:
                 hyperparam[i] = numpy.repeat(hyperparam[i][0], pve.shape[0])
             self.propose(hyperparam[i], propose_tau=propose_tau, pool=pool)
-            llik[i], _params = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], **kwargs)
+            llik[i], _params = self.model.log_weight(pi=self.pi_grid[-1], tau=self.tau_grid[-1], trace=trace is not None, **kwargs)
             # This is needed for the IS estimator
             self.elbo_vals.append(llik[i])
             if propose_tau:
@@ -282,9 +282,6 @@ marginal likelihood"""
                 logger.debug('Refitting GP for Z')
                 self.evidence_gp = self.evidence_gp.fit(hyperparam[:i], llik[:i])
                 logger.debug('Sample {}: phi={}, Z={}'.format(i + 1, hyperparam[i], self.evidence_gp))
-                if trace:
-                    fig = self.evidence_gp.plot().get_figure().savefig('{}-gp-{}.pdf'.format(trace, i + 1))
-                    matplotlib.pyplot.close()
                 v = self.evidence_gp.var()
                 if v <= 0:
                     logger.info('Finished active sampling after {} samples (variance vanished)'.format(i))

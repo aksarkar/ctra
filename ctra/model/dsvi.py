@@ -192,11 +192,25 @@ class GaussianDSVI(DSVI):
         F = -.5 * (-T.log(phi) + phi * T.sqr(y - eta))
         return T.mean(T.sum(F, axis=1))
 
-class LogisticDSVI(DSVI):
+class BinaryDSVI(DSVI):
     def __init__(self, X, y, a, pve, K, P, **kwargs):
         # Neuhaus, 2002 (eq. 3)
         self.rate_ratio = P * (1 - K) / (K * (1 - P))
         logger.debug('Rate ratio = {:.3g}'.format(self.rate_ratio))
+        super().__init__(X, y, a, pve, **kwargs)
+
+    def _llik(self, y, eta, phi_raw):
+        """Return E_q[ln p(y | eta, theta_0)]"""
+        # E[y], not considering ascertainment
+        y_raw = self._link(eta, phi_raw)
+        # Neuhaus, 2002 (eq. 3-5)
+        y_adj = self.rate_ratio * y_raw / (1 + y_raw * (self.rate_ratio - 1))
+        # Re-arrange y log(eta) + (1 - y) log(1 - eta)
+        F = y * y_adj - T.nnet.softplus(y_adj)
+        return T.mean(T.sum(F, axis=1))
+
+class LogisticDSVI(BinaryDSVI):
+    def __init__(self, X, y, a, pve, K, P, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
         self.bias_mean = theano.shared(numpy.array(0, dtype=_real))
@@ -204,15 +218,18 @@ class LogisticDSVI(DSVI):
         self.bias_prec = 1e-3 + T.nnet.softplus(self.bias_log_prec)
         # Variational surrogate for the bias term. p(bias) = N(0, 1); q(bias) = N(m, v^-1)
         self.elbo = -.5 * (1 - 1 + T.log(self.bias_prec) + T.sqr(self.bias_mean) + 1 / self.bias_prec)
-        super().__init__(X, y, a, pve, params=[self.bias_mean, self.bias_log_prec], **kwargs)
+        super().__init__(X, y, a, pve, K, P, params=[self.bias_mean, self.bias_log_prec], **kwargs)
 
     def _link(self, eta, phi_raw):
-        # Neuhaus, 2002 (eq. 3-5)
+        """Logit link"""
         phi = (self.bias_mean + phi_raw * T.sqrt(1 / self.bias_prec)).dimshuffle(0, 'x')
-        mu = T.nnet.sigmoid(eta + phi)
-        return self.rate_ratio * mu / (1 + mu * (self.rate_ratio - 1))
+        return T.nnet.sigmoid(eta + phi)
 
-    def _llik(self, y, eta, phi_raw):
-        """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
-        F = y * T.log(self._link(eta, phi_raw)) + (1 - y) * T.log(1 - self._link(eta, phi_raw))
-        return T.mean(T.sum(F, axis=1))
+class ProbitDSVI(BinaryDSVI):
+    def __init__(self, X, y, a, pve, K, P, **kwargs):
+        self.thresh = scipy.stats.norm().isf(K)
+        super().__init__(X, y, a, pve, K, P, **kwargs)
+
+    def _link(self, eta, phi_raw):
+        """Probit link"""
+        return .5 + .5 * T.erf((self.thresh - eta) / T.sqrt(2))

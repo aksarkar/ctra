@@ -56,7 +56,7 @@ def _parser():
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     req_args = parser.add_argument_group('Required arguments', '')
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
-    req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
+    req_args.add_argument('-m', '--model', choices=['gaussian', 'probit', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi', 'sklearn'], help='Method to fit model', required=True)
     req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi'], help='Outer method (for hyperparameters)', required=True, default='is')
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
@@ -134,7 +134,7 @@ def _validate(args):
         logger.warn('Assuming study prevalence 0.5')
     elif args.study_prop is not None and not 0 <= args.study_prop <= 1:
         raise _A('Case study proportion must be in [0, 1]')
-    if args.prevalence is None and args.model == 'logistic':
+    if args.prevalence is None and args.model in ('probit', 'logistic'):
         raise _A('Prevalence must be specified for logistic model')
     if numpy.isclose(args.min_pve, 0) or args.min_pve < 0:
         raise _A('Minimum PVE must be larger than float tolerance')
@@ -171,6 +171,8 @@ def _validate(args):
         logger.warn('Ignoring SGD parameters for method {}'.format(args.method))
     if args.method in ('varbvs',) and len(args.annotation) > 1:
         raise _A('Method {} does not support multiple annotations'.format(args.method))
+    if args.model == 'probit' and args.method != 'dsvi':
+        raise _A('Method {} does not support model {}'.formats(args.method, args.model))
     if args.outer_method == 'wsabi' and args.method not in ('coord', 'dsvi'):
         raise _A('Outer method "{}" does not support inner method "{}"'.format(args.outer_method, args.method))
     if args.outer_method != 'wsabi' and 'wsabi_tolerance' in args:
@@ -252,16 +254,16 @@ def _load_data(args, s):
         else:
             logger.debug('Burning in {} samples for parametric bootstrap sample {}'.format(args.num_samples * args.parametric_bootstrap, args.parametric_bootstrap))
         for _ in range(args.parametric_bootstrap + 1):
-            if args.model == 'logistic':
-                x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
-            else:
+            if args.model == 'gaussian':
                 x, y = s.sample_gaussian(n=args.num_samples)
+            else:
+                x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
         if args.nonparametric_bootstrap is not None:
             for _ in range(args.nonparametric_bootstrap):
                 sample = s.random.choice(args.num_samples, args.num_samples)
             x = x[sample,:]
             y = y[sample]
-    if args.center or args.normalize:
+    if args.center:
         x -= x.mean(axis=0)
         y -= y.mean()
     return x, y
@@ -348,7 +350,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             gp = ctra.model.WSABI(1).fit(numpy.array(m.pi_grid).reshape(-1, 1),
                                          m.elbo_vals.reshape(-1, 1))
         else:
-            gp = ctra.model.WSABI(2).fit(ctra.model.base._logit(numpy.array(m.pi_grid)).reshape(-1, 2),
+            gp = ctra.model.WSABI(1).fit(ctra.model.base._logit(numpy.array(m.pi_grid)).reshape(-1, 1),
                                          m.elbo_vals.reshape(-1, 1))
         figure()
         gp.plot()
