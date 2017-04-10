@@ -91,8 +91,8 @@ needed for specific likelihoods.
         self.hyperprior_means = [_Z(m), _Z(m)]
         self.hyperprior_log_precs = [_Z(m), _Z(m)]
         for _ in hyperparam_means:
-            self.hyperprior_means.append(_Z(m))
-            self.hyperprior_log_precs.append(_Z(m))
+            self.hyperprior_means.append(_Z(1))
+            self.hyperprior_log_precs.append(_Z(1))
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
@@ -115,9 +115,11 @@ needed for specific likelihoods.
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
         eta = self.eta_mean + T.sqrt(eta_var) * eta_raw
 
-        # We need to generate independent noise samples for the hyperparameters
+        # We need to generate independent noise samples for model parameters
+        # besides the GSS parameters/hyperparameters (biases, variances in
+        # likelihood)
         phi_minibatch = (epoch + 1) % 5
-        phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:m]
+        phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:1]
 
         error = self._llik(self.y, eta, phi_raw)
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
