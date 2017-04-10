@@ -283,7 +283,9 @@ def evaluate():
             y_validate = y[validation]
             x = x[~validation]
             y = y[~validation]
-
+        else:
+            x_validate = None
+            y_validate = None
         if args.true_pve:
             pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
                                for a in range(1 + max(s.annot))])
