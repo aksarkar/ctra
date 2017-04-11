@@ -12,6 +12,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import logging
 
+import lasagne.updates
 import numpy
 import scipy.misc
 import scipy.special
@@ -122,9 +123,7 @@ class DSVI(Algorithm):
         # This is needed to re-initialize logistic regression bias
         init_updates += [(param, 0) for param in params]
         self._initialize = _F(inputs=[pi, tau], outputs=[], updates=init_updates, givens=[(a, self.a)])
-        grad = T.grad(self.elbo, self.params)
-        sgd_updates = [(param, param + learning_rate * g)
-                       for param, g in zip(self.params, grad)]
+        sgd_updates = lasagne.updates.rmsprop(-self.elbo, self.params, learning_rate=learning_rate)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = [(X, self.X[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]),
                       (y, self.y[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]),
