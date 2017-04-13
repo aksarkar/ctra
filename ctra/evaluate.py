@@ -23,7 +23,6 @@ import sys
 
 import h5py
 from matplotlib.pyplot import *
-import memory_profiler
 import numpy
 import scipy.stats
 import scipy.linalg
@@ -42,13 +41,6 @@ _A = argparse.ArgumentTypeError
 # Set up things for plotting interactively
 switch_backend('pdf')
 
-def interrupt(s, f):
-    """Catch SIGINT to terminate model fitting early"""
-    sys.exit(1)
-
-memory_profiler.profile = lambda x: x
-
-@memory_profiler.profile
 def _parser():
     def Annotation(arg):
         num, var = arg.split(',')
@@ -58,7 +50,7 @@ def _parser():
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
     req_args.add_argument('-m', '--model', choices=['gaussian', 'probit', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-M', '--method', choices=['pcgc', 'coord', 'varbvs', 'dsvi', 'sklearn'], help='Method to fit model', required=True)
-    req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi'], help='Outer method (for hyperparameters)', required=True, default='is')
+    req_args.add_argument('-O', '--outer-method', choices=['is', 'wsabi', 'vae'], help='Outer method (for hyperparameters)', required=True, default='is')
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
@@ -101,9 +93,13 @@ def _parser():
     vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
     vb_args.add_argument('--warm-start', action='store_true', help='Warm start the optimization', default=False)
     vb_args.add_argument('--true-pve', action='store_true', help='Fix hyperparameter PVE to its true value (default: False)', default=False)
-    vb_args.add_argument('-r', '--learning-rate', type=float, help='Initial learning rate for SGD', default=1e-3)
+    vb_args.add_argument('-r', '--learning-rate', type=float, help='Learning rate for SGD', default=1e-3)
+    vb_args.add_argument('--hyper-learning-rate', type=float, help='Learning rate for hyperparameters', default=None)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
-    vb_args.add_argument('-i', '--max-epochs', type=int, help='Maximum number of full batch epochs for SGD', default=4000)
+    vb_args.add_argument('-i', '--max-iters', type=int, help='Polling interval for SGD', default=4000)
+    vb_args.add_argument('-t', '--tolerance', type=float, help='Maximum change in objective function (for convergence)', default=1e-4)
+    vb_args.add_argument('-w', '--ewma-weight', type=float, help='Exponential weight for SGD objective moving average', default=0.1)
+    vb_args.add_argument('--trace', action='store_true', help='Store trace')
 
     bootstrap_args = parser.add_mutually_exclusive_group()
     bootstrap_args.add_argument('--resample', action='store_true', help='Resample genotypes to desired sample size')
@@ -116,7 +112,6 @@ def _parser():
 
     return parser
 
-@memory_profiler.profile
 def _validate(args):
     # Check argument values
     if args.num_samples <= 0:
@@ -144,6 +139,8 @@ def _validate(args):
         raise _A('Maximum MAF must be less than or equal to 0.5')
     if args.learning_rate <= 0:
         raise _A('Learning rate must be positive')
+    if args.hyper_learning_rate is not None and args.hyper_learning_rate <= 0:
+        raise _A('Hyperparameter learning rate must be positive')
     if args.learning_rate > 0.05:
         logger.warn('Learning rate set to {}. This is probably too large'.format(args.learning_rate))
     if args.minibatch_size <= 0:
@@ -151,6 +148,10 @@ def _validate(args):
     if args.minibatch_size > args.num_samples:
         logger.warn('Setting minibatch size to sample size')
         args.minibatch_size = args.num_samples
+    if args.max_iters <= 0:
+        raise _A('Polling interval must be positive')
+    if args.tolerance <= 0:
+        raise _A('VB tolerance must be positive')
     if args.wsabi_tolerance <= 0:
         raise _A('Active sampling tolerance must be positive')
     if args.init_samples <= 0:
@@ -186,7 +187,6 @@ def _validate(args):
     if args.propose_tau and args.method not in ('coord', 'dsvi'):
         raise _A('Proposing tau not supported for method {}'.format(args.method))
 
-@memory_profiler.profile
 def _load_data(args, s):
     if args.min_maf is not None or args.max_maf is not None:
         if args.min_maf is None:
@@ -268,7 +268,6 @@ def _load_data(args, s):
         y -= y.mean()
     return x, y
 
-@memory_profiler.profile
 def _fit(args, s, x, y, x_validate=None, y_validate=None):
     if args.true_pve:
         pve = numpy.array([s.genetic_var[s.annot == a].sum() / s.pheno_var
@@ -295,6 +294,12 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
             m.pi = numpy.array([0])
             m.pip = numpy.zeros(s.theta.shape)
             m.model = collections.namedtuple('model', ['rate_ratio'])(1)
+    elif args.outer_method == 'vae':
+        if args.model == 'gaussian':
+            model = ctra.model.GaussianVAE
+        else:
+            model = ctra.model.LogisticVAE
+        m = model(x, y, s.annot, learning_rate=args.learning_rate, hyperparam_learning_rate=args.hyper_learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate, trace=args.trace)
     else:
         if args.method == 'coord':
             if args.model == 'gaussian':
@@ -325,7 +330,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         logger.info('Fitting alternate model')
         m = outer(inner).fit(pool=args.pool,
                              init_samples=args.init_samples,
-                             max_epochs=args.max_epochs,
+                             max_epochs=args.max_iters,
                              max_samples=args.max_samples,
                              vtol=args.wsabi_tolerance,
                              warm_start=args.warm_start,
@@ -395,8 +400,8 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         logger.info('Mean non-causal PIP = {}'.format(m.pip[s.theta != 0].mean()))
     if args.validation is not None:
         if args.model == 'gaussian':
-            logger.info('Training set correlation = {:.3f}'.format(m.score(x, y)))
-            logger.info('Validation set correlation = {:.3f}'.format(m.score(x_validate, y_validate)))
+            logger.info('Training set correlation = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
+            logger.info('Validation set correlation = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
             if args.bayes_factor:
                 logger.info('Null training set correlation = {:.3f}'.format(m0.score(x, y)))
                 logger.info('Null validation set correlation = {:.3f}'.format(m0.score(x_validate, y_validate)))
@@ -418,7 +423,6 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
     if 'samples' in m.__dict__:
         logger.info('Credible interval: {}'.format(ctra.model.base._expit(numpy.percentile(m.samples, [5, 95], axis=0))))
 
-@memory_profiler.profile
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
     args = _parser().parse_args()

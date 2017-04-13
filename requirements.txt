@@ -1,5 +1,7 @@
 drmaa>=0.7.6
 numpy>=1.10.4
 scipy>=0.17.1
+scikit-learn>=0.18.1
 GPy>=1.5.6
+Lasagne>=0.1
 Theano>=0.7.0
