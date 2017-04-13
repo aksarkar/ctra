@@ -185,7 +185,6 @@ def evaluate():
     args = _parser().parse_args()
     _validate(args)
     logging.getLogger('ctra').setLevel(args.log_level)
-    logger.debug('Parsed arguments:\n{}'.format(pprint.pformat(vars(args))))
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         if args.min_maf is not None or args.max_maf is not None:
             if args.min_maf is None:
@@ -371,6 +370,26 @@ def evaluate():
             ax[3].set_ylabel('PIP')
             P.savefig('{}-pip.pdf'.format(args.diagnostic))
             P.close()
+
+            # Check the local neighborhood of the point at which the optimization
+            # terminates using random slices:
+            # http://stanford.edu/class/ee364a/lectures/functions.pdf
+            _, _, _, _, _, _, *opt = m._trace(0)
+            query = numpy.linspace(-2, 2, 100)
+            P.figure()
+            for i in range(10):
+                direction = [numpy.random.normal(size=p.shape) for p in opt]
+                vals = []
+                for t in query:
+                    for p, v, d in zip(m.params, opt, direction):
+                        p.set_value(numpy.array(v + t * d, dtype='float32'))
+                    vals.append(m._opt())
+                P.plot(query, vals)
+            P.axvline()
+            P.savefig('{}-slice.pdf'.format(args.diagnostic, i))
+            P.close()
+            for p, v in zip(m.params, opt):
+                p.set_value(numpy.array(v, dtype='float32'))
         if args.trace:
             if args.diagnostic is None:
                 args.diagnostic = 'diagnostic'

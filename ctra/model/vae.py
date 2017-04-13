@@ -3,6 +3,7 @@
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
 """
+import collections
 import logging
 
 import lasagne.updates
@@ -138,7 +139,7 @@ needed for specific likelihoods.
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(self.q_logit_z, _R.normal(size=p).astype(_real))]
-        init_updates += [(param, _Z(p)) for param in self.params[1:]]
+        init_updates += [(param, _R.normal(size=p).astype(_real)) for param in self.params[1:]]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_means, self.hyperprior_means)]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
@@ -153,6 +154,15 @@ needed for specific likelihoods.
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + self.variational_params, givens=sgd_givens)
         opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_theta_prec, self.q_pi_mean, self.q_tau_mean]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
+
+        # Need to return full batch likelihood to get correct optimum
+        self._opt = _F(inputs=[],
+                       outputs=elbo,
+                       givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
+                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
+                               (self.X, self.X_),
+                               (self.y, self.y_)])
+
         logger.debug('Finished initializing')
 
     def _llik(self, *args):
