@@ -351,45 +351,12 @@ def evaluate():
                               minibatch_n=args.minibatch_size)
                 m0 = outer(inner).fit(atol=args.tolerance, proposals=proposals, **kwargs)
         if args.diagnostic is not None:
-            q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
-            nq = numpy.count_nonzero(q)
-
-            P = matplotlib.pyplot
-            fig, ax = P.subplots(4, 1)
-            fig.set_size_inches(6, 8)
-            P.xlabel('True and false positive variants')
-            ax[0].bar(range(nq), s.maf[q])
-            ax[0].set_ylabel('MAF')
-            ax[1].bar(range(nq), s.theta[q])
-            ax[1].set_ylabel('True effect size')
-            theta_var = m.pip / m.q_theta_prec + m.pip * (1 - m.pip) * numpy.square(m.q_theta_mean)
-            ax[2].bar(range(nq), (m.pip * m.q_theta_mean)[q],
-                      yerr = 1.96 * numpy.sqrt(theta_var[q]))
-            ax[2].set_ylabel('Estimated effect size')
-            ax[3].bar(range(nq), m.pip[q])
-            ax[3].set_ylabel('PIP')
-            P.savefig('{}-pip.pdf'.format(args.diagnostic))
-            P.close()
-
-            # Check the local neighborhood of the point at which the optimization
-            # terminates using random slices:
-            # http://stanford.edu/class/ee364a/lectures/functions.pdf
-            _, _, _, _, _, _, *opt = m._trace(0)
-            query = numpy.linspace(-2, 2, 100)
-            P.figure()
-            for i in range(10):
-                direction = [numpy.random.normal(size=p.shape) for p in opt]
-                vals = []
-                for t in query:
-                    for p, v, d in zip(m.params, opt, direction):
-                        p.set_value(numpy.array(v + t * d, dtype='float32'))
-                    vals.append(m._opt())
-                P.plot(query, vals)
-            P.axvline()
-            P.savefig('{}-slice.pdf'.format(args.diagnostic, i))
-            P.close()
-            for p, v in zip(m.params, opt):
-                p.set_value(numpy.array(v, dtype='float32'))
+            pihat = []
+            for _ in range(50):
+                x, y = s.sample_gaussian(n=args.num_samples - args.validation)
+                m = model(x, y, s.annot, learning_rate=args.learning_rate, hyperparam_learning_rate=args.hyper_learning_rate, random_state=s.random, minibatch_n=args.minibatch_size).fit(max_iters=args.max_iters, xv=x_validate, yv=y_validate, trace=args.trace)
+                pihat.append(m.pi)
+            logger.info('Bootstrap CI: {}'.format(numpy.percentile(numpy.array(pihat), [2.5, 97.5])))
         if args.trace:
             if args.diagnostic is None:
                 args.diagnostic = 'diagnostic'
