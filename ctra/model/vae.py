@@ -34,7 +34,6 @@ needed for specific likelihoods.
                  hyperparam_learning_rate=None,
                  hyperparam_means=None, hyperparam_log_precs=None,
                  random_state=None, minibatch_n=None, **kwargs):
-        """Compile the Theano function which takes a gradient step"""
         super().__init__(X_, y_, a_, None)
 
         logger.debug('Building the Theano graph')
@@ -187,19 +186,12 @@ needed for specific likelihoods.
                     logger.warn('ELBO increased, stopping early')
                     break
                 validation_loss = self.loss(xv, yv)
-                # if validation_loss > loss:
-                #     logger.warn('Validation loss increased, stopping early')
-                #     break
                 loss = validation_loss
                 outputs = self._trace(t)[:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
                 if not self.trace or trace:
                     self.trace.append(outputs)
-                # elif numpy.any(numpy.array(outputs[3:6]) > numpy.array(self.trace[-1][3:6])):
-                #     logger.debug(numpy.array(outputs[3:6]) > numpy.array(self.trace[-1][3:6]))
-                #     logger.warn('KL divergence increased, stopping early')
-                #     break
                 else:
                     self.trace[0] = outputs
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
