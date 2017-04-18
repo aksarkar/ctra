@@ -1,4 +1,5 @@
-"""Variational auto-encoder
+"""Maximize evidence lower bound as proxy for marginal likelihood using
+Stochastic Gradient Variational Bayes
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
@@ -6,15 +7,11 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 import collections
 import logging
 
-import lasagne.updates
 import numpy
 import scipy.misc
 import scipy.special
 import theano
 import theano.tensor as T
-
-from matplotlib.pyplot import *
-from .base import Algorithm
 
 logger = logging.getLogger(__name__)
 
@@ -28,23 +25,74 @@ def _S(x, **kwargs):
 def kl_normal_normal(mean, prec, prior_mean, prior_prec):
     return .5 * (1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
 
-class VAE(Algorithm):
+def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6):
+    """RMSProp updates (from Lasagne)
+
+    Scale learning rates by dividing with the moving average of the root mean
+    squared (RMS) gradients. See [1]_ for further description.
+    Parameters
+    ----------
+    loss_or_grads : symbolic expression or list of expressions
+        A scalar loss expression, or a list of gradient expressions
+    params : list of shared variables
+        The variables to generate update expressions for
+    learning_rate : float or symbolic scalar
+        The learning rate controlling the size of update steps
+    rho : float or symbolic scalar
+        Gradient moving average decay factor
+    epsilon : float or symbolic scalar
+        Small value added for numerical stability
+    Returns
+    -------
+    OrderedDict
+        A dictionary mapping each parameter to its update expression
+    Notes
+    -----
+    `rho` should be between 0 and 1. A value of `rho` close to 1 will decay the
+    moving average slowly and a value close to 0 will decay the moving average
+    fast.
+    Using the step size :math:`\\eta` and a decay factor :math:`\\rho` the
+    learning rate :math:`\\eta_t` is calculated as:
+    .. math::
+       r_t &= \\rho r_{t-1} + (1-\\rho)*g^2\\\\
+       \\eta_t &= \\frac{\\eta}{\\sqrt{r_t + \\epsilon}}
+    References
+    ----------
+    .. [1] Tieleman, T. and Hinton, G. (2012):
+           Neural Networks for Machine Learning, Lecture 6.5 - rmsprop.
+           Coursera. http://www.youtube.com/watch?v=O3sxAc4hxZU (formula @5:20)
+    """
+    grads = theano.grad(loss, params)
+    updates = collections.OrderedDict()
+
+    # Using theano constant to prevent upcasting of float32
+    one = T.constant(1)
+
+    for param, grad in zip(params, grads):
+        value = param.get_value(borrow=True)
+        accu = theano.shared(_Z(value.shape).astype(_real),
+                             broadcastable=param.broadcastable)
+        accu_new = rho * accu + (one - rho) * grad ** 2
+        updates[accu] = accu_new
+        updates[param] = param - (learning_rate * grad /
+                                  T.sqrt(accu_new + epsilon))
+
+    return updates
+
+class SGVB:
     """Base class providing the generic implementation. Specialized sub-classes are
 needed for specific likelihoods.
 
     """
-    def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=1e-4,
-                 hyperparam_learning_rate=None,
+    def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=0.1,
                  hyperparam_means=None, hyperparam_log_precs=None,
                  random_state=None, minibatch_n=None, **kwargs):
-        super().__init__(X_, y_, a_, None)
-
         logger.debug('Building the Theano graph')
-
         # Observed data. This needs to be symbolic for minibatches
         # TODO: borrow, GPU transfer, HDF5 transfer
         self.X_ = _S(X_.astype(_real))
         self.y_ = _S(y_.astype(_real))
+        self.p = numpy.array(list(collections.Counter(a_).values()), dtype='int')
 
         # One-hot encode the annotations
         n, p = X_.shape
@@ -146,7 +194,7 @@ needed for specific likelihoods.
         elbo = (error - kl) * self.scale_n
 
         logger.debug('Compiling the Theano functions')
-        init_updates = [(self.q_logit_z, _R.normal(size=p).astype(_real))]
+        init_updates = [(self.q_logit_z, _R.normal(loc=-3, size=p).astype(_real))]
         init_updates += [(param, _R.normal(size=p).astype(_real)) for param in self.params[1:]]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_means, self.hyperprior_means)]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
@@ -154,7 +202,7 @@ needed for specific likelihoods.
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
         # Lasagne minimizes, so flip the sign
-        sgd_updates = lasagne.updates.rmsprop(-elbo, self.variational_params, learning_rate=learning_rate)
+        sgd_updates = rmsprop(-elbo, self.variational_params, learning_rate=learning_rate)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
@@ -179,14 +227,14 @@ needed for specific likelihoods.
     def log_weight(self, *args):
         raise NotImplementedError
         
-    def fit(self, max_iters=1000, xv=None, yv=None, trace=False, **kwargs):
+    def fit(self, max_epochs=1000, xv=None, yv=None, trace=False, **kwargs):
         logger.debug('Starting SGD')
         self.initialize()
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
         self.trace = []
-        while t < max_iters * self.scale_n:
+        while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.sgd_step(epoch=t)
             if not t % (100 * self.scale_n):
@@ -220,7 +268,7 @@ needed for specific likelihoods.
         """Return the coefficient of determination of the model fit"""
         raise NotImplementedError
 
-class GaussianVAE(VAE):
+class GaussianSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
@@ -243,7 +291,7 @@ class GaussianVAE(VAE):
         F = -.5 * (-T.log(phi) + T.sqr(y - eta) * phi)
         return T.mean(T.sum(F, axis=1))
 
-class LogisticVAE(VAE):
+class LogisticSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
@@ -273,7 +321,7 @@ class LogisticVAE(VAE):
         yhat = (numpy.array(self.predict(x)) > 0.5)
         return numpy.asscalar((y == yhat).sum() / y.shape[0])
 
-class ProbitVAE(VAE):
+class ProbitSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         super().__init__(X, y, a, **kwargs)
 
