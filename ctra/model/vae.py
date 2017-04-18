@@ -64,14 +64,19 @@ needed for specific likelihoods.
         self.q_probit_pi_mean = _S(_Z(m), name='q_probit_pi_mean')
         self.q_probit_pi_log_prec = _S(_Z(m), name='q_probit_pi_log_prec')
         self.q_pi_mean = 0.5 + 0.5 * T.erf(self.q_probit_pi_mean / T.sqrt(2))
-        self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
-        self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
-        self.q_tau_mean = T.exp(self.q_log_tau_mean)
+        self.q_log_tau0_mean = _S(_Z(1), name='q_log_tau0_mean')
+        self.q_log_tau0_log_prec = _S(_Z(1), name='q_log_tau0_log_prec')
+        self.q_tau0_mean = T.exp(self.q_log_tau0_mean)
+        self.q_log_tau1_mean = _S(_Z(m), name='q_log_tau1_mean')
+        self.q_log_tau1_log_prec = _S(_Z(m), name='q_log_tau1_log_prec')
+        self.q_tau1_mean = T.exp(self.q_log_tau0_mean - self.q_log_tau1_mean)
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
         pi = T.dot(self.A, self.q_pi_mean)
-        tau = T.dot(self.A, self.q_tau_mean)
+        # Share spike variance across all groups
+        tau0 = T.addbroadcast(self.q_tau0_mean, 0)
+        tau1 = T.dot(self.A, self.q_tau1_mean)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
@@ -84,8 +89,8 @@ needed for specific likelihoods.
 
         # These will include model-specific terms. Assume everything is
         # Gaussian on the variational side to simplify
-        self.hyperparam_means = [self.q_probit_pi_mean, self.q_log_tau_mean]
-        self.hyperparam_log_precs = [self.q_probit_pi_log_prec, self.q_log_tau_log_prec]
+        self.hyperparam_means = [self.q_probit_pi_mean, self.q_log_tau0_mean, self.q_log_tau1_mean]
+        self.hyperparam_log_precs = [self.q_probit_pi_log_prec, self.q_log_tau0_log_prec, self.q_log_tau1_log_prec]
         if hyperparam_means is not None:
             self.hyperparam_means.extend(hyperparam_means)
         if hyperparam_log_precs is not None:
@@ -127,7 +132,8 @@ needed for specific likelihoods.
         error = self._llik(self.y, eta, phi_raw)
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
-        kl_qtheta_ptheta = (self.q_z * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, 0, tau)).sum()
+        kl_qtheta_ptheta = (self.q_z * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, 0, tau1) +
+                            (1 - self.q_z) * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, 0, tau0)).sum()
         # Rasmussen and Williams, Eq. A.22
         kl_qz_pz = T.sum(self.q_z * T.log(self.q_z / pi) + (1 - self.q_z) * T.log((1 - self.q_z) / (1 - pi)))
         kl_hyper = 0
@@ -154,7 +160,7 @@ needed for specific likelihoods.
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + self.variational_params, givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_theta_prec, self.q_pi_mean, self.q_tau_mean]
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, self.q_theta_prec, self.q_pi_mean, self.q_tau1_mean]
         self.opt = _F(inputs=[epoch], outputs=opt_outputs, givens=sgd_givens)
 
         # Need to return full batch likelihood to get correct optimum
