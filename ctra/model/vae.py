@@ -266,3 +266,29 @@ class LogisticVAE(VAE):
     def score(self, x, y):
         yhat = (numpy.array(self.predict(x)) > 0.5)
         return numpy.asscalar((y == yhat).sum() / y.shape[0])
+
+class ProbitVAE(VAE):
+    def __init__(self, X, y, a, **kwargs):
+        super().__init__(X, y, a, **kwargs)
+
+    def _llik(self, y, eta, phi_raw):
+        """Return E_q[ln p(y | eta, theta_0)] assuming a probit link.
+
+        Fix (latent) residual precision to 1.
+
+        """
+        F = .5 + .5 * T.erf(eta / T.sqrt(2))
+        return T.mean(T.sum(F, axis=1))
+
+    def predict(self, x):
+        raise NotImplementedError
+
+    def fit(self, *args, **kwargs):
+        super().fit(*args, **kwargs)
+        # This depends on local Theano tensors, so compile it here
+        self.predict = _F(inputs=[self.X], outputs=[T.sqrt(2) * T.erfinv(2 * T.dot(self.X, self.theta) - 1)])
+        return self
+
+    def score(self, x, y):
+        yhat = (numpy.array(self.predict(x)) > 0.5)
+        return numpy.asscalar((y == yhat).sum() / y.shape[0])
