@@ -230,8 +230,8 @@ def evaluate():
             if args.model == 'gaussian':
                 x_validate = x[-args.validation:]
                 y_validate = y[-args.validation:]
-                x = x[:args.validation]
-                y = y[:args.validation]
+                x = x[:-args.validation]
+                y = y[:-args.validation]
             else:
                 validation = numpy.zeros(args.num_samples, dtype='bool')
                 validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
