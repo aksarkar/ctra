@@ -25,6 +25,9 @@ _Z = lambda n: numpy.zeros(n).astype(_real)
 def _S(x, **kwargs):
     return theano.shared(x, borrow=True, **kwargs)
 
+def kl_normal_normal(mean, prec, prior_mean, prior_prec):
+    return .5 * (1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
+
 class VAE(Algorithm):
     """Base class providing the generic implementation. Specialized sub-classes are
 needed for specific likelihoods.
@@ -124,14 +127,14 @@ needed for specific likelihoods.
         error = self._llik(self.y, eta, phi_raw)
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
-        kl_qtheta_ptheta = .5 * T.sum(self.q_z * (1 - T.log(tau) + T.log(self.q_theta_prec) + tau * (T.sqr(self.q_theta_mean) + 1 / self.q_theta_prec)))
+        kl_qtheta_ptheta = (self.q_z * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, 0, tau)).sum()
         # Rasmussen and Williams, Eq. A.22
         kl_qz_pz = T.sum(self.q_z * T.log(self.q_z / pi) + (1 - self.q_z) * T.log((1 - self.q_z) / (1 - pi)))
         kl_hyper = 0
         for mean, log_prec, prior_mean, prior_log_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_log_precs):
             prec = self.min_prec + T.nnet.softplus(log_prec)
             prior_prec = self.min_prec + T.nnet.softplus(prior_log_prec)
-            kl_hyper += .5 * T.sum(1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
+            kl_hyper += kl_normal_normal(mean, prec, prior_mean, prior_prec).sum()
         kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
         # Kingma & Welling 2013 (eq. 8)
         elbo = (error - kl) * self.scale_n
