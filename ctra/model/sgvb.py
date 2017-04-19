@@ -237,7 +237,7 @@ needed for specific likelihoods.
         while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.sgd_step(epoch=t)
-            if not t % (100 * self.scale_n):
+            if not t % (10 * self.scale_n):
                 elbo_ = elbo
                 if elbo < elbo_:
                     logger.warn('ELBO increased, stopping early')
