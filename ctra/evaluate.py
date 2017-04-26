@@ -68,9 +68,9 @@ def _parser():
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
     vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
-    vb_args.add_argument('-r', '--learning-rate', type=float, help='Learning rate for SGD', default=1e-3)
+    vb_args.add_argument('-r', '--learning-rate', type=float, help='Learning rate for SGD', default=0.1)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
-    vb_args.add_argument('-i', '--max-epochs', type=int, help='Polling interval for SGD', default=4000)
+    vb_args.add_argument('-i', '--max-epochs', type=int, help='Polling interval for SGD', default=20)
     vb_args.add_argument('-t', '--trace', action='store_true', help='Store trace')
 
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
