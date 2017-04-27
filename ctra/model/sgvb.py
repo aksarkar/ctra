@@ -109,9 +109,10 @@ needed for specific likelihoods.
         self.scale_n = n / minibatch_n
 
         # Variational surrogate for target hyperposterior
-        self.q_probit_pi_mean = _S(_Z(m), name='q_probit_pi_mean')
-        self.q_probit_pi_log_prec = _S(_Z(m), name='q_probit_pi_log_prec')
-        self.q_pi_mean = 0.5 + 0.5 * T.erf(self.q_probit_pi_mean / T.sqrt(2))
+        self.q_w_mean = _S(_Z(m), name='q_w_mean')
+        self.q_w_log_prec = _S(_Z(m), name='q_w_log_prec')
+        self.q_b_mean = _S(_Z(1), name='q_b_mean')
+        self.q_b_log_prec = _S(_Z(1), name='q_b_log_prec')
         self.q_log_tau0_mean = _S(_Z(1), name='q_log_tau0_mean')
         self.q_log_tau0_log_prec = _S(_Z(1), name='q_log_tau0_log_prec')
         self.q_tau0_mean = T.exp(self.q_log_tau0_mean)
@@ -121,7 +122,7 @@ needed for specific likelihoods.
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
-        pi = T.dot(self.A, self.q_pi_mean)
+        pi = T.nnet.sigmoid(T.dot(self.A, self.q_w_mean) + T.addbroadcast(self.q_b_mean, 0))
         # Share spike variance across all groups
         tau0 = T.addbroadcast(self.q_tau0_mean, 0)
         tau1 = T.dot(self.A, self.q_tau1_mean)
@@ -137,15 +138,15 @@ needed for specific likelihoods.
 
         # These will include model-specific terms. Assume everything is
         # Gaussian on the variational side to simplify
-        self.hyperparam_means = [self.q_probit_pi_mean, self.q_log_tau0_mean, self.q_log_tau1_mean]
-        self.hyperparam_log_precs = [self.q_probit_pi_log_prec, self.q_log_tau0_log_prec, self.q_log_tau1_log_prec]
+        self.hyperparam_means = [self.q_w_mean, self.q_b_mean, self.q_log_tau0_mean, self.q_log_tau1_mean]
+        self.hyperparam_log_precs = [self.q_w_log_prec, self.q_b_log_prec, self.q_log_tau0_log_prec, self.q_log_tau1_log_prec]
         if hyperparam_means is not None:
             self.hyperparam_means.extend(hyperparam_means)
         if hyperparam_log_precs is not None:
             self.hyperparam_log_precs.extend(hyperparam_log_precs)
 
-        self.hyperprior_means = [_Z(m), _Z(1), _Z(m)]
-        self.hyperprior_log_precs = [_Z(m), _Z(1), _Z(m)]
+        self.hyperprior_means = [_Z(m), _Z(1), _Z(1), _Z(m)]
+        self.hyperprior_log_precs = [_Z(m), _Z(1), _Z(1), _Z(m)]
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(1))
             self.hyperprior_log_precs.append(_Z(1))
@@ -207,8 +208,11 @@ needed for specific likelihoods.
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
-        self._trace = _F(inputs=[epoch], outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] + self.variational_params, givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, 1 / self.q_theta_prec, self.q_pi_mean, self.q_tau1_mean]
+        self._trace = _F(inputs=[epoch],
+                         outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
+                         self.variational_params, givens=sgd_givens)
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, 1 / self.q_theta_prec,
+                       T.nnet.sigmoid(self.q_w_mean + T.addbroadcast(self.q_b_mean, 0))]
         self.opt = _F(inputs=[], outputs=opt_outputs,
                       givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
@@ -252,7 +256,7 @@ needed for specific likelihoods.
             if not numpy.isfinite(elbo):
                 logger.warn('ELBO infinite. Stopping early')
                 break
-        self._evidence, self.pip, self.theta, self.theta_var, self.pi, self.tau = self.opt()
+        self._evidence, self.pip, self.theta, self.theta_var, self.pi = self.opt()
         logger.info('Converged at epoch {}'.format(t))
         return self
 
