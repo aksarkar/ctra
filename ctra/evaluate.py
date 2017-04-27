@@ -18,6 +18,7 @@ import sys
 import h5py
 from matplotlib.pyplot import *
 import numpy
+import robo.fmin
 import scipy.stats
 import scipy.linalg
 
@@ -177,13 +178,15 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
     m = model(x, y, s.annot, learning_rate=args.learning_rate,
               random_state=s.random,
               minibatch_n=args.minibatch_size)
-    m = m.fit(max_epochs=args.max_epochs, xv=x_validate, yv=y_validate,
-              trace=args.trace)
+    def loss(loc):
+        return m.fit(loc=loc, max_epochs=args.max_epochs, xv=x_validate, yv=y_validate).validation_loss
+    opt = robo.fmin.bayesian_optimization(loss, numpy.array([-7]), numpy.array([0]), num_iterations=40)
+    m.fit(loc=opt['x_opt'], max_epochs=args.max_epochs, xv=x_validate, yv=y_validate)
     logger.info('Training set correlation = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
     logger.info('Validation set correlation = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
     if args.write_model is not None:
         with open('{}'.format(args.write_model), 'w') as f:
-            for row in zip(m.pip, m.theta_mean, m.theta_var, s.maf, s.theta):
+            for row in zip(m.pip, m.theta, m.theta_var, s.maf, s.theta):
                 print('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row), file=f)
     if args.plot is not None:
         q = numpy.logical_or(m.pip > 0.1, s.theta != 0)

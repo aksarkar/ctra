@@ -157,10 +157,10 @@ needed for specific likelihoods.
 
         # Pre-generate stochastic samples
         if random_state is None:
-            _R = numpy.random
+            self._R = numpy.random
         else:
-            _R = random_state
-        noise = _S(_R.normal(size=(5 * stoch_samples, minibatch_n)).astype(_real), name='noise')
+            self._R = random_state
+        noise = _S(self._R.normal(size=(5 * stoch_samples, minibatch_n)).astype(_real), name='noise')
 
         # Re-parameterize eta = X theta (Kingma, Salimans, & Welling NIPS
         # 2015), and backpropagate through the RNG (Kingma & Welling, ICLR
@@ -194,8 +194,7 @@ needed for specific likelihoods.
         elbo = (error - kl) * self.scale_n
 
         logger.debug('Compiling the Theano functions')
-        init_updates = [(self.q_logit_z, _R.normal(loc=-3, size=p).astype(_real))]
-        init_updates += [(param, _R.normal(size=p).astype(_real)) for param in self.params[1:]]
+        init_updates = [(param, self._R.normal(size=p).astype(_real)) for param in self.params]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_means, self.hyperprior_means)]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
@@ -223,9 +222,10 @@ needed for specific likelihoods.
     def log_weight(self, *args):
         raise NotImplementedError
         
-    def fit(self, max_epochs=1000, xv=None, yv=None, trace=False, **kwargs):
+    def fit(self, loc=0, max_epochs=100, xv=None, yv=None, trace=False, **kwargs):
         logger.debug('Starting SGD')
         self.initialize()
+        self.q_logit_z.set_value(self._R.normal(loc=loc, size=self.q_logit_z.get_value().shape).astype(_real))
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
@@ -238,8 +238,8 @@ needed for specific likelihoods.
                 if elbo < elbo_:
                     logger.warn('ELBO increased, stopping early')
                     break
-                validation_loss = self.loss(xv, yv)
-                loss = validation_loss
+                self.validation_loss = self.loss(xv, yv)
+                loss = self.validation_loss
                 outputs = self._trace(t)[:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
