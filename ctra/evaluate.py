@@ -43,8 +43,8 @@ def _parser():
     req_args.add_argument('-m', '--model', choices=['gaussian', 'probit', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
-    req_args.add_argument('--validation', type=int, help='Hold out validation set for posterior predictive check', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
+    req_args.add_argument('--validation', type=int, help='Hold out validation set', required=True)
 
     input_args = parser.add_mutually_exclusive_group()
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
@@ -55,7 +55,6 @@ def _parser():
     data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
-    output_args.add_argument('--diagnostic', action='store_true')
     output_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
     output_args.add_argument('--plot', help='File to plot active samples to', default=None)
 
@@ -68,11 +67,10 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
-    vb_args = parser.add_argument_group('Variational Bayes', 'Parameters for tuning Variational Bayes optimization')
+    vb_args = parser.add_argument_group('Stochastic Gradient Variational Bayes', 'Parameters for tuning SGVB')
     vb_args.add_argument('-r', '--learning-rate', type=float, help='Learning rate for SGD', default=0.1)
     vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
     vb_args.add_argument('-i', '--max-epochs', type=int, help='Polling interval for SGD', default=20)
-    vb_args.add_argument('-t', '--trace', action='store_true', help='Store trace')
 
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
