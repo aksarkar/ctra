@@ -221,12 +221,14 @@ needed for specific likelihoods.
 
         logger.debug('Finished initializing')
 
-    def _llik(self, *args):
+    def loss(self, *args):
+        """THEANO FUNCTION"""
         raise NotImplementedError
 
-    def log_weight(self, *args):
+    def _llik(self, *args):
+        """Return the log likelihood of the (mini)batch"""
         raise NotImplementedError
-        
+
     def fit(self, loc=0, max_epochs=100, xv=None, yv=None, trace=False, **kwargs):
         logger.debug('Starting SGD')
         self.initialize()
@@ -261,11 +263,11 @@ needed for specific likelihoods.
         return self
 
     def predict(self, x):
-        """Return the posterior mean prediction"""
+        """THEANO FUNCTION"""
         raise NotImplementedError
 
     def score(self, x, y):
-        """Return the coefficient of determination of the model fit"""
+        """THEANO FUNCTION"""
         raise NotImplementedError
 
 class GaussianSGVB(SGVB):
@@ -279,14 +281,13 @@ class GaussianSGVB(SGVB):
                          hyperparam_means=[self.log_lambda_mean],
                          hyperparam_log_precs=[log_lambda_log_prec],
                          **kwargs)
-        self.lambda_ = self.min_prec + T.nnet.softplus(self.log_lambda_mean)
         self.predict = _F(inputs=[self.X], outputs=self.eta_mean, allow_input_downcast=True)
+        # Coefficient of determination
         R = 1 - T.sqr(self.y - self.eta_mean).sum() / T.sqr(self.y - self.y.mean()).sum()
         self.score = _F(inputs=[self.X, self.y], outputs=R, allow_input_downcast=True)
         self.loss = _F(inputs=[self.X, self.y], outputs=T.sqr(self.y - self.eta_mean).sum(), allow_input_downcast=True)
 
     def _llik(self, y, eta, phi_raw):
-        """Return E_q[ln p(y | eta, theta_0)] assuming a linear link."""
         phi = T.exp(T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda_mean + T.sqrt(1 / self.log_lambda_prec) * phi_raw), 1))
         F = -.5 * (-T.log(phi) + T.sqr(y - eta) * phi)
         return T.mean(T.sum(F, axis=1))
@@ -302,20 +303,27 @@ class LogisticSGVB(SGVB):
                          hyperparam_log_precs=[bias_log_prec],
                          **kwargs)
 
+        eta = self.eta_mean + T.addbroadcast(self.bias_mean, 0)
+        log_loss = -(self.y * eta - T.nnet.softplus(eta)).sum()
+        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss, allow_input_downcast=True)
+
+        # F measure
+        yhat = T.cast(T.nnet.sigmoid(eta) > 0.5, 'int8')
+        precision = (yhat * self.y).sum() / yhat.sum()
+        recall = (yhat * self.y).sum() / self.y.sum()
+        F = 2 * precision * recall / (precision + recall)
+        self.score = _F(inputs=[self.X, self.y], outputs=F, allow_input_downcast=True)
+        self.predict = _F(inputs=[self.X], outputs=yhat)
+
     def _llik(self, y, eta, phi_raw):
-        """Return E_q[ln p(y | eta, theta_0)] assuming a logit link."""
+        """Return E_q[ln p(y | eta, ...)] assuming a logit link.
+
+        Fit an intercept phi using SGVB, assuming p(phi) ~ N(0, 1), q(phi) ~ N(m, v).
+
+        """
         phi = T.addbroadcast(T.nnet.softplus(self.bias_mean + T.sqrt(1 / self.bias_prec) * phi_raw), 1)
         F = y * (eta + phi) - T.nnet.softplus(eta + phi)
         return T.mean(T.sum(F, axis=1))
-
-    def predict(self, x):
-        raise NotImplementedError
-
-    def fit(self, *args, **kwargs):
-        super().fit(*args, **kwargs)
-        # This depends on local Theano tensors, so compile it here
-        self.predict = _F(inputs=[self.X], outputs=[T.nnet.sigmoid(T.dot(self.X, self.theta) + T.addbroadcast(self.bias_mean, 0))])
-        return self
 
     def score(self, x, y):
         yhat = (numpy.array(self.predict(x)) > 0.5)
