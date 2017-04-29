@@ -147,6 +147,8 @@ needed for specific likelihoods.
 
         self.hyperprior_means = [_Z(m), _Z(1), _Z(1), _Z(m)]
         self.hyperprior_log_precs = [_Z(m), _Z(1), _Z(1), _Z(m)]
+        if hyperparam_means is None:
+            hyperparam_means = []
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(1))
             self.hyperprior_log_precs.append(_Z(1))
@@ -325,13 +327,22 @@ class LogisticSGVB(SGVB):
         F = y * (eta + phi) - T.nnet.softplus(eta + phi)
         return T.mean(T.sum(F, axis=1))
 
-    def score(self, x, y):
-        yhat = (numpy.array(self.predict(x)) > 0.5)
-        return numpy.asscalar((y == yhat).sum() / y.shape[0])
-
 class ProbitSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         super().__init__(X, y, a, **kwargs)
+        self.predict = _F(inputs=[self.X], outputs=[])
+
+        eta = self.eta_mean
+        log_loss = -(self.y * eta - T.nnet.softplus(eta)).sum()
+        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss, allow_input_downcast=True)
+
+        # F measure
+        yhat = T.cast(T.sqrt(2) * T.erfinv(2 * T.dot(self.X, self.theta) - 1) > 0.5, 'int8')
+        precision = (yhat * self.y).sum() / yhat.sum()
+        recall = (yhat * self.y).sum() / self.y.sum()
+        F = 2 * precision * recall / (precision + recall)
+        self.score = _F(inputs=[self.X, self.y], outputs=F, allow_input_downcast=True)
+        self.predict = _F(inputs=[self.X], outputs=yhat)
 
     def _llik(self, y, eta, phi_raw):
         """Return E_q[ln p(y | eta, theta_0)] assuming a probit link.
@@ -341,16 +352,3 @@ class ProbitSGVB(SGVB):
         """
         F = .5 + .5 * T.erf(eta / T.sqrt(2))
         return T.mean(T.sum(F, axis=1))
-
-    def predict(self, x):
-        raise NotImplementedError
-
-    def fit(self, *args, **kwargs):
-        super().fit(*args, **kwargs)
-        # This depends on local Theano tensors, so compile it here
-        self.predict = _F(inputs=[self.X], outputs=[T.sqrt(2) * T.erfinv(2 * T.dot(self.X, self.theta) - 1)])
-        return self
-
-    def score(self, x, y):
-        yhat = (numpy.array(self.predict(x)) > 0.5)
-        return numpy.asscalar((y == yhat).sum() / y.shape[0])
