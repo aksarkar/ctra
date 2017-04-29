@@ -26,42 +26,7 @@ def kl_normal_normal(mean, prec, prior_mean, prior_prec):
     return .5 * (1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
 
 def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6):
-    """RMSProp updates (from Lasagne)
-
-    Scale learning rates by dividing with the moving average of the root mean
-    squared (RMS) gradients. See [1]_ for further description.
-    Parameters
-    ----------
-    loss_or_grads : symbolic expression or list of expressions
-        A scalar loss expression, or a list of gradient expressions
-    params : list of shared variables
-        The variables to generate update expressions for
-    learning_rate : float or symbolic scalar
-        The learning rate controlling the size of update steps
-    rho : float or symbolic scalar
-        Gradient moving average decay factor
-    epsilon : float or symbolic scalar
-        Small value added for numerical stability
-    Returns
-    -------
-    OrderedDict
-        A dictionary mapping each parameter to its update expression
-    Notes
-    -----
-    `rho` should be between 0 and 1. A value of `rho` close to 1 will decay the
-    moving average slowly and a value close to 0 will decay the moving average
-    fast.
-    Using the step size :math:`\\eta` and a decay factor :math:`\\rho` the
-    learning rate :math:`\\eta_t` is calculated as:
-    .. math::
-       r_t &= \\rho r_{t-1} + (1-\\rho)*g^2\\\\
-       \\eta_t &= \\frac{\\eta}{\\sqrt{r_t + \\epsilon}}
-    References
-    ----------
-    .. [1] Tieleman, T. and Hinton, G. (2012):
-           Neural Networks for Machine Learning, Lecture 6.5 - rmsprop.
-           Coursera. http://www.youtube.com/watch?v=O3sxAc4hxZU (formula @5:20)
-    """
+    """RMSProp updates (from Lasagne)"""
     grads = theano.grad(loss, params)
     updates = collections.OrderedDict()
 
@@ -85,8 +50,8 @@ needed for specific likelihoods.
 
     """
     def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=0.1,
-                 hyperparam_means=None, hyperparam_log_precs=None,
-                 random_state=None, minibatch_n=None, **kwargs):
+                 minibatch_n=None, rho=0.9, hyperparam_means=None,
+                 hyperparam_log_precs=None, random_state=None, **kwargs):
         logger.debug('Building the Theano graph')
         # Observed data. This needs to be symbolic for minibatches
         # TODO: borrow, GPU transfer, HDF5 transfer
@@ -205,7 +170,7 @@ needed for specific likelihoods.
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
         # Lasagne minimizes, so flip the sign
-        sgd_updates = rmsprop(-elbo, self.variational_params, learning_rate=learning_rate)
+        sgd_updates = rmsprop(-elbo, self.variational_params, learning_rate=learning_rate, rho=rho)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
@@ -231,10 +196,9 @@ needed for specific likelihoods.
         """Return the log likelihood of the (mini)batch"""
         raise NotImplementedError
 
-    def fit(self, loc=0, max_epochs=100, xv=None, yv=None, trace=False, **kwargs):
+    def fit(self, max_epochs=20, xv=None, yv=None, trace=False, **kwargs):
         logger.debug('Starting SGD')
         self.initialize()
-        self.q_logit_z.set_value(self._R.normal(loc=loc, size=self.q_logit_z.get_value().shape).astype(_real))
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
@@ -260,6 +224,7 @@ needed for specific likelihoods.
             if not numpy.isfinite(elbo):
                 logger.warn('ELBO infinite. Stopping early')
                 break
+        self.validation_loss = self.loss(xv, yv)
         self._evidence, self.pip, self.theta, self.theta_var, self.pi = self.opt()
         logger.info('Converged at epoch {}'.format(t))
         return self

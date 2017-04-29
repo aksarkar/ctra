@@ -67,11 +67,6 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
-    vb_args = parser.add_argument_group('Stochastic Gradient Variational Bayes', 'Parameters for tuning SGVB')
-    vb_args.add_argument('-r', '--learning-rate', type=float, help='Learning rate for SGD', default=0.1)
-    vb_args.add_argument('-b', '--minibatch-size', type=int, help='Minibatch size for SGD', default=100)
-    vb_args.add_argument('-i', '--max-epochs', type=int, help='Polling interval for SGD', default=20)
-
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
 
@@ -100,15 +95,6 @@ def _validate(args):
         raise _A('Minimum MAF must be larger than float tolerance')
     if args.max_maf is not None and args.max_maf > .5:
         raise _A('Maximum MAF must be less than or equal to 0.5')
-    if args.learning_rate <= 0:
-        raise _A('Learning rate must be positive')
-    if args.minibatch_size <= 0:
-        raise _A('Minibatch size must be positive')
-    if args.minibatch_size > args.num_samples:
-        logger.warn('Setting minibatch size to sample size')
-        args.minibatch_size = args.num_samples
-    if args.max_epochs <= 0:
-        raise _A('Maximum epochs must be positive')
     max_ = args.num_variants // len(args.annotation)
     for i, (num, var) in enumerate(args.annotation):
         if not 0 <= num <= max_:
@@ -173,15 +159,27 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
              'probit': ctra.model.ProbitSGVB,}[args.model]
-    m = model(x, y, s.annot, learning_rate=args.learning_rate,
-              random_state=s.random,
-              minibatch_n=args.minibatch_size)
-    def loss(loc):
-        return m.fit(loc=loc, max_epochs=args.max_epochs, xv=x_validate, yv=y_validate).validation_loss
-    opt = robo.fmin.bayesian_optimization(loss, numpy.array([-7]), numpy.array([0]), num_iterations=40)
-    m.fit(loc=opt['x_opt'], max_epochs=args.max_epochs, xv=x_validate, yv=y_validate)
-    logger.info('Training set correlation = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
-    logger.info('Validation set correlation = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
+    def fit(params):
+        stoch_samples, learning_rate, minibatch_size, max_epochs, rho = params.astype('float32')
+        m = model(x, y, s.annot, stoch_samples=int(stoch_samples),
+                  learning_rate=learning_rate, minibatch_n=int(minibatch_size),
+                  rho=rho, random_state=s.random)
+        # Multiply by 10 since we check ELBO, loss every 10 epochs
+        m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
+        return m
+
+    def loss(params):
+        m = fit(params)
+        return m.validation_loss
+
+    lower_bound = numpy.array([1, 0.01, 50, 2, 0.1])
+    upper_bound = numpy.array([50, 1, 200, 10, 0.9])
+    opt = robo.fmin.bayesian_optimization(loss, lower_bound, upper_bound, num_iterations=40)
+
+    # Use the optimum
+    m = fit(numpy.array(opt['x_opt']))
+    logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
+    logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
     if args.write_model is not None:
         with open('{}'.format(args.write_model), 'w') as f:
             for row in zip(m.pip, m.theta, m.theta_var, s.maf, s.theta):
