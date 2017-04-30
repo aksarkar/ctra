@@ -49,10 +49,8 @@ def _parser():
     input_args = parser.add_mutually_exclusive_group()
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     input_args.add_argument('-H', '--load-hdf5', help='HDF5 data set', default=None)
-
-    data_args = parser.add_argument_group('Data', 'Data processing options')
-    data_args.add_argument('-A', '--load-annotations', help='Annotation vector')
-    data_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
+    input_args.add_argument('-A', '--load-annotations', help='Annotation vector')
+    input_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
     output_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
