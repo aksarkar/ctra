@@ -52,6 +52,20 @@ needed for specific likelihoods.
     def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=0.1,
                  minibatch_n=None, rho=0.9, hyperparam_means=None,
                  hyperparam_log_precs=None, random_state=None, **kwargs):
+        """Initialize the model
+
+        X_ - n x p dosages
+        y_ - n x 1 phenotypes
+        a_ - p x 1 annotations (entries in {1..m})
+        stoch_samples - Noise samples for SGVB
+        learning_rate - initial learning rate for RMSprop
+        minibatch_n - Minibatch size
+        rho - decay rate for RMSprop
+        hyperparam_means - Means of variational surrogates for model-specific parameters
+        hyperparam_log_precs - Log precisions of variational surrogates for model-specific parameters
+        random_state - numpy RandomState
+
+        """
         logger.debug('Building the Theano graph')
         # Observed data. This needs to be symbolic for minibatches
         # TODO: borrow, GPU transfer, HDF5 transfer
