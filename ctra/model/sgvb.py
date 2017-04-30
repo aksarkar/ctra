@@ -240,7 +240,6 @@ needed for specific likelihoods.
                 break
         self.validation_loss = self.loss(xv, yv)
         self._evidence, self.pip, self.theta, self.theta_var, self.pi = self.opt()
-        logger.info('Converged at epoch {}'.format(t))
         return self
 
     def predict(self, x):
