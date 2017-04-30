@@ -50,8 +50,9 @@ needed for specific likelihoods.
 
     """
     def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=0.1,
-                 minibatch_n=None, rho=0.9, hyperparam_means=None,
-                 hyperparam_log_precs=None, random_state=None, **kwargs):
+                 minibatch_n=None, rho=0.9, weights=None,
+                 hyperparam_means=None, hyperparam_log_precs=None,
+                 random_state=None):
         """Initialize the model
 
         X_ - n x p dosages
@@ -61,6 +62,7 @@ needed for specific likelihoods.
         learning_rate - initial learning rate for RMSprop
         minibatch_n - Minibatch size
         rho - decay rate for RMSprop
+        weights - sample weights (use to efficiently represent bootstraps)
         hyperparam_means - Means of variational surrogates for model-specific parameters
         hyperparam_log_precs - Log precisions of variational surrogates for model-specific parameters
         random_state - numpy RandomState
@@ -68,13 +70,15 @@ needed for specific likelihoods.
         """
         logger.debug('Building the Theano graph')
         # Observed data. This needs to be symbolic for minibatches
-        # TODO: borrow, GPU transfer, HDF5 transfer
+        n, p = X_.shape
         self.X_ = _S(X_.astype(_real))
         self.y_ = _S(y_.astype(_real))
+        if weights is None:
+            weights = numpy.ones(n)
+        self.w_ = _S(weights.astype('int32'))
         self.p = numpy.array(list(collections.Counter(a_).values()), dtype='int')
 
         # One-hot encode the annotations
-        n, p = X_.shape
         m = self.p.shape[0]
         A = numpy.zeros((p, m)).astype('i1')
         A[range(p), a_] = 1
@@ -82,6 +86,7 @@ needed for specific likelihoods.
 
         self.X = T.fmatrix(name='X')
         self.y = T.fvector(name='y')
+        self.w = T.ivector(name='w')
 
         if minibatch_n is None:
             minibatch_n = n
@@ -151,7 +156,7 @@ needed for specific likelihoods.
         eta_var = T.dot(T.sqr(self.X), self.q_z / self.q_theta_prec + self.q_z * (1 - self.q_z) * T.sqr(self.q_theta_mean))
         eta_minibatch = epoch % 5
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
-        eta = self.eta_mean + T.sqrt(eta_var) * eta_raw
+        eta = self.w * (self.eta_mean + T.sqrt(eta_var) * eta_raw)
 
         # We need to generate independent noise samples for model parameters
         # besides the GSS parameters/hyperparameters (biases, variances in
@@ -187,7 +192,8 @@ needed for specific likelihoods.
         sgd_updates = rmsprop(-elbo, self.variational_params, learning_rate=learning_rate, rho=rho)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
-                      self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
+                      self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
+                      self.w: self.w_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
         self._trace = _F(inputs=[epoch],
                          outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
@@ -198,7 +204,8 @@ needed for specific likelihoods.
                       givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
                               (self.X, self.X_),
-                              (self.y, self.y_)])
+                              (self.y, self.y_),
+                              (self.w, self.w_)])
 
         logger.debug('Finished initializing')
 

@@ -65,6 +65,7 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
+    parser.add_argument('-j', '--jacknife', type=int, help='Number of jacknifes', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
 
@@ -157,9 +158,16 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
              'probit': ctra.model.ProbitSGVB,}[args.model]
-    def fit(params):
+
+    def fit(params, drop=None):
         stoch_samples, learning_rate, minibatch_size, max_epochs, rho = params.astype('float32')
-        m = model(x, y, s.annot, stoch_samples=int(stoch_samples),
+        if drop is not None:
+            n = y.shape[0]
+            weights = numpy.ones(y.shape)
+            weights[drop] = 0
+        else:
+            weights = None
+        m = model(x, y, s.annot, weights=weights, stoch_samples=int(stoch_samples),
                   learning_rate=learning_rate, minibatch_n=int(minibatch_size),
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
@@ -170,14 +178,22 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         m = fit(params)
         return m.validation_loss
 
+    # Find the optimal learning parameters (minimum test loss)
     lower_bound = numpy.array([1, 0.01, 50, 2, 0.1])
     upper_bound = numpy.array([50, 1, 200, 10, 0.9])
     opt = robo.fmin.bayesian_optimization(loss, lower_bound, upper_bound, num_iterations=40)
 
     # Use the optimum
     m = fit(numpy.array(opt['x_opt']))
+    logger.info('Optimal learning parameters = {}'.format(opt))
     logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
     logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
+
+    if args.jacknife > 0:
+        logger.info('Starting jacknife estimates')
+        jacknife_se = numpy.array([fit(numpy.array(opt['x_opt']), drop=i).pi for i in s.random.choice(y.shape[0], 100)]).std()
+        logger.info('Jacknife SE = {}'.format(jacknife_se))
+
     if args.write_model is not None:
         with open('{}'.format(args.write_model), 'w') as f:
             for row in zip(m.pip, m.theta, m.theta_var, s.maf, s.theta):
