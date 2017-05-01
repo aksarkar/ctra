@@ -292,14 +292,16 @@ class LogisticSGVB(SGVB):
                          **kwargs)
 
         eta = self.eta_mean + T.addbroadcast(self.bias_mean, 0)
-        log_loss = -(self.y * eta - T.nnet.softplus(eta)).sum()
-        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss, allow_input_downcast=True)
+        prob_y = T.nnet.sigmoid(eta)
+        self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
+        log_loss = -self.y * T.log(prob_y) - (1 - self.y) * T.log(1 - prob_y)
+        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss.sum(), allow_input_downcast=True)
 
         # F measure
-        yhat = T.cast(T.nnet.sigmoid(eta) > 0.5, 'int8')
-        precision = (yhat * self.y).sum() / yhat.sum()
-        recall = (yhat * self.y).sum() / self.y.sum()
-        F = 2 * precision * recall / (precision + recall)
+        yhat = T.cast(prob_y > 0.5, 'int8')
+        precision = (yhat * self.y).sum() / (yhat.sum() + 1e-8)
+        recall = (yhat * self.y).sum() / (self.y.sum() + 1e-8)
+        F = 2 * precision * recall / (precision + recall + 1e-8)
         self.score = _F(inputs=[self.X, self.y], outputs=F, allow_input_downcast=True)
         self.predict = _F(inputs=[self.X], outputs=yhat)
 
@@ -319,11 +321,13 @@ class ProbitSGVB(SGVB):
         self.predict = _F(inputs=[self.X], outputs=[])
 
         eta = self.eta_mean
-        log_loss = -(self.y * eta - T.nnet.softplus(eta)).sum()
-        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss, allow_input_downcast=True)
+        prob_y = T.sqrt(2) * T.erfinv(2 * eta - 1)
+        self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
+        log_loss = -self.y * T.log(prob_y) - (1 - self.y) * T.log(1 - prob_y)
+        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss.sum(), allow_input_downcast=True)
 
         # F measure
-        yhat = T.cast(T.sqrt(2) * T.erfinv(2 * T.dot(self.X, self.theta) - 1) > 0.5, 'int8')
+        yhat = T.cast(prob_y > 0.5, 'int8')
         precision = (yhat * self.y).sum() / yhat.sum()
         recall = (yhat * self.y).sum() / self.y.sum()
         F = 2 * precision * recall / (precision + recall)
