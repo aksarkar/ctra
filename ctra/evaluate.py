@@ -171,7 +171,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, ma.predict_proba(x_validate)[:,1])))
 
     def fit(params, drop=None):
-        stoch_samples, learning_rate, minibatch_size, max_epochs, rho, loc = params.astype('float32')
+        stoch_samples, learning_rate, minibatch_size, max_epochs, rho = params.astype('float32')
         if drop is not None:
             n = y.shape[0]
             weights = numpy.ones(y.shape)
@@ -182,7 +182,7 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
                   learning_rate=learning_rate, minibatch_n=int(minibatch_size),
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
-        m.fit(loc=loc, max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
+        m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
         return m
 
     def loss(params):
@@ -190,9 +190,9 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         return m.validation_loss
 
     # Find the optimal learning parameters (minimum test loss)
-    # stoch_samples, learning_rate, minibatch_size, max_epochs, rho, loc
-    lower_bound = numpy.array([1, 0.01, 50, 2, 0.1, -7])
-    upper_bound = numpy.array([50, 1, 200, 10, 0.9, 0])
+    # stoch_samples, learning_rate, minibatch_size, max_epochs, rho
+    lower_bound = numpy.array([1, 0.01, 50, 2, 0.5])
+    upper_bound = numpy.array([50, 1, 200, 20, 0.9])
     opt = robo.fmin.bayesian_optimization(loss, lower_bound, upper_bound, num_iterations=40)
 
     # Use the optimum
