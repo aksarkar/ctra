@@ -52,7 +52,6 @@ def _parser():
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     input_args.add_argument('-H', '--load-hdf5', help='HDF5 data set', default=None)
     input_args.add_argument('-A', '--load-annotations', help='Annotation vector')
-    input_args.add_argument('--center', action='store_true', help='Center covariates to have zero mean', default=False)
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
     output_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
@@ -151,9 +150,6 @@ def _load_data(args, s):
             x, y = s.sample_gaussian(n=args.num_samples)
         else:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
-    if args.center:
-        x -= x.mean(axis=0)
-        y -= y.mean()
     return x, y
 
 def _fit(args, s, x, y, x_validate=None, y_validate=None):
@@ -241,28 +237,25 @@ def evaluate():
     _validate(args)
     logging.getLogger('ctra').setLevel(args.log_level)
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
-        if args.validation is not None:
-            args.num_samples += args.validation
+        args.num_samples += args.validation
         x, y = _load_data(args, s)
-        if args.validation is not None:
-            if args.model == 'gaussian':
-                x_validate = x[-args.validation:]
-                y_validate = y[-args.validation:]
-                x = x[:-args.validation]
-                y = y[:-args.validation]
-            else:
-                validation = numpy.zeros(args.num_samples, dtype='bool')
-                validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
-                x_validate = x[validation]
-                y_validate = y[validation]
-                x = x[~validation]
-                y = y[~validation]
-            if args.center:
-                x_validate -= x_validate.mean(axis=0)
-                y_validate -= y_validate.mean()
-                x -= x.mean(axis=0)
-                y -= y.mean()
+        if args.model == 'gaussian':
+            # Assume samples are exchangeable
+            x_validate = x[-args.validation:]
+            y_validate = y[-args.validation:]
+            x = x[:-args.validation]
+            y = y[:-args.validation]
         else:
-            x_validate = None
-            y_validate = None
+            # Randomly subsample hold out set
+            validation = numpy.zeros(args.num_samples, dtype='bool')
+            validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
+            x_validate = x[validation]
+            y_validate = y[validation]
+            x = x[~validation]
+            y = y[~validation]
+        x_validate -= x_validate.mean(axis=0)
+        x -= x.mean(axis=0)
+        if args.model == 'gaussian':
+            y_validate -= y_validate.mean()
+            y -= y.mean()
         _fit(args, s, x, y, x_validate, y_validate)
