@@ -44,6 +44,12 @@ def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6):
 
     return updates
 
+def f1_score(y, yhat):
+    precision = (yhat * y).sum() / (yhat.sum() + 1e-8)
+    recall = (yhat * y).sum() / (y.sum() + 1e-8)
+    F = 2 * precision * recall / (precision + recall + 1e-8)
+    return F
+
 class SGVB:
     """Base class providing the generic implementation. Specialized sub-classes are
 needed for specific likelihoods.
@@ -299,10 +305,8 @@ class LogisticSGVB(SGVB):
 
         # F measure
         yhat = T.cast(prob_y > 0.5, 'int8')
-        precision = (yhat * self.y).sum() / (yhat.sum() + 1e-8)
-        recall = (yhat * self.y).sum() / (self.y.sum() + 1e-8)
-        F = 2 * precision * recall / (precision + recall + 1e-8)
-        self.score = _F(inputs=[self.X, self.y], outputs=F, allow_input_downcast=True)
+        self.score = _F(inputs=[self.X, self.y], outputs=f1_score(self.y, yhat),
+                        allow_input_downcast=True)
         self.predict = _F(inputs=[self.X], outputs=yhat)
 
     def _llik(self, y, eta, phi_raw):
@@ -321,17 +325,15 @@ class ProbitSGVB(SGVB):
         self.predict = _F(inputs=[self.X], outputs=[])
 
         eta = self.eta_mean
-        prob_y = T.sqrt(2) * T.erfinv(2 * eta - 1)
+        prob_y = T.clip(T.sqrt(2) * T.erfinv(2 * eta - 1), 1e-6, 1 - 1e-6)
         self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
         log_loss = -self.y * T.log(prob_y) - (1 - self.y) * T.log(1 - prob_y)
         self.loss = _F(inputs=[self.X, self.y], outputs=log_loss.sum(), allow_input_downcast=True)
 
         # F measure
         yhat = T.cast(prob_y > 0.5, 'int8')
-        precision = (yhat * self.y).sum() / yhat.sum()
-        recall = (yhat * self.y).sum() / self.y.sum()
-        F = 2 * precision * recall / (precision + recall)
-        self.score = _F(inputs=[self.X, self.y], outputs=F, allow_input_downcast=True)
+        self.score = _F(inputs=[self.X, self.y], outputs=f1_score(self.y, yhat),
+                        allow_input_downcast=True)
         self.predict = _F(inputs=[self.X], outputs=yhat)
 
     def _llik(self, y, eta, phi_raw):
