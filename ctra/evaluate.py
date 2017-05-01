@@ -89,7 +89,7 @@ def _validate(args):
         args.study_prop = 0.5
         logger.warn('Assuming study prevalence 0.5')
     if args.prevalence is None and args.model in ('probit', 'logistic'):
-        raise _A('Prevalence must be specified for logistic model')
+        raise _A('Prevalence must be specified for model "{}"'.format(args.model))
     if args.min_maf is not None and (numpy.isclose(args.min_maf, 0) or args.min_maf < 0):
         raise _A('Minimum MAF must be larger than float tolerance')
     if args.max_maf is not None and args.max_maf > .5:
