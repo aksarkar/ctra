@@ -217,9 +217,10 @@ needed for specific likelihoods.
         """Return the log likelihood of the (mini)batch"""
         raise NotImplementedError
 
-    def fit(self, max_epochs=20, xv=None, yv=None, trace=False, **kwargs):
+    def fit(self, loc=0, max_epochs=20, xv=None, yv=None, trace=False, **kwargs):
         logger.debug('Starting SGD')
         self.initialize()
+        self.q_logit_z.set_value(self._R.normal(loc=loc, size=self.q_logit_z.get_value().shape).astype(_real))
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
