@@ -21,6 +21,8 @@ import numpy
 import robo.fmin
 import scipy.stats
 import scipy.linalg
+import sklearn.linear_model
+import sklearn.metrics
 
 import ctra.algorithms
 import ctra.formats
@@ -159,6 +161,18 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
              'logistic': ctra.model.LogisticSGVB,
              'probit': ctra.model.ProbitSGVB,}[args.model]
 
+    alternate = {'gaussian': sklearn.linear_model.ElasticNetCV(),
+                 'logistic': sklearn.linear_model.LogisticRegressionCV(fit_intercept=True),
+                 'probit': sklearn.linear_model.LogisticRegressionCV(fit_intercept=True),
+    }[args.model]
+
+    logger.info('Fitting regularized model')
+    ma = alternate.fit(x, y)
+    logger.info('Alternate model training score = {:.3f}'.format(ma.score(x, y)))
+    logger.info('Alternate model validation score = {:.3f}'.format(ma.score(x_validate, y_validate)))
+    logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, ma.predict_proba(x)[:,1])))
+    logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, ma.predict_proba(x_validate)[:,1])))
+
     def fit(params, drop=None):
         stoch_samples, learning_rate, minibatch_size, max_epochs, rho, loc = params.astype('float32')
         if drop is not None:
@@ -189,6 +203,9 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
     logger.info('Optimal learning parameters = {}'.format(opt))
     logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
     logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
+    logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, m.predict_proba(x))))
+    logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, m.predict_proba(x_validate))))
+    logger.info('Posterior mode pi = {}'.format(m.pi))
 
     if args.jacknife > 0:
         logger.info('Starting jacknife estimates')
@@ -217,8 +234,6 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
         close()
     if args.interact:
         code.interact(banner='', local=dict(globals(), **locals()))
-    logger.info('Writing posterior mean pi')
-    numpy.savetxt(sys.stdout.buffer, m.pi, fmt='%.3g')
 
 def evaluate():
     """Entry point for simulations on synthetic genotypes/phenotypes/annotations"""
