@@ -1,8 +1,7 @@
 import numpy
 import pytest
 
-import ctra.model
-import ctra.simulation
+import ctra
 
 def _estimate(simulation, pheno, **kwargs):
     simulation.sample_effects(pve=0.5, **kwargs)
