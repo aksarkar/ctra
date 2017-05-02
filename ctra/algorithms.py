@@ -5,8 +5,6 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import itertools
 
-import numpy
-
 def join(seq1, seq2, key1, key2=None):
     """Yield pairs of elements s1, s2 in seq1, seq2 such that key1(s1) == key2(s2).
 
@@ -37,46 +35,6 @@ def join(seq1, seq2, key1, key2=None):
             k2, g2 = next(seq2_buckets)
 
 def kwise(iterable, k):
+    """Yield subsequent k-tuples of elements of iterable"""
     it = iter(iterable)
     return zip(*[it for _ in range(k)])
-
-def slice_sample(f, init, num_samples=10000, warmup=5000):
-    """Slice sampler (Neal, 2003)"""
-    _U = numpy.random.uniform
-    samples = numpy.zeros((num_samples, init.shape[0]))
-    x = init
-    fx = f(init)
-    for i in range(num_samples + warmup):
-        fw = fx + numpy.log(_U())
-        left = x.copy()
-        right = x.copy()
-        z = x.copy()
-        for k in range(init.shape[0]):
-            # Step out
-            size = _U()
-            left[k] -= size
-            while f(left) > fw:
-                left[k] -= 0.25
-            right[k] += 1 - size
-            while f(right) > fw:
-                right[k] += 0.25
-
-            # Step in
-            fz = float('-inf')
-            while fz <= fw:
-                z[k] = left[k] + _U() * (right[k] - left[k])
-                fz = f(z)
-                if fz > fw:
-                    break
-                elif z[k] > x[k]:
-                    right[k] = z[k]
-                elif z[k] < x[k]:
-                    left[k] = z[k]
-                else:
-                    raise ValueError('Failed to step in')
-        x = z
-        fx = fz
-        if i >= warmup:
-            # In the multidimensional case, unpack the components of x
-            samples[i - warmup] = x.ravel()
-    return samples
