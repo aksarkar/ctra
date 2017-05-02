@@ -46,7 +46,8 @@ def _parser():
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
-    req_args.add_argument('--validation', type=int, help='Hold out validation set', required=True)
+    req_args.add_argument('--test', type=int, help='Test set size (for Bayesian optimization)', required=True)
+    req_args.add_argument('--validation', type=int, help='Hold out validation set size (for final fit)', required=True)
 
     input_args = parser.add_mutually_exclusive_group()
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
@@ -153,28 +154,49 @@ def _load_data(args, s):
         else:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
     # Hold out samples
+    hold_out_n = args.test + args.validation
     if args.model == 'gaussian':
         # Assume samples are exchangeable
+        x_test = x[-hold_out_n:-args.validation]
+        y_test = y[-hold_out_n:-args.validation]
         x_validate = x[-args.validation:]
         y_validate = y[-args.validation:]
-        x = x[:-args.validation]
-        y = y[:-args.validation]
+        x = x[:-hold_out_n]
+        y = y[:-hold_out_n]
     else:
         # Randomly subsample hold out set
+        hold_out = s.random.choice(args.num_samples, hold_out_n, replace=False)
+        test = numpy.zeros(args.num_samples, dtype='bool')
+        test[hold_out[:args.test]] = True
         validation = numpy.zeros(args.num_samples, dtype='bool')
-        validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
+        validation[hold_out[args.test:]] = True
+        x_test = x[test]
+        y_test = y[test]
         x_validate = x[validation]
         y_validate = y[validation]
-        x = x[~validation]
-        y = y[~validation]
-    x_validate -= x_validate.mean(axis=0)
+        x = x[~hold_out]
+        y = y[~hold_out]
     x -= x.mean(axis=0)
+    x_test -= x_test.mean(axis=0)
+    x_validate -= x_validate.mean(axis=0)
     if args.model == 'gaussian':
-        y_validate -= y_validate.mean()
         y -= y.mean()
-    return x, y, x_validate, y_validate
+        y_test -= y_test.mean()
+        y_validate -= y_validate.mean()
+    return x, y, x_test, y_test, x_validate, y_validate
 
-def _fit(args, s, x, y, x_validate=None, y_validate=None):
+def _performance(args, model, x, y, x_test, y_test, x_validate, y_validate):
+    if len(y.shape) > 1:
+        y = y[:,1]
+    logger.info('Training set score = {:.3f}'.format(numpy.asscalar(model.score(x, y))))
+    logger.info('Test set score = {:.3f}'.format(numpy.asscalar(model.score(x_test, y_test))))
+    logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(model.score(x_validate, y_validate))))
+    if args.model != 'gaussian':
+        logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, model.predict_proba(x))))
+        logger.info('Test set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_test, model.predict_proba(x_test))))
+        logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, model.predict_proba(x_validate))))
+
+def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
     }[args.model]
@@ -260,6 +282,7 @@ def evaluate():
     _validate(args)
     logging.getLogger('ctra').setLevel(args.log_level)
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
+        args.num_samples += args.test
         args.num_samples += args.validation
-        x, y, x_validate, y_validate = _load_data(args, s)
-        _fit(args, s, x, y, x_validate, y_validate)
+        x, y, x_test, y_test, x_validate, y_validate = _load_data(args, s)
+        _fit(args, s, x, y, x_test, y_test, x_validate, y_validate)
