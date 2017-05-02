@@ -103,6 +103,7 @@ def _validate(args):
             raise _A('Annotation {} must have positive effect size variance'.format(i))
 
 def _load_data(args, s):
+    # Prepare the simulation parameters
     if args.min_maf is not None or args.max_maf is not None:
         if args.min_maf is None:
             args.min_maf = 0.01
@@ -118,6 +119,7 @@ def _load_data(args, s):
     if args.permute_causal:
         logger.debug('Generating effects with permuted causal indicator')
         s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
+    # Load/generate the genotypes and phenotypes
     if args.load_oxstats:
         logger.debug('Loading OXSTATS datasets')
         with contextlib.ExitStack() as stack:
@@ -150,7 +152,27 @@ def _load_data(args, s):
             x, y = s.sample_gaussian(n=args.num_samples)
         else:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
-    return x, y
+    # Hold out samples
+    if args.model == 'gaussian':
+        # Assume samples are exchangeable
+        x_validate = x[-args.validation:]
+        y_validate = y[-args.validation:]
+        x = x[:-args.validation]
+        y = y[:-args.validation]
+    else:
+        # Randomly subsample hold out set
+        validation = numpy.zeros(args.num_samples, dtype='bool')
+        validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
+        x_validate = x[validation]
+        y_validate = y[validation]
+        x = x[~validation]
+        y = y[~validation]
+    x_validate -= x_validate.mean(axis=0)
+    x -= x.mean(axis=0)
+    if args.model == 'gaussian':
+        y_validate -= y_validate.mean()
+        y -= y.mean()
+    return x, y, x_validate, y_validate
 
 def _fit(args, s, x, y, x_validate=None, y_validate=None):
     model = {'gaussian': ctra.model.GaussianSGVB,
@@ -159,7 +181,6 @@ def _fit(args, s, x, y, x_validate=None, y_validate=None):
 
     alternate = {'gaussian': sklearn.linear_model.ElasticNetCV(),
                  'logistic': sklearn.linear_model.LogisticRegressionCV(penalty='l1', solver='liblinear', fit_intercept=True),
-
     }[args.model]
 
     logger.info('Fitting regularized model')
@@ -240,24 +261,5 @@ def evaluate():
     logging.getLogger('ctra').setLevel(args.log_level)
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
         args.num_samples += args.validation
-        x, y = _load_data(args, s)
-        if args.model == 'gaussian':
-            # Assume samples are exchangeable
-            x_validate = x[-args.validation:]
-            y_validate = y[-args.validation:]
-            x = x[:-args.validation]
-            y = y[:-args.validation]
-        else:
-            # Randomly subsample hold out set
-            validation = numpy.zeros(args.num_samples, dtype='bool')
-            validation[s.random.choice(args.num_samples, args.validation, replace=False)] = True
-            x_validate = x[validation]
-            y_validate = y[validation]
-            x = x[~validation]
-            y = y[~validation]
-        x_validate -= x_validate.mean(axis=0)
-        x -= x.mean(axis=0)
-        if args.model == 'gaussian':
-            y_validate -= y_validate.mean()
-            y -= y.mean()
+        x, y, x_validate, y_validate = _load_data(args, s)
         _fit(args, s, x, y, x_validate, y_validate)
