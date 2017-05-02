@@ -317,29 +317,3 @@ class LogisticSGVB(SGVB):
         phi = T.addbroadcast(T.nnet.softplus(self.bias_mean + T.sqrt(1 / self.bias_prec) * phi_raw), 1)
         F = y * (eta + phi) - T.nnet.softplus(eta + phi)
         return T.mean(T.sum(F, axis=1))
-
-class ProbitSGVB(SGVB):
-    def __init__(self, X, y, a, **kwargs):
-        super().__init__(X, y, a, **kwargs)
-        self.predict = _F(inputs=[self.X], outputs=[])
-
-        eta = self.eta_mean
-        prob_y = T.clip(T.sqrt(2) * T.erfinv(2 * eta - 1), 1e-6, 1 - 1e-6)
-        self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
-        log_loss = -self.y * T.log(prob_y) - (1 - self.y) * T.log(1 - prob_y)
-        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss.sum(), allow_input_downcast=True)
-
-        # F measure
-        yhat = T.cast(prob_y > 0.5, 'int8')
-        self.score = _F(inputs=[self.X, self.y], outputs=f1_score(self.y, yhat),
-                        allow_input_downcast=True)
-        self.predict = _F(inputs=[self.X], outputs=yhat)
-
-    def _llik(self, y, eta, phi_raw):
-        """Return E_q[ln p(y | eta, theta_0)] assuming a probit link.
-
-        Fix (latent) residual precision to 1.
-
-        """
-        F = .5 + .5 * T.erf(eta / T.sqrt(2))
-        return T.mean(T.sum(F, axis=1))

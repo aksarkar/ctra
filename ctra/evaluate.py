@@ -42,7 +42,7 @@ def _parser():
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     req_args = parser.add_argument_group('Required arguments', '')
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
-    req_args.add_argument('-m', '--model', choices=['gaussian', 'probit', 'logistic'], help='Type of model to fit', required=True)
+    req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
@@ -89,7 +89,7 @@ def _validate(args):
     if args.model != 'gaussian' and args.study_prop is None:
         args.study_prop = 0.5
         logger.warn('Assuming study prevalence 0.5')
-    if args.prevalence is None and args.model in ('probit', 'logistic'):
+    if args.prevalence is None and args.model == 'logistic':
         raise _A('Prevalence must be specified for model "{}"'.format(args.model))
     if args.min_maf is not None and (numpy.isclose(args.min_maf, 0) or args.min_maf < 0):
         raise _A('Minimum MAF must be larger than float tolerance')
@@ -155,11 +155,11 @@ def _load_data(args, s):
 def _fit(args, s, x, y, x_validate=None, y_validate=None):
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
-             'probit': ctra.model.ProbitSGVB,}[args.model]
+    }[args.model]
 
     alternate = {'gaussian': sklearn.linear_model.ElasticNetCV(),
                  'logistic': sklearn.linear_model.LogisticRegressionCV(penalty='l1', solver='liblinear', fit_intercept=True),
-                 'probit': sklearn.linear_model.LogisticRegressionCV(penalty='l1', solver='liblinear', fit_intercept=True),
+
     }[args.model]
 
     logger.info('Fitting regularized model')
