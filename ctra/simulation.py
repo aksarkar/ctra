@@ -241,7 +241,7 @@ class Simulation:
                 num_taken = min(n - case_target, batch_size - num_sampled_cases)
                 x[n - num_taken:n] = z[~case_index][:num_taken]
                 n -= num_taken
-        return x + self.x_mean, y
+        return x, y
 
     def _multinomial(self, pmf):
         """Sample from multiple multinomial distributions in parallel. This is needed
