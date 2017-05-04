@@ -213,7 +213,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
         logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, ma.predict_proba(x)[:,1])))
         logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, ma.predict_proba(x_validate)[:,1])))
 
-    def fit(params, drop=None):
+    def fit(params, drop=None, b=None):
         stoch_samples, learning_rate, minibatch_size, max_epochs, rho = params.astype('float32')
         if drop is not None:
             n = y.shape[0]
@@ -221,7 +221,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
             weights[drop] = 0
         else:
             weights = None
-        m = model(x, y, s.annot, weights=weights, stoch_samples=int(stoch_samples),
+        m = model(x, y, s.annot, b=b, weights=weights, stoch_samples=int(stoch_samples),
                   learning_rate=learning_rate, minibatch_n=int(minibatch_size),
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
@@ -236,17 +236,28 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     # stoch_samples, learning_rate, minibatch_size, max_epochs, rho
     lower_bound = numpy.array([1, 0.01, 50, 2, 0.5])
     upper_bound = numpy.array([50, 1, 200, 20, 0.9])
+    logger.info('Performing Bayesian optimization')
     opt = robo.fmin.bayesian_optimization(loss, lower_bound, upper_bound, num_iterations=40)
-
-    # Use the optimum
-    m = fit(numpy.array(opt['x_opt']))
     logger.info('Optimal learning parameters = {}'.format(opt))
-    logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m.score(x, y))))
-    logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m.score(x_validate, y_validate))))
+
+    logger.info('Fitting genome-wide model')
+    m0 = fit(numpy.array(opt['x_opt']))
+    logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m0.score(x, y))))
+    logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m0.score(x_validate, y_validate))))
     if args.model != 'gaussian':
-        logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, m.predict_proba(x))))
-        logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, m.predict_proba(x_validate))))
-    logger.info('Posterior mode pi = {}'.format(m.pi))
+        logger.info('Training set AUPRC = {:.3f}'.format(auprc(y, m0.predict_proba(x))))
+        logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m0.predict_proba(x_validate))))
+    logger.info('Posterior mode pi = {}'.format(scipy.special.expit(m0.b)))
+
+    if len(args.annotation) > 1:
+        logger.info('Fitting annotation model')
+        m1 = fit(numpy.array(opt['x_opt']), b=m0.b)
+        logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m1.score(x, y))))
+        logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m1.score(x_validate, y_validate))))
+        if args.model != 'gaussian':
+            logger.info('Training set AUPRC = {:.3f}'.format(auprc(y, m1.predict_proba(x))))
+            logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m1.predict_proba(x_validate))))
+        logger.info('Posterior mode annotation log odds ratio = {}'.format(m1.w))
 
     if args.jacknife > 0:
         logger.info('Starting jacknife estimates')

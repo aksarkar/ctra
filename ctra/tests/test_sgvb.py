@@ -2,6 +2,7 @@ import os
 
 import numpy
 import pytest
+import scipy.special
 
 import ctra
 
@@ -35,6 +36,11 @@ def test_gaussian_sgvb_two_component():
     with ctra.simulation.simulation(p=2000, pve=0.5, annotation_params=[(10, 1), (10, 1)], seed=0) as s:
         x, y = s.sample_gaussian(n=1000)
         _fit_model(ctra.model.GaussianSGVB, x, y, s, center_y=True)
+
+def test_gaussian_sgvb_with_b():
+    with ctra.simulation.simulation(p=2000, pve=0.5, annotation_params=[(10, 1), (10, 1)], seed=0) as s:
+        x, y = s.sample_gaussian(n=1000)
+        _fit_model(ctra.model.GaussianSGVB, x, y, s, center_y=True, b=scipy.special.logit(0.01))
 
 def test_logistic_sgvb_one_component():
     with ctra.simulation.simulation(p=2000, pve=0.5, annotation_params=[(200, 1)], seed=0) as s:

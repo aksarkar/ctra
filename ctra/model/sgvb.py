@@ -55,7 +55,7 @@ class SGVB:
 needed for specific likelihoods.
 
     """
-    def __init__(self, X_, y_, a_, stoch_samples=50, learning_rate=0.1,
+    def __init__(self, X_, y_, a_, b=None, stoch_samples=50, learning_rate=0.1,
                  minibatch_n=None, rho=0.9, weights=None,
                  hyperparam_means=None, hyperparam_log_precs=None,
                  random_state=None):
@@ -112,7 +112,10 @@ needed for specific likelihoods.
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
-        pi = T.nnet.sigmoid(T.dot(self.A, self.q_w_mean) + T.addbroadcast(self.q_b_mean, 0))
+        if b is None:
+            pi = T.nnet.sigmoid(T.addbroadcast(self.q_b_mean, 0))
+        else:
+            pi = T.nnet.sigmoid(T.dot(self.A, self.q_w_mean) + b)
         # Share spike variance across all groups
         tau0 = T.addbroadcast(self.q_tau0_mean, 0)
         tau1 = T.dot(self.A, self.q_tau1_mean)
@@ -126,19 +129,30 @@ needed for specific likelihoods.
         self.q_theta_prec = self.min_prec + T.nnet.softplus(self.q_theta_log_prec)
         self.params = [self.q_logit_z, self.q_theta_mean, self.q_theta_log_prec]
 
-        # These will include model-specific terms. Assume everything is
-        # Gaussian on the variational side to simplify
-        self.hyperparam_means = [self.q_w_mean, self.q_b_mean, self.q_log_tau0_mean, self.q_log_tau1_mean]
-        self.hyperparam_log_precs = [self.q_w_log_prec, self.q_b_log_prec, self.q_log_tau0_log_prec, self.q_log_tau1_log_prec]
+        self.hyperparam_means = [self.q_log_tau0_mean, self.q_log_tau1_mean]
+        self.hyperparam_log_precs = [self.q_log_tau0_log_prec, self.q_log_tau1_log_prec]
+        self.hyperprior_means = [_Z(1), _Z(m)]
+        self.hyperprior_log_precs = [_Z(1), _Z(m)]
+
+        if b is None:
+            self.hyperparam_means.append(self.q_b_mean)
+            self.hyperparam_log_precs.append(self.q_b_log_prec)
+            self.hyperprior_means.append(_Z(1))
+            self.hyperprior_log_precs.append(_Z(1))
+        else:
+            self.hyperparam_means.append(self.q_w_mean)
+            self.hyperparam_log_precs.append(self.q_w_log_prec)
+            self.hyperprior_means.append(_Z(m))
+            self.hyperprior_log_precs.append(_Z(m))
+
         if hyperparam_means is not None:
+            # Include model-specific terms. Assume everything is Gaussian on
+            # the variational side to simplify
             self.hyperparam_means.extend(hyperparam_means)
+        else:
+            hyperparam_means = []
         if hyperparam_log_precs is not None:
             self.hyperparam_log_precs.extend(hyperparam_log_precs)
-
-        self.hyperprior_means = [_Z(m), _Z(1), _Z(1), _Z(m)]
-        self.hyperprior_log_precs = [_Z(m), _Z(1), _Z(1), _Z(m)]
-        if hyperparam_means is None:
-            hyperparam_means = []
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(1))
             self.hyperprior_log_precs.append(_Z(1))
@@ -204,8 +218,7 @@ needed for specific likelihoods.
         self._trace = _F(inputs=[epoch],
                          outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
                          self.variational_params, givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, 1 / self.q_theta_prec,
-                       T.nnet.sigmoid(self.q_w_mean + T.addbroadcast(self.q_b_mean, 0))]
+        opt_outputs = [elbo, self.q_z, self.q_theta_mean, 1 / self.q_theta_prec, self.q_w_mean, self.q_b_mean]
         self.opt = _F(inputs=[], outputs=opt_outputs,
                       givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
@@ -252,7 +265,7 @@ needed for specific likelihoods.
                 logger.warn('ELBO infinite. Stopping early')
                 break
         self.validation_loss = self.loss(xv, yv)
-        self._evidence, self.pip, self.theta, self.theta_var, self.pi = self.opt()
+        self._evidence, self.pip, self.theta, self.theta_var, self.w, self.b = self.opt()
         return self
 
     def predict(self, x):
@@ -267,8 +280,8 @@ class GaussianSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        self.log_lambda_mean = _S(_Z(1))
-        log_lambda_log_prec = _S(_Z(1))
+        self.log_lambda_mean = _S(_Z(1), name='log_lambda_mean')
+        log_lambda_log_prec = _S(_Z(1), name='log_lambda_log_prec')
         self.log_lambda_prec = 1e-3 + T.nnet.softplus(log_lambda_log_prec)
         super().__init__(X, y, a,
                          hyperparam_means=[self.log_lambda_mean],
@@ -289,8 +302,8 @@ class LogisticSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
         # graph since self._llik refers to it
-        self.bias_mean = _S(_Z(1))
-        bias_log_prec = _S(_Z(1))
+        self.bias_mean = _S(_Z(1), name='bias_mean')
+        bias_log_prec = _S(_Z(1), name='bias_log_prec')
         self.bias_prec = T.nnet.softplus(bias_log_prec)
         super().__init__(X, y, a, hyperparam_means=[self.bias_mean],
                          hyperparam_log_precs=[bias_log_prec],
