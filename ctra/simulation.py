@@ -227,7 +227,7 @@ class Simulation:
         x = numpy.zeros(shape=(n, self.p), dtype='float64')
         y = numpy.zeros(n, dtype='int32')
         y[:int(n * P)] = 1
-        thresh = _N.isf(K)
+        thresh = numpy.sqrt(self.pheno_var) * _N.isf(K)
         while remaining_cases > 0 or n - case_target > 0:
             z = self.sample_genotypes_iid(batch_size)
             l = self.compute_liabilities(z)
@@ -300,7 +300,6 @@ class Simulation:
         x = numpy.zeros((n, self.p), dtype='float32')
         y = numpy.zeros(n, dtype='int32')
         y[:case_target] = 1
-        thresh = _N.isf(K)
         while n > case_target:
             samples = min(n - case_target, batch_size)
             x[n - samples:n] = self.sample_genotypes_given_pheno(samples, K, False)
