@@ -185,33 +185,32 @@ def _load_data(args, s):
         y_validate -= y_validate.mean()
     return x, y, x_test, y_test, x_validate, y_validate
 
-def _performance(args, model, x, y, x_test, y_test, x_validate, y_validate):
-    if len(y.shape) > 1:
-        y = y[:,1]
-    logger.info('Training set score = {:.3f}'.format(numpy.asscalar(model.score(x, y))))
-    logger.info('Test set score = {:.3f}'.format(numpy.asscalar(model.score(x_test, y_test))))
-    logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(model.score(x_validate, y_validate))))
+auprc = sklearn.metrics.average_precision_score
+
+def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
+    logger.info('Fitting regularized model {}'.format(model))
+    m = model(**kwargs).fit(x, y)
+    logger.info('Training score = {:.3f}'.format(m.score(x, y)))
+    logger.info('Validation score = {:.3f}'.format(m.score(x_validate, y_validate)))
     if args.model != 'gaussian':
-        logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, model.predict_proba(x))))
-        logger.info('Test set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_test, model.predict_proba(x_test))))
-        logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, model.predict_proba(x_validate))))
+        logger.info('Training set AUPRC = {:.3f}'.format(auprc(y, m.predict_proba(x)[:,1])))
+        logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m.predict_proba(x_validate)[:,1])))
 
 def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
+    if args.model == 'gaussian':
+        _regularized(args, sklearn.linear_model.Lasso, x, y, x_validate,
+                     y_validate)
+        _regularized(args, sklearn.linear_model.ElasticNet, x, y, x_validate,
+                     y_validate)
+    else:
+        _regularized(args, sklearn.linear_model.LogisticRegression, x, y,
+                     x_validate, y_validate, penalty='l1', fit_intercept=True,
+                     solver='liblinear')
+
+    logger.info('Performing Bayesian optimization')
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
     }[args.model]
-
-    alternate = {'gaussian': sklearn.linear_model.ElasticNetCV(),
-                 'logistic': sklearn.linear_model.LogisticRegressionCV(penalty='l1', solver='liblinear', fit_intercept=True),
-    }[args.model]
-
-    logger.info('Fitting regularized model')
-    ma = alternate.fit(x, y)
-    logger.info('Alternate model training score = {:.3f}'.format(ma.score(x, y)))
-    logger.info('Alternate model validation score = {:.3f}'.format(ma.score(x_validate, y_validate)))
-    if args.model != 'gaussian':
-        logger.info('Training set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y, ma.predict_proba(x)[:,1])))
-        logger.info('Validation set AUPRC = {:.3f}'.format(sklearn.metrics.average_precision_score(y_validate, ma.predict_proba(x_validate)[:,1])))
 
     def fit(params, drop=None, b=None):
         stoch_samples, learning_rate, minibatch_size, max_epochs, rho = params.astype('float32')
