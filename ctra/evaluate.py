@@ -12,6 +12,7 @@ import code
 import contextlib
 import gzip
 import itertools
+import pickle
 import logging
 import sys
 
@@ -55,8 +56,7 @@ def _parser():
     input_args.add_argument('-A', '--load-annotations', help='Annotation vector')
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
-    output_args.add_argument('--write-model', help='Prefix for pickled model', default=None)
-    output_args.add_argument('--plot', help='File to plot active samples to', default=None)
+    output_args.add_argument('--write-result', help='Output file for pickled result', default=None)
 
     sim_args = parser.add_argument_group('Simulation', 'Parameters for generating synthetic data')
     sim_args.add_argument('--permute-causal', action='store_true', help='Permute causal indicator during generation (default: False)', default=False)
@@ -197,15 +197,16 @@ def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
         logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m.predict_proba(x_validate)[:,1])))
 
 def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
+    result = {}
     if args.model == 'gaussian':
-        _regularized(args, sklearn.linear_model.Lasso, x, y, x_validate,
-                     y_validate)
-        _regularized(args, sklearn.linear_model.ElasticNet, x, y, x_validate,
-                     y_validate)
+        result['lasso'] = _regularized(args, sklearn.linear_model.Lasso, x, y, x_validate,
+                                       y_validate)
+        result['elastic_net'] = _regularized(args, sklearn.linear_model.ElasticNet, x, y, x_validate,
+                                             y_validate)
     else:
-        _regularized(args, sklearn.linear_model.LogisticRegression, x, y,
-                     x_validate, y_validate, penalty='l1', fit_intercept=True,
-                     solver='liblinear')
+        result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegression, x, y,
+                                          x_validate, y_validate, penalty='l1', fit_intercept=True,
+                                          solver='liblinear')
 
     logger.info('Performing Bayesian optimization')
     model = {'gaussian': ctra.model.GaussianSGVB,
@@ -238,35 +239,43 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     logger.info('Performing Bayesian optimization')
     opt = robo.fmin.bayesian_optimization(loss, lower_bound, upper_bound, num_iterations=40)
     logger.info('Optimal learning parameters = {}'.format(opt))
+    result.update(opt)
 
     logger.info('Fitting genome-wide model')
     m0 = fit(numpy.array(opt['x_opt']))
-    logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m0.score(x, y))))
-    logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m0.score(x_validate, y_validate))))
+    result['m0_b'] = m0.b
+    result['m0_training_set_score'] = numpy.asscalar(m0.score(x, y))
+    result['m0_validation_set_score'] = numpy.asscalar(m0.score(x_validate, y_validate))
+    logger.info('Training set score = {:.3f}'.format(result['m0_training_set_score']))
+    logger.info('Validation set score = {:.3f}'.format(result['m0_validation_set_score']))
     if args.model != 'gaussian':
-        logger.info('Training set AUPRC = {:.3f}'.format(auprc(y, m0.predict_proba(x))))
-        logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m0.predict_proba(x_validate))))
-    logger.info('Posterior mode pi = {}'.format(scipy.special.expit(m0.b)))
+        result['m0_training_auprc'] = auprc(y, m0.predict_proba(x))
+        result['m0_validation_auprc'] = auprc(y_validate, m0.predict_proba(x_validate))
+        logger.info('Training set AUPRC = {:.3f}'.format(result['m0_training_auprc']))
+        logger.info('Validation set AUPRC = {:.3f}'.format(result['m0_validation_auprc']))
+    logger.info('Posterior mode genome-wide log odds = {}'.format(m0.b))
 
     if len(args.annotation) > 1:
         logger.info('Fitting annotation model')
         m1 = fit(numpy.array(opt['x_opt']), b=m0.b)
-        logger.info('Training set score = {:.3f}'.format(numpy.asscalar(m1.score(x, y))))
-        logger.info('Validation set score = {:.3f}'.format(numpy.asscalar(m1.score(x_validate, y_validate))))
+        result['m1_b'] = m1.b
+        result['m1_w'] = m1.w
+        result['m1_training_set_score'] = numpy.asscalar(m1.score(x, y))
+        result['m1_validation_set_score'] = numpy.asscalar(m1.score(x_validate, y_validate))
+        logger.info('Training set score = {:.3f}'.format(result['m1_training_set_score']))
+        logger.info('Validation set score = {:.3f}'.format(result['m1_validation_set_score']))
         if args.model != 'gaussian':
-            logger.info('Training set AUPRC = {:.3f}'.format(auprc(y, m1.predict_proba(x))))
-            logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m1.predict_proba(x_validate))))
-        logger.info('Posterior mode annotation log odds ratio = {}'.format(m1.w))
+            result['m1_training_auprc'] = auprc(y, m1.predict_proba(x))
+            result['m1_validation_auprc'] = auprc(y_validate, m1.predict_proba(x_validate))
+            logger.info('Training set AUPRC = {:.3f}'.format(result['m1_training_auprc']))
+            logger.info('Validation set AUPRC = {:.3f}'.format(result['m1_validation_auprc']))
+        logger.info('Posterior mode annotation log odds = {}'.format(m1.w))
 
     if args.jacknife > 0:
         logger.info('Starting jacknife estimates')
         jacknife_se = numpy.array([fit(numpy.array(opt['x_opt']), drop=i).pi for i in s.random.choice(y.shape[0], 100)]).std()
         logger.info('Jacknife SE = {}'.format(jacknife_se))
 
-    if args.write_model is not None:
-        with open('{}'.format(args.write_model), 'w') as f:
-            for row in zip(m.pip, m.theta, m.theta_var, s.maf, s.theta):
-                print('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in row), file=f)
     if args.plot is not None:
         q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
         nq = numpy.count_nonzero(q)
@@ -283,6 +292,10 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
         ax[3].set_ylabel('PIP')
         savefig('{}-pip.pdf'.format(args.plot))
         close()
+    if args.write_result is not None:
+        with open(args.write_result, 'wb') as f:
+            pickle.dump(result, f)
+
     if args.interact:
         code.interact(banner='', local=dict(globals(), **locals()))
 
