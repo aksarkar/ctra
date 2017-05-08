@@ -197,7 +197,8 @@ def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
         logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m.predict_proba(x_validate)[:,1])))
 
 def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
-    result = {}
+    result = {'args': args,
+              'simulation': s}
     if args.model == 'gaussian':
         result['lasso'] = _regularized(args, sklearn.linear_model.Lasso, x, y, x_validate,
                                        y_validate)
