@@ -276,22 +276,6 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
         jacknife_se = numpy.array([fit(numpy.array(opt['x_opt']), drop=i).pi for i in s.random.choice(y.shape[0], 100)]).std()
         logger.info('Jacknife SE = {}'.format(jacknife_se))
 
-    if args.plot is not None:
-        q = numpy.logical_or(m.pip > 0.1, s.theta != 0)
-        nq = numpy.count_nonzero(q)
-        fig, ax = subplots(4, 1)
-        fig.set_size_inches(6, 8)
-        xlabel('True and false positive variants')
-        ax[0].bar(range(nq), s.maf[q])
-        ax[0].set_ylabel('MAF')
-        ax[1].bar(range(nq), s.theta[q])
-        ax[1].set_ylabel('True effect size')
-        ax[2].bar(range(nq), m.theta[q])
-        ax[2].set_ylabel('Estimated effect size')
-        ax[3].bar(range(nq), m.pip[q])
-        ax[3].set_ylabel('PIP')
-        savefig('{}-pip.pdf'.format(args.plot))
-        close()
     if args.write_result is not None:
         with open(args.write_result, 'wb') as f:
             pickle.dump(result, f)
