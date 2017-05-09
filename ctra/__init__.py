@@ -3,6 +3,7 @@ import os
 
 import numpy
 
+import ctra.experiments
 import ctra.model
 import ctra.simulation
 
