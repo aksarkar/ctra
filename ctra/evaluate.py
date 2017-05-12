@@ -190,11 +190,16 @@ auprc = sklearn.metrics.average_precision_score
 def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
     logger.info('Fitting regularized model {}'.format(model))
     m = model(**kwargs).fit(x, y)
-    logger.info('Training score = {:.3f}'.format(m.score(x, y)))
-    logger.info('Validation score = {:.3f}'.format(m.score(x_validate, y_validate)))
+    result = {'training_score': m.score(x, y),
+              'validation_score': m.score(x_validate, y_validate)}
+    logger.info('Training score = {:.3f}'.format(result['training_score']))
+    logger.info('Validation score = {:.3f}'.format(result['validation_score']))
     if args.model != 'gaussian':
-        logger.info('Training set AUPRC = {:.3f}'.format(auprc(y, m.predict_proba(x)[:,1])))
-        logger.info('Validation set AUPRC = {:.3f}'.format(auprc(y_validate, m.predict_proba(x_validate)[:,1])))
+        result['training_auprc'] = auprc(y, m.predict_proba(x)[:,1])
+        result['validation_auprc'] = auprc(y_validate, m.predict_proba(x_validate)[:,1])
+        logger.info('Training set AUPRC = {:.3f}'.format(result['training_auprc']))
+        logger.info('Validation set AUPRC = {:.3f}'.format(result['validation_auprc']))
+    return result
 
 def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     result = {'args': args,
