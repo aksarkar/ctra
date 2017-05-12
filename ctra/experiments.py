@@ -17,9 +17,7 @@ def pushdir(directory):
     yield
     os.chdir(cwd)
 
-def plot_idealized_one_component(measure='score'):
-    if measure not in ('score', 'auprc'):
-        raise ArgumentError
+def parse_results(measure):
     files = glob.glob(os.path.join('[0-9]*.pkl'))
     estimated_prop = []
     performance = []
@@ -30,11 +28,17 @@ def plot_idealized_one_component(measure='score'):
             num_variants = result['simulation'].p
             estimated_prop.append([scipy.special.logit(num_causal / num_variants), result['m0_b']])
             performance.append([scipy.special.logit(num_causal / num_variants),
-                                result['m0_training_set_{}'.format(measure)],
-                                result['m0_validation_set_{}'.format(measure)],
+                                result['m0_training_{}'.format(measure)],
+                                result['m0_validation_{}'.format(measure)],
             ])
     estimated_prop = numpy.array(estimated_prop)
     performance = numpy.array(performance)
+    return estimated_prop, performance
+
+def plot_idealized_one_component(measure='score'):
+    if measure not in ('score', 'auprc'):
+        raise ArgumentError
+    estimated_prop, performance = parse_results(measure)
     figure()
     boxplot(estimated_prop)
     axhline(scipy.special.logit(.01), color='black', xmax=0.5)

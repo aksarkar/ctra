@@ -250,10 +250,10 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     logger.info('Training set score = {:.3f}'.format(result['m0_training_set_score']))
     logger.info('Validation set score = {:.3f}'.format(result['m0_validation_set_score']))
     if args.model != 'gaussian':
-        result['m0_training_auprc'] = auprc(y, m0.predict_proba(x))
-        result['m0_validation_auprc'] = auprc(y_validate, m0.predict_proba(x_validate))
-        logger.info('Training set AUPRC = {:.3f}'.format(result['m0_training_auprc']))
-        logger.info('Validation set AUPRC = {:.3f}'.format(result['m0_validation_auprc']))
+        result['m0_training_set_auprc'] = auprc(y, m0.predict_proba(x))
+        result['m0_validation_set_auprc'] = auprc(y_validate, m0.predict_proba(x_validate))
+        logger.info('Training set AUPRC = {:.3f}'.format(result['m0_training_set_auprc']))
+        logger.info('Validation set AUPRC = {:.3f}'.format(result['m0_validation_set_auprc']))
     logger.info('Posterior mode genome-wide log odds = {}'.format(m0.b))
 
     if len(args.annotation) > 1:
