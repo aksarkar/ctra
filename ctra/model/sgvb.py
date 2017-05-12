@@ -103,12 +103,16 @@ needed for specific likelihoods.
         self.q_w_log_prec = _S(_Z(m), name='q_w_log_prec')
         self.q_b_mean = _S(_Z(1), name='q_b_mean')
         self.q_b_log_prec = _S(_Z(1), name='q_b_log_prec')
-        self.q_log_tau0_mean = _S(_Z(1), name='q_log_tau0_mean')
-        self.q_log_tau0_log_prec = _S(_Z(1), name='q_log_tau0_log_prec')
-        self.q_tau0_mean = T.exp(self.q_log_tau0_mean)
-        self.q_log_tau1_mean = _S(_Z(m), name='q_log_tau1_mean')
-        self.q_log_tau1_log_prec = _S(_Z(m), name='q_log_tau1_log_prec')
-        self.q_tau1_mean = T.exp(T.addbroadcast(self.q_log_tau0_mean, 0) - self.q_log_tau1_mean)
+        # p(theta_j) = A_j pi N(0, (A_j tau)^-1) +
+        #              (1 - A_j pi) N(0, (A_j tau + delta)^-1)
+        self.min_prec = 1e-3
+        self.q_log_delta_mean = _S(_Z(1), name='q_log_delta_mean')
+        self.q_delta_mean = T.nnet.softplus(self.q_log_delta_mean)
+        self.q_delta_log_prec = _S(_Z(1), name='q_delta_log_prec')
+        self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
+        self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
+        self.q_tau1_mean = self.min_prec + T.nnet.softplus(self.q_log_tau_mean)
+        self.q_tau0_mean = self.min_prec + T.nnet.softplus(self.q_log_tau_mean + self.q_delta_mean)
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
@@ -125,12 +129,11 @@ needed for specific likelihoods.
         self.q_z = T.nnet.sigmoid(self.q_logit_z)
         self.q_theta_mean = _S(_Z(p), name='q_theta_mean')
         self.q_theta_log_prec = _S(_Z(p), name='q_theta_log_prec')
-        self.min_prec = 1e-3
         self.q_theta_prec = self.min_prec + T.nnet.softplus(self.q_theta_log_prec)
         self.params = [self.q_logit_z, self.q_theta_mean, self.q_theta_log_prec]
 
-        self.hyperparam_means = [self.q_log_tau0_mean, self.q_log_tau1_mean]
-        self.hyperparam_log_precs = [self.q_log_tau0_log_prec, self.q_log_tau1_log_prec]
+        self.hyperparam_means = [self.q_log_delta_mean, self.q_log_tau_mean]
+        self.hyperparam_log_precs = [self.q_delta_log_prec, self.q_log_tau_log_prec]
         self.hyperprior_means = [_Z(1), _Z(m)]
         self.hyperprior_log_precs = [_Z(1), _Z(m)]
 
