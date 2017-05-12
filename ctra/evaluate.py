@@ -231,7 +231,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
                   learning_rate=learning_rate, minibatch_n=int(minibatch_size),
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
-        m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
+        m.fit(max_epochs=10 * int(max_epochs), xv=x_test, yv=y_test)
         return m
 
     def loss(params):
