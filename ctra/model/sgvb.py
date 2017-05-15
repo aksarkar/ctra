@@ -106,13 +106,9 @@ needed for specific likelihoods.
         # p(theta_j) = A_j pi N(0, (A_j tau)^-1) +
         #              (1 - A_j pi) N(0, (A_j tau + delta)^-1)
         self.min_prec = 1e-3
-        self.q_log_delta_mean = _S(_Z(1), name='q_log_delta_mean')
-        self.q_delta_mean = T.nnet.softplus(self.q_log_delta_mean)
-        self.q_delta_log_prec = _S(_Z(1), name='q_delta_log_prec')
         self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
         self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
-        self.q_tau1_mean = self.min_prec + T.nnet.softplus(self.q_log_tau_mean)
-        self.q_tau0_mean = self.min_prec + T.nnet.softplus(self.q_log_tau_mean + self.q_delta_mean)
+        self.q_tau_mean = self.min_prec + T.nnet.softplus(self.q_log_tau_mean)
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
@@ -120,9 +116,7 @@ needed for specific likelihoods.
             pi = T.nnet.sigmoid(T.addbroadcast(self.q_b_mean, 0))
         else:
             pi = T.nnet.sigmoid(T.dot(self.A, self.q_w_mean) + b)
-        # Share spike variance across all groups
-        tau0 = T.addbroadcast(self.q_tau0_mean, 0)
-        tau1 = T.dot(self.A, self.q_tau1_mean)
+        tau = T.dot(self.A, self.q_tau_mean)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
@@ -132,10 +126,10 @@ needed for specific likelihoods.
         self.q_theta_prec = self.min_prec + T.nnet.softplus(self.q_theta_log_prec)
         self.params = [self.q_logit_z, self.q_theta_mean, self.q_theta_log_prec]
 
-        self.hyperparam_means = [self.q_log_delta_mean, self.q_log_tau_mean]
-        self.hyperparam_log_precs = [self.q_delta_log_prec, self.q_log_tau_log_prec]
-        self.hyperprior_means = [_Z(1), _Z(m)]
-        self.hyperprior_log_precs = [_Z(1), _Z(m)]
+        self.hyperparam_means = [self.q_log_tau_mean]
+        self.hyperparam_log_precs = [self.q_log_tau_log_prec]
+        self.hyperprior_means = [_Z(m)]
+        self.hyperprior_log_precs = [_Z(m)]
 
         if b is None:
             self.hyperparam_means.append(self.q_b_mean)
@@ -191,8 +185,7 @@ needed for specific likelihoods.
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
         # notation)
         zero = T.addbroadcast(T.constant(_Z(1)), 0)
-        kl_qtheta_ptheta = (self.q_z * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, zero, tau1) +
-                            (1 - self.q_z) * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, zero, tau0)).sum()
+        kl_qtheta_ptheta = (self.q_z * kl_normal_normal(self.q_theta_mean, self.q_theta_prec, zero, tau)).sum()
         # Rasmussen and Williams, Eq. A.22
         kl_qz_pz = T.sum(self.q_z * T.log(self.q_z / pi) + (1 - self.q_z) * T.log((1 - self.q_z) / (1 - pi)))
         kl_hyper = 0
