@@ -166,6 +166,8 @@ def _load_data(args, s):
     else:
         # Randomly subsample hold out set
         hold_out = s.random.choice(args.num_samples, hold_out_n, replace=False)
+        mask = numpy.zeros(args.num_samples, dtype='bool')
+        mask[hold_out] = True
         test = numpy.zeros(args.num_samples, dtype='bool')
         test[hold_out[:args.test]] = True
         validation = numpy.zeros(args.num_samples, dtype='bool')
@@ -174,8 +176,8 @@ def _load_data(args, s):
         y_test = y[test]
         x_validate = x[validation]
         y_validate = y[validation]
-        x = x[~hold_out]
-        y = y[~hold_out]
+        x = x[~mask]
+        y = y[~mask]
     x -= x.mean(axis=0)
     x_test -= x_test.mean(axis=0)
     x_validate -= x_validate.mean(axis=0)
