@@ -50,6 +50,9 @@ def f1_score(y, yhat):
     F = 2 * precision * recall / (precision + recall + 1e-8)
     return F
 
+def clipped_sigmoid(x):
+    return T.clip(T.nnet.sigmoid(x), 1e-6, 1 - 1e-6)
+
 class SGVB:
     """Base class providing the generic implementation. Specialized sub-classes are
 needed for specific likelihoods.
@@ -113,14 +116,14 @@ needed for specific likelihoods.
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
         if b is None:
-            pi = T.nnet.sigmoid(T.addbroadcast(self.q_b_mean, 0))
+            pi = clipped_sigmoid(T.addbroadcast(self.q_b_mean, 0))
         else:
-            pi = T.nnet.sigmoid(T.dot(self.A, self.q_w_mean) + b)
+            pi = clipped_sigmoid(T.dot(self.A, self.q_w_mean) + b)
         tau = T.dot(self.A, self.q_tau_mean)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
-        self.q_z = T.nnet.sigmoid(self.q_logit_z)
+        self.q_z = clipped_sigmoid(self.q_logit_z)
         self.q_theta_mean = _S(_Z(p), name='q_theta_mean')
         self.q_theta_log_prec = _S(_Z(p), name='q_theta_log_prec')
         self.q_theta_prec = self.min_prec + T.nnet.softplus(self.q_theta_log_prec)
@@ -306,7 +309,7 @@ class LogisticSGVB(SGVB):
                          **kwargs)
 
         eta = self.eta_mean + T.addbroadcast(self.bias_mean, 0)
-        prob_y = T.nnet.sigmoid(eta)
+        prob_y = clipped_sigmoid(eta)
         self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
         log_loss = -self.y * T.log(prob_y) - (1 - self.y) * T.log(1 - prob_y)
         self.loss = _F(inputs=[self.X, self.y], outputs=log_loss.sum(), allow_input_downcast=True)
