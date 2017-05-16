@@ -172,8 +172,10 @@ needed for specific likelihoods.
         # Re-parameterize eta = X theta (Kingma, Salimans, & Welling NIPS
         # 2015), and backpropagate through the RNG (Kingma & Welling, ICLR
         # 2014).
-        self.eta_mean = T.dot(self.X, self.q_z * self.q_theta_mean)
-        eta_var = T.dot(T.sqr(self.X), self.q_z / self.q_theta_prec + self.q_z * (1 - self.q_z) * T.sqr(self.q_theta_mean))
+        self.theta_posterior_mean = self.q_z * self.q_theta_mean
+        self.theta_posterior_var = self.q_z / self.q_theta_prec + self.q_z * (1 - self.q_z) * T.sqr(self.q_theta_mean)
+        self.eta_mean = T.dot(self.X, self.theta_posterior_mean)
+        eta_var = T.dot(T.sqr(self.X), self.theta_posterior_var)
         eta_minibatch = epoch % 5
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
         eta = self.w * (self.eta_mean + T.sqrt(eta_var) * eta_raw)
@@ -217,7 +219,7 @@ needed for specific likelihoods.
         self._trace = _F(inputs=[epoch],
                          outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
                          self.variational_params, givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.q_theta_mean, 1 / self.q_theta_prec, self.q_w_mean, self.q_b_mean]
+        opt_outputs = [elbo, self.q_z, self.theta_posterior_mean, self.theta_posterior_var, self.q_w_mean, self.q_b_mean]
         self.opt = _F(inputs=[], outputs=opt_outputs,
                       givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
