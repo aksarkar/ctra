@@ -176,8 +176,10 @@ def _load_data(args, s):
         y_test = y[test]
         x_validate = x[validation]
         y_validate = y[validation]
-        x = x[~mask]
-        y = y[~mask]
+        # Permute the training set so minibatches are balanced in expectation
+        perm = s.random.permutation(args.num_samples - hold_out_n)
+        x = x[~mask][perm]
+        y = y[~mask][perm]
     x -= x.mean(axis=0)
     x_test -= x_test.mean(axis=0)
     x_validate -= x_validate.mean(axis=0)
