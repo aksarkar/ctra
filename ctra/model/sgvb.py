@@ -238,13 +238,12 @@ needed for specific likelihoods.
         """Return the log likelihood of the (mini)batch"""
         raise NotImplementedError
 
-    def fit(self, loc=0, max_epochs=20, xv=None, yv=None, trace=False, **kwargs):
+    def fit(self, loc=0, max_epochs=20, xv=None, yv=None, **kwargs):
         logger.debug('Starting SGD')
         self.initialize()
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
-        self.trace = []
         while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.sgd_step(epoch=t)
@@ -258,10 +257,6 @@ needed for specific likelihoods.
                 outputs = self._trace(t)[:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
-                if not self.trace or trace:
-                    self.trace.append(outputs)
-                else:
-                    self.trace[0] = outputs
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
             if not numpy.isfinite(elbo):
                 logger.warn('ELBO infinite. Stopping early')
