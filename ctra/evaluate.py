@@ -194,7 +194,8 @@ auprc = sklearn.metrics.average_precision_score
 def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
     logger.info('Fitting regularized model {}'.format(model))
     m = model(**kwargs).fit(x, y)
-    result = {'training_set_score': m.score(x, y),
+    result = {'m': m,
+              'training_set_score': m.score(x, y),
               'validation_set_score': m.score(x_validate, y_validate)}
     logger.info('Training score = {:.3f}'.format(result['training_set_score']))
     logger.info('Validation score = {:.3f}'.format(result['validation_set_score']))
