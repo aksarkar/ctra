@@ -26,8 +26,28 @@ def _S(x, **kwargs):
 def kl_normal_normal(mean, prec, prior_mean, prior_prec):
     return .5 * (1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
 
-def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6):
-    """RMSProp updates (from Lasagne)"""
+def sgd(loss, params, hyperparams, learning_rate=0.01, **kwargs):
+    """Constant rate SGD for params, Robbins-Monro SGD for hyperparams
+
+    Mandt et al. "Stochastic Gradient Descent as Approximate Bayesian
+    Inference" arxiv:1704.04289
+
+    """
+    updates = collections.OrderedDict()
+    epoch = _S(numpy.array([1], dtype=_real))
+    updates[epoch] = epoch + 1
+    for param, grad in zip(params, theano.grad(loss, params)):
+        updates[param] = param - learning_rate * grad
+    for param, grad in zip(hyperparams, theano.grad(loss, hyperparams)):
+        updates[param] = param - learning_rate * T.inv(T.sqrt(T.addbroadcast(epoch, 0))) * grad
+    return updates
+
+def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6, **kwargs):
+    """RMSProp (from Lasagne)
+
+    Tieleman & Hinton 2012
+
+    """
     grads = theano.grad(loss, params)
     updates = collections.OrderedDict()
 
