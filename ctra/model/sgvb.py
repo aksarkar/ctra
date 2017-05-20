@@ -70,6 +70,24 @@ def f1_score(y, yhat):
     recall = (yhat * y).sum() / (y.sum() + 1e-8)
     F = 2 * precision * recall / (precision + recall + 1e-8)
     return F
+def esgd(loss, params, learning_rate=0.01, damping=0.9, epsilon=1e-2, **kwargs):
+    """Equilibrated SGD
+
+    Dauphin et al. NIPS 2015
+
+    """
+    grads = theano.grad(loss, params)
+    updates = collections.OrderedDict()
+    random_state = T.random.shared_randomstreams.RandomStreams()
+    for param, grad in zip(params, grads):
+        shape = param.get_value().shape
+        # Pre-sample random noise
+        noise = random.normal(size=shape)
+        D = _S(_Z(shape))
+        Hv = T.Rop(grad, param, noise)
+        updates[D] = damping * D + (1 - damping) * Hv * Hv
+        updates[param] = param - learning_rate * grad / T.sqrt(D + epsilon)
+    return updates
 
 def clipped_sigmoid(x):
     return T.clip(T.nnet.sigmoid(x), 1e-6, 1 - 1e-6)
