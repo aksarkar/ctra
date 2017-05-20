@@ -65,11 +65,7 @@ def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6, **kwargs):
 
     return updates
 
-def f1_score(y, yhat):
-    precision = (yhat * y).sum() / (yhat.sum() + 1e-8)
-    recall = (yhat * y).sum() / (y.sum() + 1e-8)
-    F = 2 * precision * recall / (precision + recall + 1e-8)
-    return F
+
 def esgd(loss, params, learning_rate=0.01, damping=0.9, epsilon=1e-2, **kwargs):
     """Equilibrated SGD
 
@@ -360,16 +356,15 @@ class LogisticSGVB(SGVB):
                          hyperparam_log_precs=[bias_log_prec],
                          **kwargs)
 
-        eta = self.eta_mean + T.addbroadcast(self.bias_mean, 0)
-        prob_y = clipped_sigmoid(eta)
+        prob_y = clipped_sigmoid(self.eta_mean + T.addbroadcast(self.bias_mean, 0))
         self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
-        log_loss = -self.y * T.log(prob_y) - (1 - self.y) * T.log(1 - prob_y)
-        self.loss = _F(inputs=[self.X, self.y], outputs=log_loss.sum(), allow_input_downcast=True)
+        brier_score_loss = T.sqr(self.y - prob_y)
+        self.loss = _F(inputs=[self.X, self.y], outputs=brier_score_loss.sum(), allow_input_downcast=True)
 
-        # F measure
+        # GLM coefficient of determination
+        R = 1 - T.sqr(self.y - prob_y).sum() / T.sqr(self.y - self.y.mean()).sum()
+        self.score = _F(inputs=[self.X, self.y], outputs=R, allow_input_downcast=True)
         yhat = T.cast(prob_y > 0.5, 'int8')
-        self.score = _F(inputs=[self.X, self.y], outputs=f1_score(self.y, yhat),
-                        allow_input_downcast=True)
         self.predict = _F(inputs=[self.X], outputs=yhat)
 
     def _llik(self, y, eta, phi_raw):
