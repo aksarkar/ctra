@@ -210,12 +210,12 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     result = {'args': args,
               'simulation': s}
     if args.model == 'gaussian':
-        result['lasso'] = _regularized(args, sklearn.linear_model.Lasso, x, y, x_validate,
+        result['lasso'] = _regularized(args, sklearn.linear_model.LassoCV, x, y, x_validate,
                                        y_validate)
-        result['elastic_net'] = _regularized(args, sklearn.linear_model.ElasticNet, x, y, x_validate,
+        result['elastic_net'] = _regularized(args, sklearn.linear_model.ElasticNetCV, x, y, x_validate,
                                              y_validate)
     else:
-        result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegression, x, y,
+        result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegressionCV, x, y,
                                           x_validate, y_validate, penalty='l1', fit_intercept=True,
                                           solver='liblinear')
 
