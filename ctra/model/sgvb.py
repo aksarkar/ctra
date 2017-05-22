@@ -271,9 +271,16 @@ needed for specific likelihoods.
         """Return the log likelihood of the (mini)batch"""
         raise NotImplementedError
 
-    def fit(self, loc=0, max_epochs=20, xv=None, yv=None, **kwargs):
-        logger.debug('Starting SGD')
+    def fit(self, xv, yv, max_epochs=20):
+        """Fit the model
+
+        xv - hold out validation predictors (for tracing learning)
+        yv - hold out validation predictors (for tracing learning)
+        max_epochs - maximum number of full data passes
+
+        """
         self.initialize()
+        logger.debug('Starting SGD')
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
