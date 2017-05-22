@@ -275,7 +275,7 @@ needed for specific likelihoods.
         """Fit the model
 
         xv - hold out validation predictors (for tracing learning)
-        yv - hold out validation predictors (for tracing learning)
+        yv - hold out validation responses (for tracing learning)
         max_epochs - maximum number of full data passes
 
         """
