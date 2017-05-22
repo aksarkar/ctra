@@ -65,20 +65,19 @@ def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6, **kwargs):
 
     return updates
 
-
 def esgd(loss, params, learning_rate=0.01, damping=0.9, epsilon=1e-2, **kwargs):
     """Equilibrated SGD
 
     Dauphin et al. NIPS 2015
 
     """
+    damping = T.cast(damping, _real)
     grads = theano.grad(loss, params)
     updates = collections.OrderedDict()
-    random_state = T.random.shared_randomstreams.RandomStreams()
+    random_state = T.shared_randomstreams.RandomStreams()
     for param, grad in zip(params, grads):
         shape = param.get_value().shape
-        # Pre-sample random noise
-        noise = random.normal(size=shape)
+        noise = random_state.normal(size=shape)
         D = _S(_Z(shape))
         Hv = T.Rop(grad, param, noise)
         updates[D] = damping * D + (1 - damping) * Hv * Hv
