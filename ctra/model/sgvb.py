@@ -329,6 +329,29 @@ needed for specific likelihoods.
         ax[3].set_ylabel('PIP')
         return fig
 
+    def plot_neighborhood(self):
+        """Plot random 2d-slices around the current point
+
+        http://stanford.edu/class/ee364a/lectures/functions.pdf
+
+        """
+        _, _, _, _, _, _, *loc = self._trace(0)
+        query = numpy.linspace(-2, 2, 100)
+        figure()
+        for i in range(10):
+            direction = [numpy.random.normal(size=p.shape) for p in loc]
+            vals = []
+            for t in query:
+                for p, v, d in zip(self.params, loc, direction):
+                    p.set_value(numpy.array(v + t * d, dtype='float32'))
+                vals.append(self.opt()[0])
+            plot(query, vals)
+        axvline()
+        savefig('diagnostic.pdf')
+        close()
+        for p, v in zip(self.params, loc):
+            p.set_value(numpy.array(v, dtype='float32'))
+
 class GaussianSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
