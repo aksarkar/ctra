@@ -86,7 +86,7 @@ def esgd(loss, params, learning_rate=0.01, damping=0.9, epsilon=1e-2, **kwargs):
     return updates
 
 def clipped_sigmoid(x):
-    return T.clip(T.nnet.sigmoid(x), 1e-6, 1 - 1e-6)
+    return T.nnet.sigmoid(T.clip(x, -5, 5))
 
 class SGVB:
     """Base class providing the generic implementation. Specialized sub-classes are
