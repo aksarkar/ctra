@@ -245,7 +245,7 @@ needed for specific likelihoods.
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
         # Lasagne minimizes, so flip the sign
-        sgd_updates = rmsprop(-elbo, self.variational_params, learning_rate=learning_rate, rho=rho)
+        sgd_updates = esgd(-elbo, self.variational_params, learning_rate=learning_rate, decay=rho)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
