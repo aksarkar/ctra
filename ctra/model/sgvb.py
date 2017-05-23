@@ -415,14 +415,12 @@ class LogisticSGVB(SGVB):
         self.bias_mean = _S(_Z(1), name='bias_mean')
         bias_log_prec = _S(_Z(1), name='bias_log_prec')
         self.bias_prec = T.nnet.softplus(bias_log_prec)
-        super().__init__(X, y, a, hyperparam_means=[self.bias_mean],
-                         hyperparam_log_precs=[bias_log_prec],
-                         **kwargs)
+        super().__init__(X, y, a, **kwargs)
 
-        prob_y = clipped_sigmoid(self.eta_mean + T.addbroadcast(self.bias_mean, 0))
+        prob_y = clipped_sigmoid(self.eta_mean)
         self.predict_proba = _F(inputs=[self.X], outputs=prob_y)
-        brier_score_loss = T.sqr(self.y - prob_y)
-        self.loss = _F(inputs=[self.X, self.y], outputs=brier_score_loss.sum(), allow_input_downcast=True)
+        # Brier score loss
+        self.loss = _F(inputs=[self.X, self.y], outputs=T.sqr(self.y - prob_y).sum(), allow_input_downcast=True)
 
         # GLM coefficient of determination
         R = 1 - T.sqr(self.y - prob_y).sum() / T.sqr(self.y - self.y.mean()).sum()
@@ -436,6 +434,5 @@ class LogisticSGVB(SGVB):
         Fit an intercept phi using SGVB, assuming p(phi) ~ N(0, 1), q(phi) ~ N(m, v).
 
         """
-        phi = T.addbroadcast(T.nnet.softplus(self.bias_mean + T.sqrt(1 / self.bias_prec) * phi_raw), 1)
-        F = y * (eta + phi) - T.nnet.softplus(eta + phi)
+        F = y * eta - T.nnet.softplus(eta)
         return T.mean(T.sum(F, axis=1))
