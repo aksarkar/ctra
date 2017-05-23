@@ -374,7 +374,7 @@ needed for specific likelihoods.
         params_df.columns = ['alpha0', 'alpha1', 'beta0', 'beta1', 'gamma0',
                              'gamma1', 'pi_mean', 'tau_mean', 'pi_prec', 'tau_prec']
         figure()
-        params_df.plot(kind='line', colors=colors)
+        params_df.plot(kind='line', color=colors)
         savefig('params.pdf')
         close()
 
@@ -382,7 +382,7 @@ needed for specific likelihoods.
         grads_df.columns = ['alpha0', 'alpha1', 'beta0', 'beta1', 'gamma0',
                             'gamma1', 'pi_mean', 'tau_mean', 'pi_prec', 'tau_prec']
         figure()
-        grads_df.plot(kind='line', colors=colors)
+        grads_df.plot(kind='line', color=colors)
         savefig('grads.pdf')
         close()
 
