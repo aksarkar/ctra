@@ -6,6 +6,7 @@ Author: Abhishek Sarkar <aksarkar@mit.edu>
 """
 import collections
 import logging
+import pandas
 
 from matplotlib.pyplot import *
 import numpy
@@ -261,6 +262,13 @@ needed for specific likelihoods.
                               (self.y, self.y_),
                               (self.w, self.w_)])
 
+        self.trace_grad = _F(inputs=[epoch], outputs=theano.grad(elbo, self.variational_params),
+                             givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
+                                     (eta_raw, numpy.zeros((1, n), dtype=_real)),
+                                     (self.X, self.X_),
+                                     (self.y, self.y_),
+                                     (self.w, self.w_)])
+
         logger.debug('Finished initializing')
 
     def loss(self, *args):
@@ -284,9 +292,14 @@ needed for specific likelihoods.
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
+        self.trace_params = []
+        self.trace_grads = []
         while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.sgd_step(epoch=t)
+            self.trace_grads.append(self.trace_grad(t))
+            params = self._trace(t)
+            self.trace_params.append(params[6:])
             if not t % (10 * self.scale_n):
                 elbo_ = elbo
                 if elbo < elbo_:
@@ -294,7 +307,7 @@ needed for specific likelihoods.
                     break
                 self.validation_loss = self.loss(xv, yv)
                 loss = self.validation_loss
-                outputs = self._trace(t)[:6]
+                outputs = params[:6]
                 outputs.append(self.score(self.X_.get_value(), self.y_.get_value()))
                 outputs.append(self.score(xv, yv))
                 logger.debug('\t'.join('{:.3g}'.format(numpy.asscalar(x)) for x in outputs))
@@ -303,6 +316,7 @@ needed for specific likelihoods.
                 break
         self.validation_loss = self.loss(xv, yv)
         self._evidence, self.pip, self.theta, self.theta_var, self.w, self.b = self.opt()
+        self.plot_trace()
         return self
 
     def predict(self, x):
@@ -351,6 +365,26 @@ needed for specific likelihoods.
         close()
         for p, v in zip(self.params, loc):
             p.set_value(numpy.array(v, dtype='float32'))
+
+    def plot_trace(self):
+        '''Plot evolution of learning'''
+        colors = get_cmap('jet')(numpy.linspace(0, 1, 10))
+
+        params_df = pandas.DataFrame([numpy.concatenate(t) for t in self.trace_params])
+        params_df.columns = ['alpha0', 'alpha1', 'beta0', 'beta1', 'gamma0',
+                             'gamma1', 'pi_mean', 'tau_mean', 'pi_prec', 'tau_prec']
+        figure()
+        params_df.plot(kind='line', colors=colors)
+        savefig('params.pdf')
+        close()
+
+        grads_df = pandas.DataFrame([numpy.concatenate(t) for t in self.trace_grads])
+        grads_df.columns = ['alpha0', 'alpha1', 'beta0', 'beta1', 'gamma0',
+                            'gamma1', 'pi_mean', 'tau_mean', 'pi_prec', 'tau_prec']
+        figure()
+        grads_df.plot(kind='line', colors=colors)
+        savefig('grads.pdf')
+        close()
 
 class GaussianSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
