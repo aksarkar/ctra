@@ -225,6 +225,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     }[args.model]
 
     def fit(params, drop=None, b=None):
+        params = numpy.array(params)
         stoch_samples, learning_rate, minibatch_size, max_epochs, rho = params.astype('float32')
         if drop is not None:
             n = y.shape[0]
