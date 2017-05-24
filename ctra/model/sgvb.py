@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _real = theano.config.floatX
 _F = theano.function
 _Z = lambda n: numpy.zeros(n).astype(_real)
+_O = lambda n: numpy.ones(n).astype(_real)
 
 def _S(x, **kwargs):
     return theano.shared(x, borrow=True, **kwargs)
@@ -166,19 +167,19 @@ needed for specific likelihoods.
 
         self.hyperparam_means = [self.q_log_tau_mean]
         self.hyperparam_log_precs = [self.q_log_tau_log_prec]
-        self.hyperprior_means = [_Z(m)]
-        self.hyperprior_log_precs = [_Z(m)]
+        self.hyperprior_means = [_Z(1)]
+        self.hyperprior_precs = [_O(1)]
 
         if b is None:
             self.hyperparam_means.append(self.q_b_mean)
             self.hyperparam_log_precs.append(self.q_b_log_prec)
             self.hyperprior_means.append(_Z(1))
-            self.hyperprior_log_precs.append(_Z(1))
+            self.hyperprior_precs.append(_O(1))
         else:
             self.hyperparam_means.append(self.q_w_mean)
             self.hyperparam_log_precs.append(self.q_w_log_prec)
             self.hyperprior_means.append(_Z(m))
-            self.hyperprior_log_precs.append(_Z(m))
+            self.hyperprior_precs.append(_O(m))
 
         if hyperparam_means is not None:
             # Include model-specific terms. Assume everything is Gaussian on
@@ -190,7 +191,7 @@ needed for specific likelihoods.
             self.hyperparam_log_precs.extend(hyperparam_log_precs)
         for _ in hyperparam_means:
             self.hyperprior_means.append(_Z(1))
-            self.hyperprior_log_precs.append(_Z(1))
+            self.hyperprior_precs.append(_O(1))
 
         # We need to perform inference on minibatches of samples for speed. Rather
         # than taking balanced subsamples, we take a sliding window over a
@@ -229,10 +230,8 @@ needed for specific likelihoods.
         # Rasmussen and Williams, Eq. A.22
         kl_qz_pz = T.sum(self.q_z * T.log(self.q_z / pi) + (1 - self.q_z) * T.log((1 - self.q_z) / (1 - pi)))
         kl_hyper = 0
-        for mean, log_prec, prior_mean, prior_log_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_log_precs):
-            prec = self.min_prec + T.nnet.softplus(log_prec)
-            prior_prec = self.min_prec + T.nnet.softplus(prior_log_prec)
-            kl_hyper += kl_normal_normal(mean, prec, prior_mean, prior_prec).sum()
+        for mean, log_prec, prior_mean, prior_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_precs):
+            kl_hyper += kl_normal_normal(mean, self.min_prec + T.nnet.softplus(log_prec), prior_mean, prior_prec).sum()
         kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
         # Kingma & Welling 2013 (eq. 8)
         elbo = (error - kl) * self.scale_n
@@ -240,7 +239,7 @@ needed for specific likelihoods.
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, self._R.normal(scale=0.1, size=p).astype(_real)) for param in self.params]
         init_updates += [(param, val) for param, val in zip(self.hyperparam_means, self.hyperprior_means)]
-        init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_log_precs)]
+        init_updates += [(param, val) for param, val in zip(self.hyperparam_log_precs, self.hyperprior_precs)]
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
