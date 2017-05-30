@@ -6,7 +6,7 @@ all: joblist
 		done;
 
 joblist:
-	parallel --dry-run $(EVALUATE) --write-result {#}.pkl -a {1},1 -n 5000 -p 10000 -v 0.5 -m gaussian -s {2} ::: 100 1000 ::: $$(seq 1 $(TRIALS)) >$@
+	parallel --dry-run $(EVALUATE) --write-result {#}.pkl -a {1},1 -n 7500 -p 10000 -v 0.5 -m gaussian -s {2} ::: 10 100 1000 ::: $$(seq 1 $(TRIALS)) >$@
 
 clean:
 	rm gaussian-idealized-one-component.*
