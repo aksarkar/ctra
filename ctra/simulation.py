@@ -192,6 +192,26 @@ class Simulation:
         x = self.random.binomial(2, self.maf, size=(n, self.p)) - self.x_mean
         return x
 
+    def sample_genotypes_pop_struct(self, n, fst=0.1, prop=0.5):
+        """Return matrix of dosages sampled from the Balding-Nichols model.
+
+        Model two populations diverging from one ancestral population with
+        divergence F_st. The diverged allele frequencies are drawn (once) from
+        a Beta distribution depending on the ancestral frequencies (self.maf)
+        and fst.
+
+        Balding et al. Genetica 1995; Price et al. Nat Genet 2007.
+
+        """
+        # Use self.maf as ancestral frequency
+        F = (1 - fst) / fst
+        if 'diverged_mafs' not in self.__dict__:
+            self.diverged_mafs = self.random.beta(self.maf * F, (1 - self.maf) * F, size=(2, self.p))
+        x = numpy.concatenate([self.random.binomial(2, maf, size=(int(prop * n), self.p)) for maf in self.diverged_mafs]).astype('float')
+        x_mean = 2 * (numpy.interp(prop, *self.diverged_mafs))
+        x -= self.x_mean
+        return x
+
     def compute_liabilities(self, x, normalize=False):
         """Return normalized vector of liabilities"""
         if self.theta is None:

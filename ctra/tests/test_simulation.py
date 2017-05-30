@@ -106,3 +106,17 @@ def test_true_annotation_two_degenerate_components_non_contiguous_non_inf():
     a[::2] = 1
     _test(p=p, pheno='gaussian', true_annotation=a,
           annotation_params=[(100, 1), (100, 1)])
+
+def test_inf_gaussian_pop_struct():
+    pve = []
+    for seed in range(50):
+        s = ctra.simulation.Simulation(p=1000, seed=seed)
+        s.sample_effects(pve=0.5)
+        x = s.sample_genotypes_pop_struct(1000)
+        y = s.compute_liabilities(x)
+        grm = ctra.model.grm(x, s.annot)
+        h = ctra.model.pcgc(y, grm)
+        pve.append(h)
+    m = numpy.mean(pve)
+    se = numpy.std(pve)
+    assert m - se <= 0.5 <= m + se
