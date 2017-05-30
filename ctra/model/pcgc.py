@@ -43,7 +43,7 @@ def pcgc(y, grm, K=None):
 def _estimate_grm(x):
     """Return upper triangular entries of the GRM estimated from x"""
     x -= numpy.mean(x, axis=0)
-    x /= numpy.std(x, axis=0)
+    x /= (numpy.std(x, axis=0) + 1e-6)
     grm = numpy.inner(x, x)[numpy.triu_indices(x.shape[0], 1)].reshape(-1, 1)
     grm /= x.shape[1]
     return grm
