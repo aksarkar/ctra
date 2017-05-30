@@ -28,7 +28,7 @@ def parse_results(measure):
             result = pickle.load(f)
             num_causal = len(numpy.where(result['simulation'].theta != 0)[0])
             num_variants = result['simulation'].p
-            estimated_prop.append([scipy.special.logit(num_causal / num_variants), result['m0_b']])
+            estimated_prop.append([scipy.special.logit(num_causal / num_variants), result['m0_b'][0]])
             if perf_columns is None:
                 perf_columns = [k for k in result if measure in k]
             performance.append([scipy.special.logit(num_causal / num_variants)] +
