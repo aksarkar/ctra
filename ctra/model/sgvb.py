@@ -198,11 +198,12 @@ needed for specific likelihoods.
         epoch = T.iscalar(name='epoch')
 
         # Pre-generate stochastic samples
+        stoch_sample_batches = 10
         if random_state is None:
             self._R = numpy.random
         else:
             self._R = random_state
-        noise = _S(self._R.normal(size=(5 * stoch_samples, minibatch_n)).astype(_real), name='noise')
+        noise = _S(self._R.normal(size=(stoch_sample_batches * stoch_samples, minibatch_n)).astype(_real), name='noise')
 
         # Re-parameterize eta = X theta (Kingma, Salimans, & Welling NIPS
         # 2015), and backpropagate through the RNG (Kingma & Welling, ICLR
@@ -211,14 +212,14 @@ needed for specific likelihoods.
         self.theta_posterior_var = self.q_z / self.q_theta_prec + self.q_z * (1 - self.q_z) * T.sqr(self.q_theta_mean)
         self.eta_mean = T.dot(self.X, self.theta_posterior_mean)
         eta_var = T.dot(T.sqr(self.X), self.theta_posterior_var)
-        eta_minibatch = epoch % 5
+        eta_minibatch = epoch % stoch_sample_batches
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
         eta = self.w * (self.eta_mean + T.sqrt(eta_var) * eta_raw)
 
         # We need to generate independent noise samples for model parameters
         # besides the GSS parameters/hyperparameters (biases, variances in
         # likelihood)
-        phi_minibatch = (epoch + 1) % 5
+        phi_minibatch = (epoch + 1) % stoch_sample_batches
         phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:1]
 
         error = self._llik(self.y, eta, phi_raw)
