@@ -371,7 +371,7 @@ class GaussianSGVB(SGVB):
         self.loss = _F(inputs=[self.X, self.y], outputs=T.sqr(self.y - self.eta_mean).sum(), allow_input_downcast=True)
 
     def _llik(self, y, eta, phi_raw):
-        phi = T.exp(T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda_mean + T.sqrt(1 / self.log_lambda_prec) * phi_raw), 1))
+        phi = T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda_mean + T.sqrt(1 / self.log_lambda_prec) * phi_raw), 1)
         F = -.5 * (-T.log(phi) + T.sqr(y - eta) * phi)
         return T.mean(T.sum(F, axis=1))
 
