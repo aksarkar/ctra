@@ -206,9 +206,8 @@ needed for specific likelihoods.
             self._R = random_state
         noise = _S(self._R.normal(size=(stoch_sample_batches * stoch_samples, minibatch_n)).astype(_real), name='noise')
 
-        # Re-parameterize eta = X theta (Kingma, Salimans, & Welling NIPS
-        # 2015), and backpropagate through the RNG (Kingma & Welling, ICLR
-        # 2014).
+        # Local reparameterization eta = X theta (Kingma, Salimans, & Welling
+        # NIPS 2015)
         self.theta_posterior_mean = self.q_z * self.q_theta_mean
         self.theta_posterior_var = self.q_z / self.q_theta_prec + self.q_z * (1 - self.q_z) * T.sqr(self.q_theta_mean)
         self.eta_mean = T.dot(self.X, self.theta_posterior_mean)
@@ -233,9 +232,8 @@ needed for specific likelihoods.
         kl_hyper = 0
         for mean, log_prec, prior_mean, prior_prec in zip(self.hyperparam_means, self.hyperparam_log_precs, self.hyperprior_means, self.hyperprior_precs):
             kl_hyper += kl_normal_normal(mean, self.min_prec + T.nnet.softplus(log_prec), prior_mean, prior_prec).sum()
-        kl = kl_qtheta_ptheta + kl_qz_pz + kl_hyper
-        # Kingma & Welling 2013 (eq. 8)
-        elbo = (error - kl) * self.scale_n
+        # Kingma & Welling 2013 (eq. 24)
+        elbo = self.scale_n * (error - kl_qtheta_ptheta - kl_qz_pz) - kl_hyper
 
         logger.debug('Compiling the Theano functions')
         init_updates = [(param, self._R.normal(scale=0.1, size=p).astype(_real)) for param in self.params]
@@ -244,8 +242,7 @@ needed for specific likelihoods.
         self.initialize = _F(inputs=[], outputs=[], updates=init_updates)
 
         self.variational_params = self.params + self.hyperparam_means + self.hyperparam_log_precs
-        # Lasagne minimizes, so flip the sign
-        sgd_updates = esgd(-elbo, self.variational_params, learning_rate=learning_rate, decay=rho)
+        sgd_updates = rmsprop(-elbo, self.variational_params, learning_rate=learning_rate, rho=rho)
         sample_minibatch = epoch % (n // minibatch_n)
         sgd_givens = {self.X: self.X_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
