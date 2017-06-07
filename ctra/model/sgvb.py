@@ -173,7 +173,7 @@ needed for specific likelihoods.
         if b is None:
             self.hyperparam_means.append(self.q_b_mean)
             self.hyperparam_log_precs.append(self.q_b_log_prec)
-            self.hyperprior_means.append(_Z(1))
+            self.hyperprior_means.append(numpy.array([numpy.log(10) - numpy.log(p)], dtype=_real))
             self.hyperprior_precs.append(_O(1))
         else:
             self.hyperparam_means.append(self.q_w_mean)
