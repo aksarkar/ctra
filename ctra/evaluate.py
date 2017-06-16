@@ -219,7 +219,6 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
                                           x_validate, y_validate, penalty='l1', fit_intercept=True,
                                           solver='liblinear')
 
-    logger.info('Performing Bayesian optimization')
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
     }[args.model]
