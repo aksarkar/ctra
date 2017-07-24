@@ -223,7 +223,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
              'logistic': ctra.model.LogisticSGVB,
     }[args.model]
 
-    def fit(params, drop=None, b=None):
+    def fit(params, m0=None, drop=None):
         params = numpy.array(params)
         stoch_samples, log_learning_rate, max_epochs, rho = params.astype('float32')
         if drop is not None:
@@ -232,7 +232,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
             weights[drop] = 0
         else:
             weights = None
-        m = model(x, y, s.annot, b=b, weights=weights, stoch_samples=int(stoch_samples),
+        m = model(x, y, s.annot, m0=m0, weights=weights, stoch_samples=int(stoch_samples),
                   learning_rate=numpy.exp(log_learning_rate), minibatch_n=None,
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
@@ -268,7 +268,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
 
     if len(args.annotation) > 1:
         logger.info('Fitting annotation model')
-        m1 = fit(numpy.array(opt['x_opt']), b=m0.b)
+        m1 = fit(numpy.array(opt['x_opt']), m0=m0)
         result['m1_b'] = m1.b
         result['m1_w'] = m1.w
         result['m1_training_set_score'] = numpy.asscalar(m1.score(x, y))

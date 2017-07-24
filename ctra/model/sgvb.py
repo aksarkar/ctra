@@ -94,7 +94,7 @@ class SGVB:
 needed for specific likelihoods.
 
     """
-    def __init__(self, X_, y_, a_, b=None, stoch_samples=50, learning_rate=0.1,
+    def __init__(self, X_, y_, a_, m0=None, stoch_samples=50, learning_rate=0.1,
                  minibatch_n=None, rho=0.9, weights=None,
                  hyperparam_means=None, hyperparam_log_precs=None,
                  random_state=None):
@@ -103,6 +103,7 @@ needed for specific likelihoods.
         X_ - n x p dosages
         y_ - n x 1 phenotypes
         a_ - p x 1 annotations (entries in {1..m})
+        m0 - Genome-wide model (needed for baseline b, c)
         stoch_samples - Noise samples for SGVB
         learning_rate - initial learning rate for RMSprop
         minibatch_n - Minibatch size
@@ -138,24 +139,28 @@ needed for specific likelihoods.
         self.scale_n = n / minibatch_n
 
         # Variational surrogate for target hyperposterior
+        # p(theta_j) = pi_j N(0, tau_j^-1) +
+        #              (1 - pi_j) N(0, (tau_j + delta)^-1)
+        # logit(pi_j) = A_j w + b
         self.q_w_mean = _S(_Z(m), name='q_w_mean')
         self.q_w_log_prec = _S(_Z(m), name='q_w_log_prec')
         self.q_b_mean = _S(_Z(1), name='q_b_mean')
         self.q_b_log_prec = _S(_Z(1), name='q_b_log_prec')
-        # p(theta_j) = A_j pi N(0, (A_j tau)^-1) +
-        #              (1 - A_j pi) N(0, (A_j tau + delta)^-1)
+        # tau_j = eps + softplus(A_j v + c)
         self.min_prec = 1e-3
-        self.q_log_tau_mean = _S(_Z(m), name='q_log_tau_mean')
-        self.q_log_tau_log_prec = _S(_Z(m), name='q_log_tau_log_prec')
-        self.q_tau_mean = self.min_prec + T.nnet.softplus(self.q_log_tau_mean)
+        self.q_v_mean = _S(_Z(m), name='q_v_mean')
+        self.q_v_log_prec = _S(_Z(m), name='q_v_log_prec')
+        self.q_c_mean = _S(_Z(1), name='q_c_mean')
+        self.q_c_log_prec = _S(_Z(1), name='q_c_log_prec')
 
         # We don't need to use the hyperparameter noise samples for these
         # parameters because we can deal with them analytically
-        if b is None:
+        if m0 is None:
             pi = clipped_sigmoid(T.addbroadcast(self.q_b_mean, 0))
+            tau = self.min_prec + T.nnet.softplus(T.addbroadcast(self.q_c_mean, 0))
         else:
-            pi = clipped_sigmoid(T.dot(self.A, self.q_w_mean) + b)
-        tau = T.dot(self.A, self.q_tau_mean)
+            pi = clipped_sigmoid(T.dot(self.A, self.q_w_mean) + m0.b)
+            tau = self.min_prec + T.nnet.softplus(T.dot(self.A, self.q_v_mean) + m0.c)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
@@ -165,21 +170,16 @@ needed for specific likelihoods.
         self.q_theta_prec = self.min_prec + T.nnet.softplus(self.q_theta_log_prec)
         self.params = [self.q_logit_z, self.q_theta_mean, self.q_theta_log_prec]
 
-        self.hyperparam_means = [self.q_log_tau_mean]
-        self.hyperparam_log_precs = [self.q_log_tau_log_prec]
-        self.hyperprior_means = [_Z(1)]
-        self.hyperprior_precs = [_O(1)]
-
-        if b is None:
-            self.hyperparam_means.append(self.q_b_mean)
-            self.hyperparam_log_precs.append(self.q_b_log_prec)
-            self.hyperprior_means.append(numpy.array([-numpy.log(p)], dtype=_real))
-            self.hyperprior_precs.append(numpy.array([0.1], dtype=_real))
+        if m0 is None:
+            self.hyperparam_means = [self.q_b_mean, self.q_c_mean]
+            self.hyperparam_log_precs = [self.q_b_log_prec, self.q_c_log_prec]
+            self.hyperprior_means = [numpy.array([-numpy.log(p)], dtype=_real), _Z(1)]
+            self.hyperprior_precs = [numpy.array([0.1], dtype=_real), _O(1)]
         else:
-            self.hyperparam_means.append(self.q_w_mean)
-            self.hyperparam_log_precs.append(self.q_w_log_prec)
-            self.hyperprior_means.append(_Z(m))
-            self.hyperprior_precs.append(_O(m))
+            self.hyperparam_means = [self.q_w_mean, self.q_v_mean]
+            self.hyperparam_log_precs = [self.q_w_log_prec, self.q_v_log_prec]
+            self.hyperprior_means = [_Z(m), _Z(m)]
+            self.hyperprior_precs = [_O(m), _O(m)]
 
         if hyperparam_means is not None:
             # Include model-specific terms. Assume everything is Gaussian on
@@ -251,7 +251,8 @@ needed for specific likelihoods.
         self._trace = _F(inputs=[epoch],
                          outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
                          self.variational_params, givens=sgd_givens)
-        opt_outputs = [elbo, self.q_z, self.theta_posterior_mean, self.theta_posterior_var, self.q_w_mean, self.q_b_mean]
+        opt_outputs = [elbo, self.q_z, self.theta_posterior_mean, self.theta_posterior_var, self.q_w_mean, self.q_b_mean,
+                       self.q_v_mean, self.q_c_mean]
         self.opt = _F(inputs=[], outputs=opt_outputs,
                       givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
@@ -300,7 +301,7 @@ needed for specific likelihoods.
                 logger.warn('ELBO infinite. Stopping early')
                 break
         self.validation_loss = self.loss(xv, yv)
-        self._evidence, self.pip, self.theta, self.theta_var, self.w, self.b = self.opt()
+        self._evidence, self.pip, self.theta, self.theta_var, self.w, self.b, self.v, self.c = self.opt()
         return self
 
     def predict(self, x):
