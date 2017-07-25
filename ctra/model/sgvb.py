@@ -159,8 +159,10 @@ needed for specific likelihoods.
             pi = clipped_sigmoid(T.addbroadcast(self.q_b_mean, 0))
             tau = self.min_prec + T.nnet.softplus(T.addbroadcast(self.q_c_mean, 0))
         else:
-            pi = clipped_sigmoid(T.dot(self.A, self.q_w_mean) + m0.b)
-            tau = self.min_prec + T.nnet.softplus(T.dot(self.A, self.q_v_mean) + m0.c)
+            self.b = m0.b
+            self.c = m0.c
+            pi = clipped_sigmoid(T.dot(self.A, self.q_w_mean) + self.b)
+            tau = self.min_prec + T.nnet.softplus(T.dot(self.A, self.q_v_mean) + self.c)
 
         # Variational parameters
         self.q_logit_z = _S(_Z(p), name='q_logit_z')
