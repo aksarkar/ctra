@@ -18,44 +18,37 @@ def pushdir(directory):
     yield
     os.chdir(cwd)
 
-def parse_results(measure):
+def parse_results():
     files = glob.glob(os.path.join('[0-9]*.pkl'))
-    estimated_prop = []
-    performance = []
-    perf_columns = None
+    results = []
     for f in files:
         with open(f, 'rb') as f:
-            result = pickle.load(f)
-            num_causal = len(numpy.where(result['simulation'].theta != 0)[0])
-            num_variants = result['simulation'].p
-            estimated_prop.append([scipy.special.logit(num_causal / num_variants), result['m0_b'][0]])
-            if perf_columns is None:
-                perf_columns = [k for k in result if measure in k]
-            performance.append([scipy.special.logit(num_causal / num_variants)] +
-                               [result[k] for k in perf_columns])
-    estimated_prop = pandas.DataFrame(estimated_prop)
-    estimated_prop.columns = ['true_pi', 'estimated_pi']
-    performance = pandas.DataFrame(performance)
-    performance.columns = ['true_pi'] + perf_columns
-    return estimated_prop, performance
+            results.append(pandas.Series(pickle.load(f)))
+    results = pandas.DataFrame(results)
+    results['m0_b'] = [x[0] for x in results['m0_b']]
+    results['true_b'] = [scipy.special.logit(numpy.sum([n for n, _ in a.annotation]) / a.num_variants)
+                         for a in results['args']]
+    return results
 
-def plot_idealized_one_component(measure='score'):
+def plot_idealized_one_component(measure):
     if measure not in ('score', 'auprc'):
         raise ArgumentError
-    estimated_prop, performance = parse_results(measure)
+    results = parse_results()
     figure()
-    ax = estimated_prop.boxplot('estimated_pi', by='true_pi', grid=False, return_type='axes')
+    results.boxplot(column='m0_b', by='true_b', grid=False,
+                    return_type='axes')
     savefig('plot')
     close()
-
     figure()
-    performance.boxplot(by='true_pi', grid=False)
-    axhline(0.5, color='black')
+    results.boxplot(column=[k for k in results.columns if measure in k],
+                    by='true_b', grid=False)
+    if measure == 'score':
+        axhline(0.5, color='black')
     savefig('performance')
     close()
 
 if __name__ == '__main__':
     with pushdir('gaussian-idealized-one-component'):
-        plot_idealized_one_component()
+        plot_idealized_one_component('score')
     with pushdir('logistic-idealized-one-component'):
         plot_idealized_one_component('auprc')
