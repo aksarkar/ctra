@@ -255,6 +255,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     logger.info('Fitting genome-wide model')
     m0 = fit(numpy.array(opt['x_opt']))
     result['m0_b'] = m0.b
+    result['m0_c'] = m0.c
     result['m0_training_set_score'] = numpy.asscalar(m0.score(x, y))
     result['m0_validation_set_score'] = numpy.asscalar(m0.score(x_validate, y_validate))
     logger.info('Training set score = {:.3f}'.format(result['m0_training_set_score']))
@@ -269,8 +270,8 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     if len(args.annotation) > 1:
         logger.info('Fitting annotation model')
         m1 = fit(numpy.array(opt['x_opt']), m0=m0)
-        result['m1_b'] = m1.b
         result['m1_w'] = m1.w
+        result['m1_v'] = m1.v
         result['m1_training_set_score'] = numpy.asscalar(m1.score(x, y))
         result['m1_validation_set_score'] = numpy.asscalar(m1.score(x_validate, y_validate))
         logger.info('Training set score = {:.3f}'.format(result['m1_training_set_score']))
