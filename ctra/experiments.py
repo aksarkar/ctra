@@ -26,19 +26,15 @@ def parse_results():
             results.append(pandas.Series(pickle.load(f)))
     results = pandas.DataFrame(results)
     results['m0_b'] = [x[0] for x in results['m0_b']]
-    results['true_b'] = [scipy.special.logit(numpy.sum([n for n, _ in a.annotation]) / a.num_variants)
-                         for a in results['args']]
+    results['num_causal'] = [numpy.array([x[0] for x in a.annotation]) for a in results['args']]
+    results['true_b'] = [scipy.special.logit(r['num_causal'].sum() / r['args'].num_variants)
+                         for _, r in results.iterrows()]
     return results
 
-def plot_idealized_one_component(measure):
+def plot_performance(results, measure):
     if measure not in ('score', 'auprc'):
         raise ArgumentError
-    results = parse_results()
-    figure()
-    results.boxplot(column='m0_b', by='true_b', grid=False,
-                    return_type='axes')
-    savefig('plot')
-    close()
+
     figure()
     results.boxplot(column=[k for k in results.columns if measure in k],
                     by='true_b', grid=False)
@@ -47,8 +43,49 @@ def plot_idealized_one_component(measure):
     savefig('performance')
     close()
 
+def plot_idealized_one_component(measure):
+    results = parse_results()
+    plot_performance(results, measure)
+
+    figure()
+    results.boxplot(column='m0_b', by='true_b', grid=False,
+                    return_type='axes')
+    savefig('plot')
+    close()
+
+def plot_idealized_two_component(measure):
+    results = parse_results()
+    plot_performance(results, measure)
+
+    true_log_odds = results['num_causal'].apply(lambda x: pandas.Series(scipy.special.logit(x / 1e4)))
+    est_log_odds = (results['m0_b'] + results['m1_w']).apply(pandas.Series)
+    log_odds = true_log_odds.merge(right=est_log_odds, left_index=True, right_index=True)
+    log_odds.columns = ['true_log_odds_0', 'true_log_odds_1', 'est_log_odds_0', 'est_log_odds_1']
+    equal_effects = log_odds[log_odds['true_log_odds_0'] != log_odds['true_log_odds_1']]
+    equal_prop = log_odds[log_odds['true_log_odds_0'] == log_odds['true_log_odds_1']]
+
+    fig, ax = subplots(1, 2, sharey=True)
+    equal_effects.boxplot(column='est_log_odds_0', by='true_log_odds_0',
+                          ax=ax[0], grid=False, return_type='axes')
+    equal_effects.boxplot(column='est_log_odds_1', by='true_log_odds_1',
+                          ax=ax[1], grid=False, return_type='axes')
+    savefig('equal-effects')
+    close()
+
+    fig, ax = subplots(1, 2, sharey=True)
+    equal_prop.boxplot(column='est_log_odds_0', by='true_log_odds_0',
+                       ax=ax[0], grid=False, return_type='axes')
+    equal_prop.boxplot(column='est_log_odds_1', by='true_log_odds_1',
+                       ax=ax[1], grid=False, return_type='axes')
+    savefig('equal-prop')
+    close()
+
 if __name__ == '__main__':
     with pushdir('gaussian-idealized-one-component'):
         plot_idealized_one_component('score')
     with pushdir('logistic-idealized-one-component'):
         plot_idealized_one_component('auprc')
+    with pushdir('gaussian-idealized-two-component'):
+        plot_idealized_two_component('score')
+    with pushdir('logistic-idealized-two-component'):
+        plot_idealized_two_component('auprc')
