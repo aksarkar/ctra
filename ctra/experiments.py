@@ -59,10 +59,23 @@ def plot_idealized_two_component(measure):
 
     true_log_odds = results['num_causal'].apply(lambda x: pandas.Series(scipy.special.logit(x / 1e4)))
     est_log_odds = (results['m0_b'] + results['m1_w']).apply(pandas.Series)
+    est_log_odds['diff'] = est_log_odds[1] - est_log_odds[0]
     log_odds = true_log_odds.merge(right=est_log_odds, left_index=True, right_index=True)
-    log_odds.columns = ['true_log_odds_0', 'true_log_odds_1', 'est_log_odds_0', 'est_log_odds_1']
+    log_odds.columns = ['true_log_odds_0', 'true_log_odds_1', 'est_log_odds_0', 'est_log_odds_1', 'est_diff']
     equal_effects = log_odds[log_odds['true_log_odds_0'] != log_odds['true_log_odds_1']]
     equal_prop = log_odds[log_odds['true_log_odds_0'] == log_odds['true_log_odds_1']]
+
+    figure()
+    equal_effects.boxplot(column='est_diff', by='true_log_odds_0', grid=False,
+                          return_type='axes')
+    savefig('equal-effects-diff')
+    close()
+
+    figure()
+    equal_prop.boxplot(column='est_diff', by='true_log_odds_0', grid=False,
+                       return_type='axes')
+    savefig('equal-prop-diff')
+    close()
 
     fig, ax = subplots(1, 2, sharey=True)
     equal_effects.boxplot(column='est_log_odds_0', by='true_log_odds_0',
