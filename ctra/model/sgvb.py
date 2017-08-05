@@ -27,22 +27,6 @@ def _S(x, **kwargs):
 def kl_normal_normal(mean, prec, prior_mean, prior_prec):
     return .5 * (1 - T.log(prior_prec) + T.log(prec) + prior_prec * (T.sqr(mean - prior_mean) + 1 / prec))
 
-def sgd(loss, params, hyperparams, learning_rate=0.01, **kwargs):
-    """Constant rate SGD for params, Robbins-Monro SGD for hyperparams
-
-    Mandt et al. "Stochastic Gradient Descent as Approximate Bayesian
-    Inference" arxiv:1704.04289
-
-    """
-    updates = collections.OrderedDict()
-    epoch = _S(numpy.array([1], dtype=_real))
-    updates[epoch] = epoch + 1
-    for param, grad in zip(params, theano.grad(loss, params)):
-        updates[param] = param - learning_rate * grad
-    for param, grad in zip(hyperparams, theano.grad(loss, hyperparams)):
-        updates[param] = param - learning_rate * T.inv(T.sqrt(T.addbroadcast(epoch, 0))) * grad
-    return updates
-
 def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6, **kwargs):
     """RMSProp (from Lasagne)
 
@@ -64,25 +48,6 @@ def rmsprop(loss, params, learning_rate=1.0, rho=0.9, epsilon=1e-6, **kwargs):
         updates[param] = param - (learning_rate * grad /
                                   T.sqrt(accu_new + epsilon))
 
-    return updates
-
-def esgd(loss, params, learning_rate=0.01, rho=0.9, epsilon=1e-2, **kwargs):
-    """Equilibrated SGD
-
-    Dauphin et al. NIPS 2015
-
-    """
-    rho = T.cast(rho, _real)
-    grads = theano.grad(loss, params)
-    updates = collections.OrderedDict()
-    random_state = T.shared_randomstreams.RandomStreams()
-    for param, grad in zip(params, grads):
-        shape = param.get_value().shape
-        noise = random_state.normal(size=shape)
-        D = _S(_Z(shape))
-        Hv = T.Rop(grad, param, noise)
-        updates[D] = rho * D + (1 - rho) * Hv * Hv
-        updates[param] = param - learning_rate * grad / T.sqrt(D + epsilon)
     return updates
 
 def clipped_sigmoid(x):
