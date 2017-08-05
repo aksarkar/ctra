@@ -8,10 +8,7 @@ setuptools.setup(
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
     license='MIT',
-    install_requires=['h5py', 'matplotlib', 'numpy', 'robo', 'scipy', 'theano'],
-    dependency_links = [
-        'https://github.com/automl/robo/tarball/master#egg=robo'
-    ]
+    install_requires=['h5py', 'matplotlib', 'numpy', 'pandas', 'scipy', 'theano'],
     entry_points={
         'console_scripts': [
             'ctra-evaluate=ctra.evaluate:evaluate',

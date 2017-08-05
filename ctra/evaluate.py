@@ -19,7 +19,6 @@ import sys
 import h5py
 from matplotlib.pyplot import *
 import numpy
-import robo.fmin
 import scipy.stats
 import scipy.linalg
 import sklearn.linear_model
@@ -243,13 +242,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
         m = fit(params)
         return m.validation_loss
 
-    # Find the optimal learning parameters (minimum test loss)
-    # stoch_samples, log-learning_rate, max_epochs, rho
-    lower_bound = numpy.array([1, -3, 20, 0.5])
-    upper_bound = numpy.array([50, 0, 50, 0.9])
-    logger.info('Performing Bayesian optimization')
-    opt = robo.fmin.bayesian_optimization(loss, lower_bound, upper_bound, num_iterations=40)
-    logger.info('Optimal learning parameters = {}'.format(opt))
+    opt = {'x_opt': [1, -2, 20, 0.7]}
     result.update(opt)
 
     logger.info('Fitting genome-wide model')
