@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name='ctra',
     description='Complex Trait Regulatory Architectures',
-    version='0.7',
+    version='0.8',
     url='https://github.mit.edu/aksarkar/ctra',
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
