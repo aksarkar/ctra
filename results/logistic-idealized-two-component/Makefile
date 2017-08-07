@@ -21,6 +21,7 @@ all: joblist
 		rm *.joblog; \
 		mv redo joblist; \
 		done;
+	touch $@
 
 joblist:
 	awk "$$TWO_COMPONENT_EQUAL_EFFECT" >$@

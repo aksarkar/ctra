@@ -43,7 +43,7 @@ def plot_performance(results, measure):
     savefig('performance')
     close()
 
-def plot_idealized_one_component(measure):
+def plot_one_component(measure):
     results = parse_results()
     plot_performance(results, measure)
 
@@ -53,11 +53,11 @@ def plot_idealized_one_component(measure):
     savefig('plot')
     close()
 
-def plot_idealized_two_component(measure):
+def plot_two_component(measure):
     results = parse_results()
     plot_performance(results, measure)
 
-    true_log_odds = results['num_causal'].apply(lambda x: pandas.Series(scipy.special.logit(x / 1e4)))
+    true_log_odds = results.apply(lambda x: pandas.Series(scipy.special.logit(x['num_causal'] / x['simulation'].p)), 1)
     est_log_odds = (results['m0_b'] + results['m1_w']).apply(pandas.Series)
     est_log_odds['diff'] = est_log_odds[1] - est_log_odds[0]
     log_odds = true_log_odds.merge(right=est_log_odds, left_index=True, right_index=True)
@@ -65,40 +65,49 @@ def plot_idealized_two_component(measure):
     equal_effects = log_odds[log_odds['true_log_odds_0'] != log_odds['true_log_odds_1']]
     equal_prop = log_odds[log_odds['true_log_odds_0'] == log_odds['true_log_odds_1']]
 
+    if len(equal_prop) > 0:
+        figure()
+        equal_prop.boxplot(column='est_diff', by='true_log_odds_0', grid=False,
+                           return_type='axes')
+        savefig('equal-prop-diff')
+        close()
+
+        fig, ax = subplots(1, 2, sharey=True)
+        equal_prop.boxplot(column='est_log_odds_0', by='true_log_odds_0',
+                           ax=ax[0], grid=False, return_type='axes')
+        equal_prop.boxplot(column='est_log_odds_1', by='true_log_odds_1',
+                           ax=ax[1], grid=False, return_type='axes')
+        savefig('equal-prop')
+        close()
+
     figure()
     equal_effects.boxplot(column='est_diff', by='true_log_odds_0', grid=False,
                           return_type='axes')
     savefig('equal-effects-diff')
     close()
 
-    figure()
-    equal_prop.boxplot(column='est_diff', by='true_log_odds_0', grid=False,
-                       return_type='axes')
-    savefig('equal-prop-diff')
-    close()
-
-    fig, ax = subplots(1, 2, sharey=True)
+    fig, axes = subplots(1, 2, sharey=True)
     equal_effects.boxplot(column='est_log_odds_0', by='true_log_odds_0',
-                          ax=ax[0], grid=False, return_type='axes')
-    equal_effects.boxplot(column='est_log_odds_1', by='true_log_odds_1',
-                          ax=ax[1], grid=False, return_type='axes')
+                          ax=axes[0], grid=False, return_type='axes')
+    if numpy.isfinite(equal_effects['true_log_odds_1']).all():
+        equal_effects.boxplot(column='est_log_odds_1', by='true_log_odds_1',
+                              ax=axes[1], grid=False, return_type='axes')
+    else:
+        equal_effects.boxplot(column='est_log_odds_1', by='true_log_odds_0',
+                              ax=axes[1], grid=False, return_type='axes')
     savefig('equal-effects')
-    close()
-
-    fig, ax = subplots(1, 2, sharey=True)
-    equal_prop.boxplot(column='est_log_odds_0', by='true_log_odds_0',
-                       ax=ax[0], grid=False, return_type='axes')
-    equal_prop.boxplot(column='est_log_odds_1', by='true_log_odds_1',
-                       ax=ax[1], grid=False, return_type='axes')
-    savefig('equal-prop')
     close()
 
 if __name__ == '__main__':
     with pushdir('gaussian-idealized-one-component'):
-        plot_idealized_one_component('score')
+        plot_one_component('score')
     with pushdir('logistic-idealized-one-component'):
-        plot_idealized_one_component('auprc')
+        plot_one_component('auprc')
+    with pushdir('gaussian-realistic-one-component'):
+        plot_one_component('score')
     with pushdir('gaussian-idealized-two-component'):
-        plot_idealized_two_component('score')
+        plot_two_component('score')
     with pushdir('logistic-idealized-two-component'):
-        plot_idealized_two_component('auprc')
+        plot_two_component('auprc')
+    with pushdir('gaussian-realistic-synthetic-annotations'):
+        plot_two_component('score')
