@@ -52,7 +52,6 @@ def _parser():
     input_args = parser.add_mutually_exclusive_group()
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     input_args.add_argument('-H', '--load-hdf5', help='HDF5 data set', default=None)
-    input_args.add_argument('-A', '--load-annotations', help='Annotation vector')
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
     output_args.add_argument('--write-result', help='Output file for pickled result', default=None)
@@ -66,6 +65,7 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
+    parser.add_argument('-A', '--load-annotations', help='Annotation vector')
     parser.add_argument('-j', '--jacknife', type=int, help='Number of jacknifes', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
