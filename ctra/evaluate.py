@@ -66,7 +66,6 @@ def _parser():
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
     parser.add_argument('-A', '--load-annotations', help='Annotation vector')
-    parser.add_argument('-j', '--jacknife', type=int, help='Number of jacknifes', default=0)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
 
@@ -275,11 +274,6 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
             logger.info('Training set AUPRC = {:.3f}'.format(result['m1_training_auprc']))
             logger.info('Validation set AUPRC = {:.3f}'.format(result['m1_validation_auprc']))
         logger.info('Posterior mode annotation log odds = {}'.format(m1.w))
-
-    if args.jacknife > 0:
-        logger.info('Starting jacknife estimates')
-        jacknife_se = numpy.array([fit(numpy.array(opt['x_opt']), drop=i).pi for i in s.random.choice(y.shape[0], 100)]).std()
-        logger.info('Jacknife SE = {}'.format(jacknife_se))
 
     if args.write_result is not None:
         with open(args.write_result, 'wb') as f:
