@@ -87,12 +87,15 @@ needed for specific likelihoods.
         if weights is None:
             weights = numpy.ones(n)
         self.w_ = _S(weights.astype('int32'))
-        self.p = numpy.array(list(collections.Counter(a_).values()), dtype='int')
 
-        # One-hot encode the annotations
-        m = self.p.shape[0]
-        A = numpy.zeros((p, m)).astype('i1')
-        A[range(p), a_] = 1
+        if a_.ndim == 1:
+            # One-hot encode the annotations
+            m = len(collections.Counter(a_).values())
+            A = numpy.zeros((p, m)).astype('i1')
+            A[range(p), a_] = 1
+        else:
+            m = a_.shape[1]
+            A = a_
         self.A = _S(A)
 
         self.X = T.fmatrix(name='X')

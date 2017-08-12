@@ -72,6 +72,7 @@ class Simulation:
         # Keep the right-most index of each annotation
         self.annot_index = numpy.array([self.p])
         self.annot = numpy.zeros(self.p, dtype='int32')
+        self.annot_matrix = None
         # Internally, keep the annotations in contiguous subvectors. Keep the
         # real annotations separately and de-reference when sampling effects
         self.true_annot = None
@@ -120,21 +121,44 @@ class Simulation:
         self.annot_index = numpy.cumsum(self.p * proportion).astype('int32')
         for i, (start, end) in enumerate(self._annotations()):
             self.annot[start:end] = i
+        self.annot_matrix = numpy.zeros((self.p, proportion.shape[0]), dtype='i1')
+        self.annot_matrix[:,self.annot] = 1
         return self
 
-    def load_annotations(self, a):
-        """Load vector of annotations.
+    def load_annotations(self, a, index=None):
+        """Load matrix of annotations.
 
-        a - p x 1 vector of annotations (0, ..., m - 1)
+        If a is one-dimensional, assume entries are categorical (0, ..., m -
+        1). Otherwise, use a[:,index] as a binary annotation.
+
+        a - p x m matrix of annotations
+        index - column to use for simulation (required if a.ndim > 1)
 
         """
-        p_k = numpy.array(list(collections.Counter(a).values()), dtype='int')
+        if a.ndim > 1:
+            if index is None:
+                raise ValueError("Index must be provided for multi-dimensional matrix")
+            if a.max() > 1 or a.min() < 0:
+                raise ValueError("Matrix a must be binary")
+            self.annot_matrix = a
+            a = 1 - a[:,index]
+        p_k = numpy.array(list(collections.Counter(a).values()), dtype='int32')
+        if self.annot_matrix is None:
+            # One-hot encode the matrix
+            self.annot_matrix = numpy.zeros((self.p, p_k.shape[0]), dtype='i1')
+            self.annot_matrix[range(self.p), a] = 1
         self.annot_index = numpy.cumsum(p_k)
-        self.true_annot = numpy.zeros(self.p, dtype='int')
+        # a[self.forward_index] == self.annot
+        self.forward_index = numpy.zeros(self.p, dtype='int')
         for i, (start, end) in enumerate(self._annotations()):
             self.annot[start:end] = i
-            self.true_annot[start:end] = numpy.nonzero(a == i)[0]
+            self.forward_index[start:end] = numpy.nonzero(a == i)[0]
+        assert (a[self.forward_index] == self.annot).all()
+        # self.annot[self.true_annot] == a
+        self.true_annot = numpy.zeros(self.p, dtype='int')
+        self.true_annot[self.forward_index] = numpy.arange(self.p)
         self.annot = self.annot[self.true_annot]
+        assert (self.annot == a).all()
         return self
 
     def sample_effects(self, pve, annotation_params=None, permute=False):

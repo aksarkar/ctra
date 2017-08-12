@@ -53,6 +53,10 @@ def _parser():
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     input_args.add_argument('-H', '--load-hdf5', help='HDF5 data set', default=None)
 
+    annot_args = parser.add_mutually_exclusive_group()
+    annot_args.add_argument('-A', '--load-annotations', help='Annotation vector')
+    annot_args.add_argument('--annotation-matrix', help='Annotation matrix')
+
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
     output_args.add_argument('--write-result', help='Output file for pickled result', default=None)
 
@@ -65,7 +69,6 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
-    parser.add_argument('-A', '--load-annotations', help='Annotation vector')
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
 
@@ -111,10 +114,16 @@ def _load_data(args, s):
         s.sample_mafs(args.min_maf, args.max_maf)
     if args.load_annotations is not None:
         logger.debug('Loading pre-computed annotations')
-        a = numpy.loadtxt(args.load_annotations).astype('int')
+        a = numpy.loadtxt(args.load_annotations).astype('int8')
         if a.shape[0] != args.num_variants:
             raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
         s.load_annotations(a)
+    elif args.annotation_matrix is not None:
+        with gzip.open(args.annotation_matrix, 'rt') as f:
+            a = numpy.loadtxt(f).astype('int8')
+        if a.shape[0] != args.num_variants:
+            raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
+        s.load_annotations(a, 0)
     if args.permute_causal:
         logger.debug('Generating effects with permuted causal indicator')
         s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
@@ -230,7 +239,7 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
             weights[drop] = 0
         else:
             weights = None
-        m = model(x, y, s.annot, m0=m0, weights=weights, stoch_samples=int(stoch_samples),
+        m = model(x, y, s.annot_matrix, m0=m0, weights=weights, stoch_samples=int(stoch_samples),
                   learning_rate=numpy.exp(log_learning_rate), minibatch_n=None,
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
