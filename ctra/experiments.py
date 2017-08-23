@@ -98,6 +98,14 @@ def plot_two_component(measure):
     savefig('equal-effects')
     close()
 
+def plot_real_annotations(measure):
+    results = parse_results()
+    plot_performance(results, measure)
+
+    causal = (self.theta != 0).astype('int')
+    true_log_odds = scipy.special.logit(causal.dot(self.annot_matrix) / self.p)
+    est_log_odds = result['m0_b'] + result['m1_w']
+
 if __name__ == '__main__':
     with pushdir('gaussian-idealized-one-component'):
         plot_one_component('score')
