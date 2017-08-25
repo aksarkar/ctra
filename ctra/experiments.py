@@ -98,13 +98,47 @@ def plot_two_component(measure):
     savefig('equal-effects')
     close()
 
+def _scalar_softplus(x):
+    """Numerically stable implementation of log(1 + exp(x))
+
+    This is the link function for the scale parameter
+
+    """
+    if x < -30.0:
+        return 0.0
+    elif x > 30.0:
+        return x
+    else:
+        return numpy.log1p(numpy.exp(x))
+
+_softplus = numpy.vectorize(_scalar_softplus)
+
 def plot_real_annotations(measure):
     results = parse_results()
     plot_performance(results, measure)
 
-    causal = (self.theta != 0).astype('int')
-    true_log_odds = scipy.special.logit(causal.dot(self.annot_matrix) / self.p)
-    est_log_odds = result['m0_b'] + result['m1_w']
+    m1_w = results['m1_w'].apply(pandas.Series)
+    fig = gcf();
+    clf();
+    fig.set_size_inches(30, 6);
+    axhline(y=0, color='black', linestyle='dashed')
+    m1_w.boxplot(column=list(m1_w.columns), grid=False);
+    xlabel('Annotation')
+    ylabel('Log odds ratio')
+    savefig('log-odds')
+    close()
+
+    m1_scale = 1 / (results['m0_c'] + results['m1_v']).apply(pandas.Series).apply(_softplus)
+    import pdb; pdb.set_trace()
+    fig = gcf();
+    clf();
+    fig.set_size_inches(11, 6);
+    axhline(y=1, color='black', linestyle='dashed')
+    m1_scale.T.boxplot(column=list(m1_scale.T.columns), grid=False)
+    xlabel('Simulation trial')
+    ylabel('Estimated effect size scale')
+    savefig('scale')
+    close()
 
 if __name__ == '__main__':
     with pushdir('gaussian-idealized-one-component'):
@@ -119,3 +153,7 @@ if __name__ == '__main__':
         plot_two_component('auprc')
     with pushdir('gaussian-realistic-synthetic-annotations'):
         plot_two_component('score')
+    with pushdir('gaussian-realistic-Enh'):
+        plot_real_annotations('score')
+    with pushdir('gaussian-realistic-EnhClusters'):
+        plot_real_annotations('score')
