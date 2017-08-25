@@ -216,15 +216,6 @@ def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
 def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     result = {'args': args,
               'simulation': s}
-    if args.model == 'gaussian':
-        result['lasso'] = _regularized(args, sklearn.linear_model.LassoCV, x, y, x_validate,
-                                       y_validate)
-        result['elastic_net'] = _regularized(args, sklearn.linear_model.ElasticNetCV, x, y, x_validate,
-                                             y_validate)
-    else:
-        result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegressionCV, x, y,
-                                          x_validate, y_validate, penalty='l1', fit_intercept=True,
-                                          solver='liblinear')
 
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
