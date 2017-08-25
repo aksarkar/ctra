@@ -1,4 +1,7 @@
-HAPLOTYPES := /broad/compbio/aksarkar/projects/roadmap/data/1kg
+DATA := /broad/compbio/aksarkar/projects/roadmap/data
+HAPLOTYPES := $(DATA)/1kg
+ENH := $(DATA)/roadmap/core-features/Enh
+ENHCLUSTERS := $(DATA)/roadmap/hb-features/EnhClusters
 FLAGS := --test 1000 --validation 1000
 TRIALS := 50
 EVALUATE := ctra-evaluate $(FLAGS)
@@ -9,7 +12,9 @@ SUBDIRS := gaussian-idealized-one-component \
 	gaussian-idealized-two-component \
 	logistic-idealized-two-component \
 	gaussian-realistic-one-component \
-	gaussian-realistic-synthetic-annotations
+	gaussian-realistic-synthetic-annotations \
+	gaussian-realistic-Enh \
+	gaussian-realistic-EnhClusters
 
 .PHONY: $(SUBDIRS)
 
@@ -25,7 +30,19 @@ pre:
 	parallel -X ln -sf {} . ::: $(HAPLOTYPES:haplotypes=1kg-phase1)/*.{gen.gz,sample}
 	touch $@
 
-annotations.txt:
-	zcat 58C_22.gen.gz | awk -vOFS='\t' '{if (int($$3 / 1e6) % 2) {print 0} else {print 1}}' >$@
+EnhClusters.txt.gz: $(notdir $(patsubst %.bed.gz,%.txt,$(wildcard $(ENHCLUSTERS)/*.bed.gz)))
+	paste -d" " $^ | gzip >$@
+
+%.txt: $(ENHCLUSTERS)/%.bed.gz
+	zcat 58C_22.gen.gz | awk -vOFS='\t' '{delta = length($$5) - length($$4); if (delta >= 0) {print "chr22", $$3, $$3 + delta + 1} else {print "chr22", $$3 + length($$5), $$3 - delta + 1}}' | bedtools intersect -sorted -nobuf -c -a stdin -b $< | cut -f4 >$@
+
+Enh.txt.gz: $(notdir $(patsubst %.bed.gz,%.txt,$(wildcard $(ENH)/*.bed.gz)))
+	paste -d" " $^ | gzip >$@
+
+%.txt: $(ENH)/%.bed.gz
+	zcat 58C_22.gen.gz | awk -vOFS='\t' '{delta = length($$5) - length($$4); if (delta >= 0) {print "chr22", $$3, $$3 + delta + 1} else {print "chr22", $$3 + length($$5), $$3 - delta + 1}}' | bedtools intersect -sorted -nobuf -c -a stdin -b $< | cut -f4 >$@
+
+synthetic-annotations.txt:
+	zcat 58C_22.gen.gz | awk -vOFS='\t' '{if (int($$3 / 5e5) % 2) {print 0} else {print 1}}' >$@
 
 .DELETE_ON_ERROR:

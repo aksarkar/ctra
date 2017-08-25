@@ -7,10 +7,10 @@ all: joblist
 		done;
 	touch $@
 
-joblist: chr22.hdf5 annotations.txt
-	parallel --dry-run $(EVALUATE) --write-result {#}.pkl -A annotations.txt -a {1},1 -a 0,1 --permute-causal -H $< -n 14162 -p 129877 -v 0.5 -m gaussian -s {2} ::: 100 1000 10000 ::: $$(seq 1 $(TRIALS)) >$@
+joblist: chr22.hdf5 synthetic-annotations.txt
+	parallel --dry-run $(EVALUATE) --write-result {#}.pkl -A synthetic-annotations.txt -a {1},1 -a 0,1 --permute-causal -H $< -n 14162 -p 129877 -v 0.5 -m gaussian -s {2} ::: 100 1000 10000 ::: $$(seq 1 $(TRIALS)) >$@
 
-annotations.txt chr22.hdf5:
+synthetic-annotations.txt chr22.hdf5:
 	ln -s ../$@ .
 
 clean:
