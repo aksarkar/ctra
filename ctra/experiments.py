@@ -129,7 +129,7 @@ def plot_real_annotations(measure):
     close()
 
     m1_scale = 1 / (results['m0_c'] + results['m1_v']).apply(pandas.Series).apply(_softplus)
-    import pdb; pdb.set_trace()
+
     fig = gcf();
     clf();
     fig.set_size_inches(11, 6);
@@ -137,7 +137,17 @@ def plot_real_annotations(measure):
     m1_scale.T.boxplot(column=list(m1_scale.T.columns), grid=False)
     xlabel('Simulation trial')
     ylabel('Estimated effect size scale')
-    savefig('scale')
+    savefig('scale-by-trial')
+    close()
+
+    fig = gcf();
+    clf();
+    fig.set_size_inches(30, 6);
+    axhline(y=1, color='black', linestyle='dashed')
+    m1_scale.boxplot(column=list(m1_scale.columns), grid=False)
+    xlabel('Annotation')
+    ylabel('Estimated effect size scale')
+    savefig('scale-by-annotation')
     close()
 
 if __name__ == '__main__':
