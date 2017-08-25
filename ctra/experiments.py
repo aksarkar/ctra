@@ -118,11 +118,15 @@ def plot_real_annotations(measure):
     plot_performance(results, measure)
 
     m1_w = results['m1_w'].apply(pandas.Series)
-    fig = gcf();
-    clf();
-    fig.set_size_inches(30, 6);
-    axhline(y=0, color='black', linestyle='dashed')
-    m1_w.boxplot(column=list(m1_w.columns), grid=False);
+    annotations = list(m1_w.columns)
+    m1_w['true_b'] = results['true_b']
+
+    fig, ax = subplots(2, 1)
+    fig.set_size_inches(30, 12);
+    for a, (k, g) in zip(ax, m1_w.groupby('true_b')):
+        a.set_title(k)
+        a.axhline(y=0, color='black', linestyle='dashed')
+        g.boxplot(column=annotations, grid=False, ax=a)
     xlabel('Annotation')
     ylabel('Log odds ratio')
     savefig('log-odds')
