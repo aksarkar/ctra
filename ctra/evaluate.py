@@ -53,9 +53,10 @@ def _parser():
     input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
     input_args.add_argument('-H', '--load-hdf5', help='HDF5 data set', default=None)
 
-    annot_args = parser.add_mutually_exclusive_group()
-    annot_args.add_argument('-A', '--load-annotations', help='Annotation vector')
+    annot_args = parser.add_argument_group()
     annot_args.add_argument('--annotation-matrix', help='Annotation matrix')
+    annot_args.add_argument('--annotation-matrix-column', help='Column of annotation matrix to use for simulation', type=int, default=0)
+    annot_args.add_argument('-A', '--annotation-vector', help='Annotation vector')
 
     output_args = parser.add_argument_group('Output', 'Writing out fitted models')
     output_args.add_argument('--write-result', help='Output file for pickled result', default=None)
@@ -112,18 +113,23 @@ def _load_data(args, s):
         if args.max_maf is None:
             args.max_maf = 0.05
         s.sample_mafs(args.min_maf, args.max_maf)
-    if args.load_annotations is not None:
-        logger.debug('Loading pre-computed annotations')
-        a = numpy.loadtxt(args.load_annotations).astype('int8')
+    if args.annotation_vector is not None:
+        logger.debug('Loading annotation vector')
+        a = numpy.loadtxt(args.annotation_vector).astype('int8')
         if a.shape[0] != args.num_variants:
             raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
         s.load_annotations(a)
     elif args.annotation_matrix is not None:
+        logger.debug('Loading annotation matrix')
         with gzip.open(args.annotation_matrix, 'rt') as f:
             a = numpy.loadtxt(f).astype('int8')
         if a.shape[0] != args.num_variants:
             raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
-        s.load_annotations(a, 0)
+        if args.annotation_matrix_column < 0:
+            raise _A('Annotation column must be non-negative')
+        if args.annotation_matrix_column > a.shape[1]:
+            raise _A('{} columns present in annotation matrix, but column {} specified'.format(a.shape[1], args.annotation_matrix_column))
+        s.load_annotations(a, args.annotation_matrix_column)
     if args.permute_causal:
         logger.debug('Generating effects with permuted causal indicator')
         s.sample_effects(pve=args.pve, annotation_params=args.annotation, permute=True)
