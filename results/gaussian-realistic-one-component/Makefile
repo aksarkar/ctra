@@ -1,4 +1,4 @@
-all: joblist
+gaussian-realistic-one-component: joblist
 	test -s joblist
 	until pm joblist -l h_vmem=32G -pe smp 2-16 -N gaussian-realistic-one-component; do \
 		bash $(HOME)/code/util/redo.sh gaussian-realistic-one-component.*.joblog >redo; \
@@ -14,6 +14,6 @@ chr22.hdf5:
 	ln -s ../$@ .
 
 clean:
-	rm -f all joblist gaussian-realistic-one-component.* *.pkl
+	rm -f gaussian-realistic-one-component joblist gaussian-realistic-one-component.* *.pkl
 
 .PHONY: clean

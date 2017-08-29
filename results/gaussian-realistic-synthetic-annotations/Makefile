@@ -1,4 +1,4 @@
-all: joblist
+gaussian-realistic-synthetic-annotations: joblist
 	test -s joblist
 	until pm joblist -l h_vmem=32G -pe smp 2-16 -N gaussian-realistic-synthetic-annotations; do \
 		bash $(HOME)/code/util/redo.sh gaussian-realistic-synthetic-annotations.*.joblog >redo; \
@@ -14,6 +14,6 @@ synthetic-annotations.txt chr22.hdf5:
 	ln -s ../$@ .
 
 clean:
-	rm -f all joblist gaussian-realistic-synthetic-annotations.* *.pkl
+	rm -f gaussian-realistic-synthetic-annotations joblist gaussian-realistic-synthetic-annotations.* *.pkl
 
 .PHONY: clean

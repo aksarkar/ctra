@@ -14,7 +14,7 @@ BEGIN {
 endef
 export TWO_COMPONENT_EQUAL_EFFECT
 
-all: joblist
+gaussian-idealized-two-component: joblist
 	test -s $<
 	until pm $< -l h_vmem=4G -q long -N gaussian-idealized-two-component; do \
 		bash $(HOME)/code/util/redo.sh gaussian-idealized-two-component.*.joblog >redo; \
