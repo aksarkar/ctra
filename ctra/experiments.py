@@ -119,16 +119,21 @@ def plot_real_annotations(measure):
 
     m1_w = results['m1_w'].apply(pandas.Series)
     annotations = list(m1_w.columns)
+    m1_w['m0_b'] = results['m0_b']
     m1_w['true_b'] = results['true_b']
+    m1_w['annotation_matrix_column'] = results['args'].apply(lambda x: x.annotation_matrix_column)
 
-    fig, ax = subplots(2, 1)
-    fig.set_size_inches(30, 12);
-    for a, (k, g) in zip(ax, m1_w.groupby('true_b')):
-        a.set_title(k)
-        a.axhline(y=0, color='black', linestyle='dashed')
+    fig, ax = subplots(8, 1)
+    fig.set_size_inches(30, 24);
+    for a, (k, g) in zip(ax, m1_w.groupby(['annotation_matrix_column', 'true_b'])):
+        expected_log_odds_ratio = (k[1] - g['m0_b']).mean()
+        a.set_title('Causal annotation = {}, genome-wide causal log odds = {:.3f}'.format(*k))
+        a.set_ylabel('Log odds ratio')
         g.boxplot(column=annotations, grid=False, ax=a)
+        a.axhline(y=0, color='black')
+        a.axhline(y=expected_log_odds_ratio, color='red')
+        a.set_xticklabels([])
     xlabel('Annotation')
-    ylabel('Log odds ratio')
     savefig('log-odds')
     close()
 
