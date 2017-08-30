@@ -135,6 +135,7 @@ class Simulation:
         index - column to use for simulation (required if a.ndim > 1)
 
         """
+        self.annot_matrix = None
         if a.ndim > 1:
             if index is None:
                 raise ValueError("Index must be provided for multi-dimensional matrix")
