@@ -157,13 +157,13 @@ def plot_real_annotations(measure):
     m1_w['annotation_matrix_column'] = results['args'].apply(lambda x: x.annotation_matrix_column)
 
     fig, ax = subplots(8, 1)
-    fig.set_size_inches(30, 24);
+    fig.set_size_inches(30, 24)
     for a, (k, g) in zip(ax, m1_w.groupby(['annotation_matrix_column', 'true_b'])):
-        expected_log_odds_ratio = (k[1] - g['m0_b']).mean()
         a.set_title('Causal annotation = {}, genome-wide causal log odds = {:.3f}'.format(*k))
         a.set_ylabel('Log odds ratio')
         g.boxplot(column=annotations, grid=False, ax=a)
         a.axhline(y=0, color='black')
+        expected_log_odds_ratio = (k[1] - g['m0_b']).mean()
         a.axhline(y=expected_log_odds_ratio, color='red')
         a.set_xticklabels([])
     xlabel('Annotation')
@@ -172,9 +172,9 @@ def plot_real_annotations(measure):
 
     m1_scale = 1 / (results['m0_c'] + results['m1_v']).apply(pandas.Series).apply(_softplus)
 
-    fig = gcf();
-    clf();
-    fig.set_size_inches(11, 6);
+    fig = gcf()
+    clf()
+    fig.set_size_inches(11, 6)
     axhline(y=1, color='black', linestyle='dashed')
     m1_scale.T.boxplot(column=list(m1_scale.T.columns), grid=False)
     xlabel('Simulation trial')
@@ -182,9 +182,9 @@ def plot_real_annotations(measure):
     savefig('scale-by-trial')
     close()
 
-    fig = gcf();
-    clf();
-    fig.set_size_inches(30, 6);
+    fig = gcf()
+    clf()
+    fig.set_size_inches(30, 6)
     axhline(y=1, color='black', linestyle='dashed')
     m1_scale.boxplot(column=list(m1_scale.columns), grid=False)
     xlabel('Annotation')
