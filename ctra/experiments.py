@@ -113,6 +113,39 @@ def _scalar_softplus(x):
 
 _softplus = numpy.vectorize(_scalar_softplus)
 
+def plot_synthetic_annotations():
+    results = parse_results()
+    plot_performance(results, 'score')
+
+    m1_w = results['m1_w'].apply(pandas.Series)
+    annotations = list(m1_w.columns)
+    m1_w['m0_b'] = results['m0_b']
+    m1_w['true_b'] = results['true_b']
+    m1_w['annotation'] = [r['args'].annotation_vector for _, r in results.iterrows()]
+
+    fig, ax = subplots(3, 2)
+    fig.set_size_inches(6, 9)
+    keys = []
+    for a, (k, g) in zip(ax.flatten(), m1_w.groupby(['true_b', 'annotation'])):
+        keys.append(k)
+        a.boxplot(numpy.array(g[annotations]))
+        a.axhline(y=0, color='black')
+        expected_log_odds_ratio = (k[0] - g['m0_b']).mean()
+        a.axhline(y=expected_log_odds_ratio, color='red')
+        a.set_xticklabels([0, 1])
+    keys = numpy.array(keys).reshape(3, 2, 2)
+    for row, logodds in zip(ax, keys[:,0,0]):
+        row[0].set_ylabel('Log odds ratio')
+        row[1].set_ylabel('Causal log odds={:.3f}'.format(float(logodds)))
+        row[1].yaxis.set_label_position('right')
+    for col, annotation in zip(ax.T, keys[0,:,1]):
+        size = annotation.split('-')[-1][:-4].upper()
+        col[0].set_xlabel('Element size={}'.format(size))
+        col[0].xaxis.set_label_position('top')
+        col[-1].set_xlabel('Annotation')
+    savefig('log-odds')
+    close()
+
 def plot_real_annotations(measure):
     results = parse_results()
     plot_performance(results, measure)
