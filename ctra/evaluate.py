@@ -70,6 +70,7 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
+    parser.add_argument('--regularized', action='store_true', help='Fit regularized models', default=False)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
 
@@ -222,6 +223,17 @@ def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
 def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
     result = {'args': args,
               'simulation': s}
+
+    if args.regularized:
+        if args.model == 'gaussian':
+            result['lasso'] = _regularized(args, sklearn.linear_model.LassoCV, x, y, x_validate,
+                                           y_validate)
+            result['elastic_net'] = _regularized(args, sklearn.linear_model.ElasticNetCV, x, y, x_validate,
+                                                 y_validate)
+        else:
+            result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegressionCV, x, y,
+                                              x_validate, y_validate, penalty='l1', fit_intercept=True,
+                                              solver='liblinear')
 
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
