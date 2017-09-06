@@ -122,7 +122,7 @@ class Simulation:
         for i, (start, end) in enumerate(self._annotations()):
             self.annot[start:end] = i
         self.annot_matrix = numpy.zeros((self.p, proportion.shape[0]), dtype='i1')
-        self.annot_matrix[:,self.annot] = 1
+        self.annot_matrix[range(self.p), self.annot] = 1
         return self
 
     def load_annotations(self, a, index=None):
