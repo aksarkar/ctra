@@ -27,6 +27,6 @@ joblist:
 	awk "$$TWO_COMPONENT" >$@
 
 clean:
-	rm -f joblist
+	rm -f logistic-idealized-two-component joblist
 	rm -f logistic-idealized-two-component.*
 	rm -f *.pkl
