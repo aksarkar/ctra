@@ -46,7 +46,6 @@ def _parser():
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
-    req_args.add_argument('--test', type=int, help='Test set size (for Bayesian optimization)', required=True)
     req_args.add_argument('--validation', type=int, help='Hold out validation set size (for final fit)', required=True)
 
     input_args = parser.add_mutually_exclusive_group()
@@ -168,40 +167,29 @@ def _load_data(args, s):
         else:
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
     # Hold out samples
-    hold_out_n = args.test + args.validation
     if args.model == 'gaussian':
         # Assume samples are exchangeable
-        x_test = x[-hold_out_n:-args.validation]
-        y_test = y[-hold_out_n:-args.validation]
         x_validate = x[-args.validation:]
         y_validate = y[-args.validation:]
-        x = x[:-hold_out_n]
-        y = y[:-hold_out_n]
+        x = x[:-args.validation]
+        y = y[:-args.validation]
     else:
         # Randomly subsample hold out set
-        hold_out = s.random.choice(args.num_samples, hold_out_n, replace=False)
-        mask = numpy.zeros(args.num_samples, dtype='bool')
-        mask[hold_out] = True
-        test = numpy.zeros(args.num_samples, dtype='bool')
-        test[hold_out[:args.test]] = True
         validation = numpy.zeros(args.num_samples, dtype='bool')
-        validation[hold_out[args.test:]] = True
-        x_test = x[test]
-        y_test = y[test]
+        hold_out = s.random.choice(args.num_samples, args.validation, replace=False)
+        validation[hold_out] = True
         x_validate = x[validation]
         y_validate = y[validation]
         # Permute the training set so minibatches are balanced in expectation
-        perm = s.random.permutation(args.num_samples - hold_out_n)
+        perm = s.random.permutation(args.num_samples - args.validation)
         x = x[~mask][perm]
         y = y[~mask][perm]
     x -= x.mean(axis=0)
-    x_test -= x_test.mean(axis=0)
     x_validate -= x_validate.mean(axis=0)
     if args.model == 'gaussian':
         y -= y.mean()
-        y_test -= y_test.mean()
         y_validate -= y_validate.mean()
-    return x, y, x_test, y_test, x_validate, y_validate
+    return x, y, x_validate, y_validate
 
 auprc = sklearn.metrics.average_precision_score
 
@@ -220,7 +208,7 @@ def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
         logger.info('Validation set AUPRC = {:.3f}'.format(result['validation_set_auprc']))
     return result
 
-def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
+def _fit(args, s, x, y, x_validate, y_validate):
     result = {'args': args,
               'simulation': s}
 
@@ -252,12 +240,8 @@ def _fit(args, s, x, y, x_test, y_test, x_validate, y_validate):
                   learning_rate=numpy.exp(log_learning_rate), minibatch_n=None,
                   rho=rho, random_state=s.random)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
-        m.fit(max_epochs=10 * int(max_epochs), xv=x_test, yv=y_test)
+        m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
         return m
-
-    def loss(params):
-        m = fit(params)
-        return m.validation_loss
 
     opt = {'x_opt': [1, -2, 20, 0.7]}
     result.update(opt)
@@ -310,7 +294,6 @@ def evaluate():
     _validate(args)
     logging.getLogger('ctra').setLevel(args.log_level)
     with ctra.simulation.simulation(args.num_variants, args.pve, args.annotation, args.seed) as s:
-        args.num_samples += args.test
         args.num_samples += args.validation
-        x, y, x_test, y_test, x_validate, y_validate = _load_data(args, s)
-        _fit(args, s, x, y, x_test, y_test, x_validate, y_validate)
+        x, y, x_validate, y_validate = _load_data(args, s)
+        _fit(args, s, x, y, x_validate, y_validate)

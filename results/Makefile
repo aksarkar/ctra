@@ -2,7 +2,7 @@ DATA := /broad/compbio/aksarkar/projects/roadmap/data
 HAPLOTYPES := $(DATA)/1kg
 ENH := $(DATA)/roadmap/core-features/Enh
 ENHCLUSTERS := $(DATA)/roadmap/hb-features/EnhClusters
-FLAGS := --test 1000 --validation 1000
+FLAGS := --validation 1000
 TRIALS := 50
 EVALUATE := ctra-evaluate $(FLAGS)
 export
