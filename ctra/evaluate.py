@@ -24,10 +24,7 @@ import scipy.linalg
 import sklearn.linear_model
 import sklearn.metrics
 
-import ctra.algorithms
-import ctra.formats
-import ctra.model
-import ctra.simulation
+import ctra
 
 logger = logging.getLogger(__name__)
 _A = argparse.ArgumentTypeError
@@ -69,6 +66,7 @@ def _parser():
     sim_args.add_argument('-P', '--study-prop', type=float, help='Binary phenotype case study proportion (assume 0.5 if omitted but prevalence given)', default=None)
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
+    parser.add_argument('--prior-mean-b', type=float, default=None)
     parser.add_argument('--regularized', action='store_true', help='Fit regularized models', default=False)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
@@ -238,7 +236,7 @@ def _fit(args, s, x, y, x_validate, y_validate):
             weights = None
         m = model(x, y, s.annot_matrix, m0=m0, weights=weights, stoch_samples=int(stoch_samples),
                   learning_rate=numpy.exp(log_learning_rate), minibatch_n=None,
-                  rho=rho, random_state=s.random)
+                  rho=rho, random_state=s.random, prior_mean_b=args.prior_mean_b)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
         m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
         return m
