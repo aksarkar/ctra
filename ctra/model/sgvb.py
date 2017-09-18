@@ -108,7 +108,7 @@ needed for specific likelihoods.
 
         # Variational surrogate for target hyperposterior
         # p(theta_j) = pi_j N(0, tau_j^-1) +
-        #              (1 - pi_j) N(0, (tau_j + delta)^-1)
+        #              (1 - pi_j) \delta
         # logit(pi_j) = A_j w + b
         self.q_w_mean = _S(_Z(m), name='q_w_mean')
         self.q_w_log_prec = _S(_Z(m), name='q_w_log_prec')
@@ -150,7 +150,7 @@ needed for specific likelihoods.
             else:
                 logger.debug('Setting hyperprior')
                 self.hyperprior_means = [numpy.array([prior_mean_b], dtype=_real), _Z(1)]
-            self.hyperprior_precs = [numpy.array([0.1], dtype=_real), _O(1)]
+            self.hyperprior_precs = [_O(1), _O(1)]
         else:
             self.hyperparam_means = [self.q_w_mean, self.q_v_mean]
             self.hyperparam_log_precs = [self.q_w_log_prec, self.q_v_log_prec]
