@@ -1,5 +1,5 @@
 gaussian-idealized-one-component: joblist
-	until pm joblist -l h_vmem=4G -q long -N gaussian-idealized-one-component; do \
+	until pm joblist -l h_vmem=32G -N gaussian-idealized-one-component; do \
 		bash $(HOME)/code/util/redo.sh gaussian-idealized-one-component.*.joblog >redo; \
 		rm -f *.joblog; \
 		mv redo joblist; \
