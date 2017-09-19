@@ -59,10 +59,10 @@ class SGVB:
 needed for specific likelihoods.
 
     """
-    def __init__(self, X_, y_, a_, m0=None, stoch_samples=50, learning_rate=0.1,
-                 minibatch_n=None, rho=0.9, weights=None,
+    def __init__(self, X_, y_, a_, m0=None, stoch_samples=50,
+                 learning_rate=0.1, minibatch_n=None, rho=0.9, weights=None,
                  hyperparam_means=None, hyperparam_log_precs=None,
-                 random_state=None, prior_mean_b=None):
+                 random_state=None, prior_mean_b=None, prior_mean_c=None):
         """Initialize the model
 
         X_ - n x p dosages
@@ -113,8 +113,6 @@ needed for specific likelihoods.
         self.q_w_mean = _S(_Z(m), name='q_w_mean')
         self.q_w_log_prec = _S(_Z(m), name='q_w_log_prec')
         self.q_b_mean = _S(_Z(1), name='q_b_mean')
-        if prior_mean_b is not None:
-            self.q_b_mean.set_value(numpy.array([prior_mean_b], dtype=_real))
         self.q_b_log_prec = _S(_Z(1), name='q_b_log_prec')
         # tau_j = eps + softplus(A_j v + c)
         self.min_prec = 1e-3
@@ -145,11 +143,12 @@ needed for specific likelihoods.
         if m0 is None:
             self.hyperparam_means = [self.q_b_mean, self.q_c_mean]
             self.hyperparam_log_precs = [self.q_b_log_prec, self.q_c_log_prec]
-            if prior_mean_b is None:
-                self.hyperprior_means = [numpy.array([-numpy.log(p)], dtype=_real), _Z(1)]
-            else:
-                logger.debug('Setting hyperprior')
-                self.hyperprior_means = [numpy.array([prior_mean_b], dtype=_real), _Z(1)]
+            # Default priors
+            self.hyperprior_means = [numpy.array([-numpy.log(p)], dtype=_real), _Z(1)]
+            if prior_mean_b is not None:
+                self.hyperprior_means[0] = numpy.array([prior_mean_b], dtype=_real)
+            if prior_mean_c is not None:
+                self.hyperprior_means[1] = numpy.array([prior_mean_c], dtype=_real)
             self.hyperprior_precs = [_O(1), _O(1)]
         else:
             self.hyperparam_means = [self.q_w_mean, self.q_v_mean]
@@ -326,6 +325,21 @@ needed for specific likelihoods.
         close()
         for p, v in zip(self.params, loc):
             p.set_value(numpy.array(v, dtype='float32'))
+
+    def plot_fdr(self, s):
+        false_pos = [(P, N) for N, (P, I) in
+                     enumerate(sorted(zip(self.pip, s.theta != 0), reverse=True))
+                     if not I]
+        fdr = numpy.array([(P, (I + 1) / N) for I, (P, N) in enumerate(fps)])
+        gcf()
+        clf()
+        plot(fdr)
+        axhline(intercept=0.05)
+        xlabel('PIP')
+        ylabel('FDR')
+        savefig('fdr.pdf')
+        close()
+
 
 class GaussianSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):

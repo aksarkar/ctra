@@ -8,6 +8,7 @@ from matplotlib.pyplot import *
 import numpy
 import pandas
 import scipy.special
+import scipy.stats
 
 switch_backend('pdf')
 
@@ -76,23 +77,37 @@ def plot_one_component(measure):
     savefig('plot')
     close()
 
+def density(data):
+    x = numpy.linspace(data.min(), data.max(), 200)
+    plot(x, scipy.stats.gaussian_kde(data).pdf(x))
+
 def plot_implied_priors():
     plt = matplotlib.pyplot
 
-    scale = 1 / (1e-3 + numpy.log1p(numpy.exp(numpy.random.normal(size=1000))))
     plt.clf()
-    plt.hist(scale, bins=100)
+    plt.gcf().set_size_inches(8, 4)
+    density(1 / (1e-3 + numpy.log1p(numpy.exp(numpy.random.normal(size=1000)))))
     plt.xlabel('Implied prior effect size variance')
-    plt.ylabel('Frequency')
-    plt.savefig('implied-prior-tau')
+    plt.ylabel('Density')
+    plt.gcf().set_tight_layout(True)
+    plt.savefig('implied-prior-c-0')
     plt.close()
 
-    logodds = scipy.special.expit(numpy.random.normal(loc=-numpy.log(1e5), size=1000))
     plt.clf()
-    plt.hist(logodds, bins=100)
+    plt.gcf().set_size_inches(8, 4)
+    density(1 / (1e-3 + numpy.log1p(numpy.exp(numpy.random.normal(loc=100, size=1000)))))
+    plt.xlabel('Implied prior effect size variance')
+    plt.ylabel('Density')
+    plt.gcf().set_tight_layout(True)
+    plt.savefig('implied-prior-c-100')
+
+    plt.clf()
+    plt.gcf().set_size_inches(8, 4)
+    density(scipy.special.expit(numpy.random.normal(loc=-numpy.log(1e5), size=1000)))
     plt.xlabel('Implied prior causal probability $\pi$')
-    plt.ylabel('Frequency')
-    plt.savefig('implied-prior-pi')
+    plt.ylabel('Density')
+    plt.gcf().set_tight_layout(True)
+    plt.savefig('implied-prior-b--log-p')
     plt.close()
 
 def plot_one_component_sample_size():
@@ -132,6 +147,27 @@ def plot_one_component_sample_size():
         a.set_title('{} {}'.format(model, title))
         a.set_xlabel('Sample size')
     plt.savefig('performance')
+    plt.close()
+
+def plot_one_component_hyperprior_means():
+    results = parse_results()
+    results['prior_mean_b'] = results['args'].apply(lambda x: x.prior_mean_b)
+    results['prior_mean_c'] = results['args'].apply(lambda x: x.prior_mean_c)
+    plt = matplotlib.pyplot
+    plt.clf()
+    ax = results.groupby('prior_mean_b').boxplot(
+        column='m0_b', by='prior_mean_c', grid=False, subplots=True,
+        figsize=(6, 8), return_type='axes')
+    fig = plt.gcf()
+    fig.texts = []
+    for _, a in ax.iteritems():
+        a = a['m0_b']
+        a.set_title('Prior mean $b$ = {}'.format(a.get_title()))
+        a.axhline(y=numpy.log(.1 / .9), color='red')
+        a.set_xlabel('Prior mean $c$')
+        a.set_ylabel('Posterior mean $b$')
+    fig.set_tight_layout(True)
+    plt.savefig('logodds')
     plt.close()
 
 def plot_two_component(measure):

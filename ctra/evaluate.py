@@ -67,6 +67,7 @@ def _parser():
     sim_args.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
 
     parser.add_argument('--prior-mean-b', type=float, default=None)
+    parser.add_argument('--prior-mean-c', type=float, default=None)
     parser.add_argument('--regularized', action='store_true', help='Fit regularized models', default=False)
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('--interact', action='store_true', help='Drop into interactive shell after fitting the model', default=False)
@@ -234,9 +235,12 @@ def _fit(args, s, x, y, x_validate, y_validate):
             weights[drop] = 0
         else:
             weights = None
-        m = model(x, y, s.annot_matrix, m0=m0, weights=weights, stoch_samples=int(stoch_samples),
+        m = model(x, y, s.annot_matrix, m0=m0, weights=weights,
+                  stoch_samples=int(stoch_samples),
                   learning_rate=numpy.exp(log_learning_rate), minibatch_n=None,
-                  rho=rho, random_state=s.random, prior_mean_b=args.prior_mean_b)
+                  rho=rho, random_state=s.random,
+                  prior_mean_b=args.prior_mean_b,
+                  prior_mean_c=args.prior_mean_c)
         # Multiply by 10 since we check ELBO, loss every 10 epochs
         m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
         return m

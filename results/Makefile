@@ -17,6 +17,7 @@ SUBDIRS := gaussian-idealized-one-component \
 	gaussian-realistic-EnhClusters \
 	gaussian-realistic-two-component \
 	gaussian-one-component-versus-sample-size \
+	gaussian-one-component-prior-means \
 
 .PHONY: $(SUBDIRS)
 
