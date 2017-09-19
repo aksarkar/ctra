@@ -76,6 +76,64 @@ def plot_one_component(measure):
     savefig('plot')
     close()
 
+def plot_implied_priors():
+    plt = matplotlib.pyplot
+
+    scale = 1 / (1e-3 + numpy.log1p(numpy.exp(numpy.random.normal(size=1000))))
+    plt.clf()
+    plt.hist(scale, bins=100)
+    plt.xlabel('Implied prior effect size variance')
+    plt.ylabel('Frequency')
+    plt.savefig('implied-prior-tau')
+    plt.close()
+
+    logodds = scipy.special.expit(numpy.random.normal(loc=-numpy.log(1e5), size=1000))
+    plt.clf()
+    plt.hist(logodds, bins=100)
+    plt.xlabel('Implied prior causal probability $\pi$')
+    plt.ylabel('Frequency')
+    plt.savefig('implied-prior-pi')
+    plt.close()
+
+def plot_one_component_sample_size():
+    results = parse_results()
+
+    results['n'] = results['args'].apply(lambda x: x.num_samples - x.validation)
+    results['scale'] = 1 / (1e-3 + numpy.log1p(numpy.exp(results['m0_c'].apply(pandas.Series))))
+
+    plt = matplotlib.pyplot
+    plt.clf()
+    results.boxplot(column='m0_b', by='n', grid=False)
+    plt.axhline(y=numpy.log(.1 / .9), color='red')
+    plt.gcf().texts = []
+    plt.gca().set_title('')
+    plt.xlabel('Sample size')
+    plt.ylabel('Posterior mean of causal log odds')
+    plt.savefig('logodds-by-sample-size')
+    plt.close()
+
+    plt.clf()
+    results.boxplot(column='scale', by='n', grid=False)
+    plt.axhline(y=1, color='red')
+    plt.gcf().texts = []
+    plt.gca().set_title('')
+    plt.xlabel('Sample size')
+    plt.ylabel('Posterior mean of effect size variance')
+    plt.savefig('scale-by-sample-size')
+    plt.close()
+
+    plt.clf()
+    ax = results.boxplot(column=['m0_training_set_score', 'm0_validation_set_score'], by='n', return_type='axes')
+    plt.gcf().texts = []
+    ax[0].set_ylabel('Coefficient of determination')
+    for a in ax:
+        title = ' '.join(a.get_title().split('_')[1:3]).capitalize()
+        model = '$m_{}$'.format(a.get_title().split('_')[0][-1])
+        a.set_title('{} {}'.format(model, title))
+        a.set_xlabel('Sample size')
+    plt.savefig('performance')
+    plt.close()
+
 def plot_two_component(measure):
     results = parse_results()
     plot_performance(results, measure)
