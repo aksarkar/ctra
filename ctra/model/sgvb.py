@@ -195,7 +195,7 @@ needed for specific likelihoods.
         # besides the GSS parameters/hyperparameters (biases, variances in
         # likelihood)
         phi_minibatch = (epoch + 1) % stoch_sample_batches
-        phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:1]
+        phi_raw = noise[phi_minibatch * stoch_samples:(phi_minibatch + 1) * stoch_samples,:len(hyperparam_means)]
 
         error = self._llik(self.y, eta, phi_raw)
         # Rasmussen and Williams, Eq. A.23, conditioning on q_z (alpha in our
@@ -229,7 +229,7 @@ needed for specific likelihoods.
         opt_outputs = [elbo, self.q_z, self.theta_posterior_mean, self.theta_posterior_var, self.q_w_mean, self.q_b_mean,
                        self.q_v_mean, self.q_c_mean]
         self.opt = _F(inputs=[], outputs=opt_outputs,
-                      givens=[(phi_raw, numpy.zeros((1, 1), dtype=_real)),
+                      givens=[(phi_raw, numpy.zeros((1, len(hyperparam_means)), dtype=_real)),
                               (eta_raw, numpy.zeros((1, n), dtype=_real)),
                               (self.X, self.X_),
                               (self.y, self.y_),
@@ -340,7 +340,6 @@ needed for specific likelihoods.
         savefig('fdr.pdf')
         close()
 
-
 class GaussianSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
         # This needs to be instantiated before building the rest of the Theano
@@ -390,4 +389,54 @@ class LogisticSGVB(SGVB):
 
         """
         F = y * eta - T.nnet.softplus(eta)
+        return T.mean(T.sum(F, axis=1))
+
+class VBSLMM(SGVB):
+    def __init__(self, X, y, a, **kwargs):
+        """Optimize the variational objective with respect to the BSLMM likelihood
+(Zhou et al PLoS Genet 2013), assuming the group spike and slab prior on the
+coefficients.
+
+        y \sim N(X \theta, \lambda_1^-1 K + \lambda_2^-1 I)
+
+        Use the FastLMM trick to simplify this:
+
+        X = U D V'
+        K = U D^2 U'
+        y \sim N(X \theta, U (\lambda_1^-1 D^2 + \lambda_2^-1 I) U')
+        U' y \sim N(U' X \theta, \lambda_1^-1 D^2 + \lambda_2^-1 I)
+
+        """
+        # This needs to be instantiated before building the rest of the Theano
+        # graph since self._llik refers to it
+        logger.debug('Computing SVD')
+        U, D, Vh = numpy.linalg.svd(X)
+        self.D_ = _S(D.astype(_real))
+
+        self.log_lambda1_mean = _S(_Z(1), name='log_lambda1_mean')
+        log_lambda1_log_prec = _S(_Z(1), name='log_lambda1_log_prec')
+        self.log_lambda1_prec = 1e-3 + T.nnet.softplus(log_lambda1_log_prec)
+
+        self.log_lambda2_mean = _S(_Z(1), name='log_lambda2_mean')
+        log_lambda2_log_prec = _S(_Z(1), name='log_lambda2_log_prec')
+        self.log_lambda2_prec = 1e-3 + T.nnet.softplus(log_lambda2_log_prec)
+
+        super().__init__(U.T.dot(X), U.T.dot(y), a,
+                         hyperparam_means=[self.log_lambda1_mean, self.log_lambda2_mean],
+                         hyperparam_log_precs=[log_lambda1_log_prec, log_lambda2_log_prec],
+                         **kwargs)
+
+        self.predict = _F(inputs=[self.X], outputs=self.eta_mean, allow_input_downcast=True)
+        # Coefficient of determination
+        R = 1 - T.sqr(self.y - self.eta_mean).sum() / T.sqr(self.y - self.y.mean()).sum()
+        self.score = _F(inputs=[self.X, self.y], outputs=R, allow_input_downcast=True)
+        self.loss = _F(inputs=[self.X, self.y], outputs=T.sqr(self.y - self.eta_mean).sum(), allow_input_downcast=True)
+
+    def _llik(self, y, eta, phi_raw):
+        phi1 = T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda1_mean + T.sqrt(1 / self.log_lambda1_prec) * phi_raw[:,:1]), 1)
+        phi2 = T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda2_mean + T.sqrt(1 / self.log_lambda2_prec) * phi_raw[:,1:]), 1)
+        # Careful: we need the precision for each individual, so we have to
+        # invert D
+        phi = phi1 * T.inv(T.sqr(self.D_)) + phi2
+        F = -.5 * (-T.log(phi) + T.sqr(y - eta) * phi)
         return T.mean(T.sum(F, axis=1))

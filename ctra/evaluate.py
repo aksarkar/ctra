@@ -39,7 +39,7 @@ def _parser():
     parser = argparse.ArgumentParser(description='Evaluate the model on synthetic data')
     req_args = parser.add_argument_group('Required arguments', '')
     req_args.add_argument('-a', '--annotation', type=Annotation, action='append', help="""Annotation parameters (num. causal, effect size var.) separated by ','. Repeat for additional annotations.""", default=[], required=True)
-    req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic'], help='Type of model to fit', required=True)
+    req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic', 'bslmm'], help='Type of model to fit', required=True)
     req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
     req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
     req_args.add_argument('-v', '--pve', type=float, help='Total proportion of variance explained', required=True)
@@ -88,7 +88,7 @@ def _validate(args):
         raise _A('Case prevalence must be in [0, 1]')
     if args.study_prop is not None and not 0 <= args.study_prop <= 1:
         raise _A('Case study proportion must be in [0, 1]')
-    if args.model != 'gaussian' and args.study_prop is None:
+    if args.model == 'logistic' and args.study_prop is None:
         args.study_prop = 0.5
         logger.warn('Assuming study prevalence 0.5')
     if args.prevalence is None and args.model == 'logistic':
@@ -161,18 +161,12 @@ def _load_data(args, s):
             s.estimate_mafs(x)
             y = s.compute_liabilities(x)
     else:
-        if args.model == 'gaussian':
-            x, y = s.sample_gaussian(n=args.num_samples)
-        else:
+        if args.model == 'logistic':
             x, y = s.sample_case_control(n=args.num_samples, K=args.prevalence, P=args.study_prop)
+        else:
+            x, y = s.sample_gaussian(n=args.num_samples)
     # Hold out samples
-    if args.model == 'gaussian':
-        # Assume samples are exchangeable
-        x_validate = x[-args.validation:]
-        y_validate = y[-args.validation:]
-        x = x[:-args.validation]
-        y = y[:-args.validation]
-    else:
+    if args.model == 'logistic':
         # Randomly subsample hold out set
         validation = numpy.zeros(args.num_samples, dtype='bool')
         hold_out = s.random.choice(args.num_samples, args.validation, replace=False)
@@ -183,9 +177,15 @@ def _load_data(args, s):
         perm = s.random.permutation(args.num_samples - args.validation)
         x = x[~mask][perm]
         y = y[~mask][perm]
+    else:
+        # Assume samples are exchangeable
+        x_validate = x[-args.validation:]
+        y_validate = y[-args.validation:]
+        x = x[:-args.validation]
+        y = y[:-args.validation]
     x -= x.mean(axis=0)
     x_validate -= x_validate.mean(axis=0)
-    if args.model == 'gaussian':
+    if args.model != 'logistic':
         y -= y.mean()
         y_validate -= y_validate.mean()
     return x, y, x_validate, y_validate
@@ -200,7 +200,7 @@ def _regularized(args, model, x, y, x_validate, y_validate, **kwargs):
               'validation_set_score': m.score(x_validate, y_validate)}
     logger.info('Training score = {:.3f}'.format(result['training_set_score']))
     logger.info('Validation score = {:.3f}'.format(result['validation_set_score']))
-    if args.model != 'gaussian':
+    if args.model == 'logistic':
         result['training_set_auprc'] = auprc(y, m.predict_proba(x)[:,1])
         result['validation_set_auprc'] = auprc(y_validate, m.predict_proba(x_validate)[:,1])
         logger.info('Training set AUPRC = {:.3f}'.format(result['training_set_auprc']))
@@ -212,18 +212,19 @@ def _fit(args, s, x, y, x_validate, y_validate):
               'simulation': s}
 
     if args.regularized:
-        if args.model == 'gaussian':
+        if args.model == 'logistic':
+            result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegressionCV, x, y,
+                                              x_validate, y_validate, penalty='l1', fit_intercept=True,
+                                              solver='liblinear')
+        else:
             result['lasso'] = _regularized(args, sklearn.linear_model.LassoCV, x, y, x_validate,
                                            y_validate)
             result['elastic_net'] = _regularized(args, sklearn.linear_model.ElasticNetCV, x, y, x_validate,
                                                  y_validate)
-        else:
-            result['logistic'] = _regularized(args, sklearn.linear_model.LogisticRegressionCV, x, y,
-                                              x_validate, y_validate, penalty='l1', fit_intercept=True,
-                                              solver='liblinear')
 
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
+             'bslmm': ctra.model.VBSLMM
     }[args.model]
 
     def fit(params, m0=None, drop=None):
@@ -245,7 +246,7 @@ def _fit(args, s, x, y, x_validate, y_validate):
         m.fit(max_epochs=10 * int(max_epochs), xv=x_validate, yv=y_validate)
         return m
 
-    opt = {'x_opt': [1, -2, 20, 0.7]}
+    opt = {'x_opt': [50, -2.5, 40, 0.9]}
     result.update(opt)
 
     logger.info('Fitting genome-wide model')
@@ -258,7 +259,7 @@ def _fit(args, s, x, y, x_validate, y_validate):
     result['m0_validation_set_score'] = numpy.asscalar(m0.score(x_validate, y_validate))
     logger.info('Training set score = {:.3f}'.format(result['m0_training_set_score']))
     logger.info('Validation set score = {:.3f}'.format(result['m0_validation_set_score']))
-    if args.model != 'gaussian':
+    if args.model == 'logistic':
         result['m0_training_set_auprc'] = auprc(y, m0.predict_proba(x))
         result['m0_validation_set_auprc'] = auprc(y_validate, m0.predict_proba(x_validate))
         logger.info('Training set AUPRC = {:.3f}'.format(result['m0_training_set_auprc']))
@@ -276,7 +277,7 @@ def _fit(args, s, x, y, x_validate, y_validate):
         result['m1_validation_set_score'] = numpy.asscalar(m1.score(x_validate, y_validate))
         logger.info('Training set score = {:.3f}'.format(result['m1_training_set_score']))
         logger.info('Validation set score = {:.3f}'.format(result['m1_validation_set_score']))
-        if args.model != 'gaussian':
+        if args.model == 'logistic':
             result['m1_training_auprc'] = auprc(y, m1.predict_proba(x))
             result['m1_validation_auprc'] = auprc(y_validate, m1.predict_proba(x_validate))
             logger.info('Training set AUPRC = {:.3f}'.format(result['m1_training_auprc']))
