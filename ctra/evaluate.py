@@ -227,18 +227,12 @@ def _fit(args, s, x, y, x_validate, y_validate):
              'bslmm': ctra.model.VBSLMM
     }[args.model]
 
-    def fit(params, m0=None, drop=None):
+    def fit(params, m0=None):
         params = numpy.array(params)
         stoch_samples, log_learning_rate, max_epochs, rho = params.astype('float32')
-        if drop is not None:
-            n = y.shape[0]
-            weights = numpy.ones(y.shape)
-            weights[drop] = 0
-        else:
-            weights = None
-        m = model(x, y, s.annot_matrix, m0=m0, weights=weights,
+        m = model(x, y, s.annot_matrix, m0=m0,
                   stoch_samples=int(stoch_samples),
-                  learning_rate=numpy.exp(log_learning_rate), minibatch_n=None,
+                  learning_rate=numpy.exp(log_learning_rate),
                   rho=rho, random_state=s.random,
                   prior_mean_b=args.prior_mean_b,
                   prior_mean_c=args.prior_mean_c)

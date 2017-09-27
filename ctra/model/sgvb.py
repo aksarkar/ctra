@@ -358,9 +358,11 @@ class GaussianSGVB(SGVB):
         self.loss = _F(inputs=[self.X, self.y], outputs=T.sqr(self.y - self.eta_mean).sum(), allow_input_downcast=True)
 
     def _llik(self, y, eta, phi_raw):
+        # [stoch_samples, 1]
         phi = T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda_mean + T.sqrt(1 / self.log_lambda_prec) * phi_raw), 1)
-        F = -.5 * (-T.log(phi) + T.sqr(y - eta) * phi)
-        return T.mean(T.sum(F, axis=1))
+        # [stoch_samples, n] * [n, 1]
+        F = -.5 * T.dot((-T.log(phi) + T.sqr(y - eta) * phi), self.w_)
+        return T.mean(F)
 
 class LogisticSGVB(SGVB):
     def __init__(self, X, y, a, **kwargs):
