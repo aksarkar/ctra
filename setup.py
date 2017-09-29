@@ -8,7 +8,7 @@ setuptools.setup(
     author='Abhishek Sarkar',
     author_email='aksarkar@mit.edu',
     license='MIT',
-    install_requires=['h5py', 'matplotlib', 'numpy', 'pandas', 'scipy', 'theano'],
+    install_requires=['h5py', 'matplotlib', 'numpy', 'pandas', 'scipy', 'sklearn', 'theano'],
     entry_points={
         'console_scripts': [
             'ctra-evaluate=ctra.evaluate:evaluate',
