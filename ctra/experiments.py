@@ -112,40 +112,38 @@ def plot_implied_priors():
 
 def plot_one_component_sample_size():
     results = parse_results()
-
     results['n'] = results['args'].apply(lambda x: x.num_samples - x.validation)
-    results['scale'] = 1 / (1e-3 + numpy.log1p(numpy.exp(results['m0_c'].apply(pandas.Series))))
+    results['p'] = results['simulation'].apply(lambda x: x.p)
 
     plt = matplotlib.pyplot
+    np = numpy
+
+    my_mean = pandas.DataFrame(pandas.DataFrame(results.groupby(['n', 'p'])['m0_b'].agg([np.mean, np.std])).to_records()).fillna(0)
     plt.clf()
-    results.boxplot(column='m0_b', by='n', grid=False)
-    plt.axhline(y=numpy.log(.1 / .9), color='red')
-    plt.gcf().texts = []
-    plt.gca().set_title('')
+    for k, g in pandas.DataFrame(pandas.DataFrame(my_mean).to_records()).groupby('p'):
+        g.plot(x='n', y='mean', yerr='std', kind='line', ax=plt.gca(), label=k)
+    plt.axhline(y=np.log(.1 / .9), color='black', linestyle='dashed')
     plt.xlabel('Sample size')
-    plt.ylabel('Posterior mean of causal log odds')
+    plt.ylabel('Posterior mean causal log odds')
+    plt.legend(loc='best', title='# Variants')
     plt.savefig('logodds-by-sample-size')
     plt.close()
 
+    my_perf = pandas.DataFrame(pandas.DataFrame(results.groupby(['n', 'p'])['m0_training_set_score', 'm0_validation_set_score'].agg([np.mean, np.std]).fillna(0)).to_records())
     plt.clf()
-    results.boxplot(column='scale', by='n', grid=False)
-    plt.axhline(y=1, color='red')
-    plt.gcf().texts = []
-    plt.gca().set_title('')
-    plt.xlabel('Sample size')
-    plt.ylabel('Posterior mean of effect size variance')
-    plt.savefig('scale-by-sample-size')
-    plt.close()
-
-    plt.clf()
-    ax = results.boxplot(column=['m0_training_set_score', 'm0_validation_set_score'], by='n', return_type='axes')
-    plt.gcf().texts = []
-    ax[0].set_ylabel('Coefficient of determination')
-    for a in ax:
-        title = ' '.join(a.get_title().split('_')[1:3]).capitalize()
-        model = '$m_{}$'.format(a.get_title().split('_')[0][-1])
+    fig, ax = plt.subplots(1, 2)
+    for k, a in zip(['m0_training_set_score', 'm0_validation_set_score'], ax):
+        for p, g in my_perf.groupby('p'):
+            g.plot(x='n', y="('{}', 'mean')".format(k), yerr="('{}', 'std')".format(k), ax=a, label=p)
+        a.axhline(y=.5, color='black', linestyle='dashed')
+        title = ' '.join(k.split('_')[1:3]).capitalize()
+        model = '$m_{}$'.format(k.split('_')[0][-1])
         a.set_title('{} {}'.format(model, title))
+        a.set_ylabel('Coefficient of determination')
         a.set_xlabel('Sample size')
+        a.legend(loc='best', title='# Variants')
+    fig.set_size_inches(8, 4)
+    fig.set_tight_layout(True)
     plt.savefig('performance')
     plt.close()
 
