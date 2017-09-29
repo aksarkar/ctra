@@ -223,17 +223,24 @@ needed for specific likelihoods.
                       self.y: self.y_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n],
                       self.w: self.w_[sample_minibatch * minibatch_n:(sample_minibatch + 1) * minibatch_n]}
         self.sgd_step = _F(inputs=[epoch], outputs=elbo, updates=sgd_updates, givens=sgd_givens)
+
         self._trace = _F(inputs=[epoch],
                          outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
                          self.variational_params, givens=sgd_givens)
         opt_outputs = [elbo, self.q_z, self.theta_posterior_mean, self.theta_posterior_var, self.q_w_mean, self.q_b_mean,
                        self.q_v_mean, self.q_c_mean]
-        self.opt = _F(inputs=[], outputs=opt_outputs,
-                      givens=[(phi_raw, numpy.zeros((1, len(hyperparam_means)), dtype=_real)),
-                              (eta_raw, numpy.zeros((1, n), dtype=_real)),
-                              (self.X, self.X_),
-                              (self.y, self.y_),
-                              (self.w, self.w_)])
+        opt_givens = [(phi_raw, numpy.zeros((1, len(hyperparam_means)), dtype=_real)),
+                      (eta_raw, numpy.zeros((1, n), dtype=_real)),
+                      (self.X, self.X_),
+                      (self.y, self.y_),
+                      (self.w, self.w_)]
+        self.opt = _F(inputs=[], outputs=opt_outputs, givens=opt_givens)
+
+        self._trace = _F(inputs=[epoch],
+                         outputs=[epoch, elbo, error, kl_qz_pz, kl_qtheta_ptheta, kl_hyper] +
+                         self.variational_params, givens=sgd_givens)
+        self._trace_stoch_grad = _F(inputs=[epoch], outputs=theano.grad(elbo, self.variational_params), givens=sgd_givens)
+        self._trace_full_grad = _F(inputs=[], outputs=theano.grad(elbo, self.variational_params), givens=opt_givens)
 
         logger.debug('Finished initializing')
 
@@ -258,9 +265,12 @@ needed for specific likelihoods.
         t = 0
         elbo_ = float('-inf')
         loss = float('inf')
+        self.grads = []
         while t < max_epochs * self.scale_n:
             t += 1
             elbo = self.sgd_step(epoch=t)
+            if not t % self.scale_n:
+                self.grads.append([self._trace_stoch_grad(t), self._trace_full_grad()])
             if not t % (10 * self.scale_n):
                 elbo_ = elbo
                 if elbo < elbo_:
