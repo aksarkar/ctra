@@ -7,7 +7,7 @@ gaussian-one-component-versus-sample-size: joblist
 	touch $@
 
 joblist:
-	parallel --dry-run $(EVALUATE) --write-result {#}.pkl -a 1000,1 -n {1} -p 10000 -v 0.5 -m gaussian -s {2} ::: 1000 5000 10000 50000 100000 ::: $$(seq 1 $(TRIALS)) >$@
+	parallel --dry-run $(EVALUATE) --write-result {#}.pkl -a {1},1 -n {2} -p {1}0 -v 0.5 -m gaussian -s {3} ::: 1000 2000 3000 4000 5000 ::: 5000 10000 50000 100000 ::: $$(seq 1 $(TRIALS)) >$@
 
 clean:
 	rm -f gaussian-one-component-versus-sample-size joblist gaussian-one-component-versus-sample-size.* *.pkl
