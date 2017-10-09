@@ -189,7 +189,7 @@ needed for specific likelihoods.
         eta_var = T.dot(T.sqr(self.X), self.theta_posterior_var)
         eta_minibatch = epoch % stoch_sample_batches
         eta_raw = noise[eta_minibatch * stoch_samples:(eta_minibatch + 1) * stoch_samples]
-        eta = self.w * (self.eta_mean + T.sqrt(eta_var) * eta_raw)
+        eta = self.eta_mean + T.sqrt(eta_var) * eta_raw
 
         # We need to generate independent noise samples for model parameters
         # besides the GSS parameters/hyperparameters (biases, variances in
@@ -371,7 +371,7 @@ class GaussianSGVB(SGVB):
         # [stoch_samples, 1]
         phi = T.addbroadcast(self.min_prec + T.nnet.softplus(self.log_lambda_mean + T.sqrt(1 / self.log_lambda_prec) * phi_raw), 1)
         # [stoch_samples, n] * [n, 1]
-        F = -.5 * T.dot((-T.log(phi) + T.sqr(y - eta) * phi), self.w_)
+        F = -.5 * T.dot((-T.log(phi) + T.sqr(y - eta) * phi), self.w)
         return T.mean(F)
 
 class LogisticSGVB(SGVB):
