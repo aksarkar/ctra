@@ -12,6 +12,7 @@ setuptools.setup(
     entry_points={
         'console_scripts': [
             'ctra-evaluate=ctra.evaluate:evaluate',
+            'ctra-fit=ctra.fit:main',
             'ctra-convert=ctra.convert:convert'
         ]
     }

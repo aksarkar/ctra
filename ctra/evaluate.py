@@ -175,8 +175,8 @@ def _load_data(args, s):
         y_validate = y[validation]
         # Permute the training set so minibatches are balanced in expectation
         perm = s.random.permutation(args.num_samples - args.validation)
-        x = x[~mask][perm]
-        y = y[~mask][perm]
+        x = x[~validation][perm]
+        y = y[~validation][perm]
     else:
         # Assume samples are exchangeable
         x_validate = x[-args.validation:]

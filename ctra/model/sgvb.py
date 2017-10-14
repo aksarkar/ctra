@@ -1,5 +1,4 @@
-"""Maximize evidence lower bound as proxy for marginal likelihood using
-Stochastic Gradient Variational Bayes
+"""Maximize evidence lower bound using Stochastic Gradient Variational Bayes
 
 Author: Abhishek Sarkar <aksarkar@mit.edu>
 
