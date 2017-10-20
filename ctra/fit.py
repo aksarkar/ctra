@@ -13,6 +13,7 @@ import sys
 
 import numpy as np
 import sklearn.metrics
+import sklearn.model_selection
 import pyplink
 
 import ctra
@@ -104,13 +105,15 @@ def _load_data(args):
             y = f.get_fam()[args.pheno].values[:args.num_samples] - 1
     # Hold out samples
     if args.model == 'logistic':
-        # Permute the data so minibatches/hold out are balanced in expectation
-        np.random.shuffle(x)
-    # Assume samples are exchangeable
-    x_validate = x[-args.validation:]
-    y_validate = y[-args.validation:]
-    x = x[:-args.validation]
-    y = y[:-args.validation]
+        x, x_validate, y, y_validate = sklearn.model_selection.train_test_split(
+            x, y, test_size=args.validation, stratify=y
+        )
+    else:
+        # Assume samples are exchangeable
+        x_validate = x[-args.validation:]
+        y_validate = y[-args.validation:]
+        x = x[:-args.validation]
+        y = y[:-args.validation]
 
     # Final pass of the data
     x -= x.mean(axis=0)
