@@ -5,8 +5,8 @@ import os
 import os.path
 
 from matplotlib.pyplot import *
-import numpy
-import pandas
+import numpy as np
+import pandas as pd
 import scipy.special
 import scipy.stats
 
@@ -24,10 +24,10 @@ def parse_results():
     results = []
     for f in files:
         with open(f, 'rb') as f:
-            results.append(pandas.Series(pickle.load(f)))
-    results = pandas.DataFrame(results)
+            results.append(pd.Series(pickle.load(f)))
+    results = pd.DataFrame(results)
     results['m0_b'] = [x[0] for x in results['m0_b']]
-    results['num_causal'] = [numpy.array([x[0] for x in a.annotation]) for a in results['args']]
+    results['num_causal'] = [np.array([x[0] for x in a.annotation]) for a in results['args']]
     results['true_b'] = [scipy.special.logit(r['num_causal'].sum() / r['args'].num_variants)
                          for _, r in results.iterrows()]
     return results
@@ -44,7 +44,7 @@ def plot_performance(results, measure):
     ax = results.boxplot(column=columns, by='true_b', grid=False, return_type='axes',
                          figsize=(3.5 * len(columns), 3), layout=(1, len(columns)))
     for a in ax:
-        # Remove pandas nonsense
+        # Remove pd nonsense
         a.get_figure().texts = []
         title = ' '.join(a.get_title().split('_')[1:3]).capitalize()
         model = '$m_{}$'.format(a.get_title().split('_')[0][-1])
@@ -78,7 +78,7 @@ def plot_one_component(measure):
     close()
 
 def density(data):
-    x = numpy.linspace(data.min(), data.max(), 200)
+    x = np.linspace(data.min(), data.max(), 200)
     plot(x, scipy.stats.gaussian_kde(data).pdf(x))
 
 def plot_implied_priors():
@@ -86,7 +86,7 @@ def plot_implied_priors():
 
     plt.clf()
     plt.gcf().set_size_inches(8, 4)
-    density(1 / (1e-3 + numpy.log1p(numpy.exp(numpy.random.normal(size=1000)))))
+    density(1 / (1e-3 + np.log1p(np.exp(np.random.normal(size=1000)))))
     plt.xlabel('Implied prior effect size variance')
     plt.ylabel('Density')
     plt.gcf().set_tight_layout(True)
@@ -95,7 +95,7 @@ def plot_implied_priors():
 
     plt.clf()
     plt.gcf().set_size_inches(8, 4)
-    density(1 / (1e-3 + numpy.log1p(numpy.exp(numpy.random.normal(loc=100, size=1000)))))
+    density(1 / (1e-3 + np.log1p(np.exp(np.random.normal(loc=100, size=1000)))))
     plt.xlabel('Implied prior effect size variance')
     plt.ylabel('Density')
     plt.gcf().set_tight_layout(True)
@@ -103,7 +103,7 @@ def plot_implied_priors():
 
     plt.clf()
     plt.gcf().set_size_inches(8, 4)
-    density(scipy.special.expit(numpy.random.normal(loc=-numpy.log(1e5), size=1000)))
+    density(scipy.special.expit(np.random.normal(loc=-np.log(1e5), size=1000)))
     plt.xlabel('Implied prior causal probability $\pi$')
     plt.ylabel('Density')
     plt.gcf().set_tight_layout(True)
@@ -116,11 +116,11 @@ def plot_one_component_sample_size():
     results['p'] = results['simulation'].apply(lambda x: x.p)
 
     plt = matplotlib.pyplot
-    np = numpy
+    np = np
 
-    my_mean = pandas.DataFrame(pandas.DataFrame(results.groupby(['n', 'p'])['m0_b'].agg([np.mean, np.std])).to_records()).fillna(0)
+    my_mean = pd.DataFrame(pd.DataFrame(results.groupby(['n', 'p'])['m0_b'].agg([np.mean, np.std])).to_records()).fillna(0)
     plt.clf()
-    for k, g in pandas.DataFrame(pandas.DataFrame(my_mean).to_records()).groupby('p'):
+    for k, g in pd.DataFrame(pd.DataFrame(my_mean).to_records()).groupby('p'):
         g.plot(x='n', y='mean', yerr='std', kind='line', ax=plt.gca(), label=k)
     plt.axhline(y=np.log(.1 / .9), color='black', linestyle='dashed')
     plt.xlabel('Sample size')
@@ -129,7 +129,7 @@ def plot_one_component_sample_size():
     plt.savefig('logodds-by-sample-size')
     plt.close()
 
-    my_perf = pandas.DataFrame(pandas.DataFrame(results.groupby(['n', 'p'])['m0_training_set_score', 'm0_validation_set_score'].agg([np.mean, np.std]).fillna(0)).to_records())
+    my_perf = pd.DataFrame(pd.DataFrame(results.groupby(['n', 'p'])['m0_training_set_score', 'm0_validation_set_score'].agg([np.mean, np.std]).fillna(0)).to_records())
     plt.clf()
     fig, ax = plt.subplots(1, 2)
     for k, a in zip(['m0_training_set_score', 'm0_validation_set_score'], ax):
@@ -161,7 +161,7 @@ def plot_one_component_hyperprior_means():
     for _, a in ax.iteritems():
         a = a['m0_b']
         a.set_title('Prior mean $b$ = {}'.format(a.get_title()))
-        a.axhline(y=numpy.log(.1 / .9), color='red')
+        a.axhline(y=np.log(.1 / .9), color='red')
         a.set_xlabel('Prior mean $c$')
         a.set_ylabel('Posterior mean $b$')
     fig.set_tight_layout(True)
@@ -177,7 +177,7 @@ def plot_two_component(measure):
     fig.set_size_inches(12, 6)
     for row, facet in zip(ax, [~equal_prop, equal_prop]):
         for i, (k, g) in enumerate(results[facet].groupby('true_b')):
-            row[2 * i].boxplot(numpy.array(g['m1_w'].apply(pandas.Series)))
+            row[2 * i].boxplot(np.array(g['m1_w'].apply(pd.Series)))
             row[2 * i].axhline(y=0, color='black')
             expected_log_odds_ratio = (k - g['m0_b']).mean()
             row[2 * i].axhline(y=expected_log_odds_ratio, color='red')
@@ -186,7 +186,7 @@ def plot_two_component(measure):
             row[2 * i].set_xticklabels([0, 1])
             row[2 * i].set_title('Causal log odds={:.3f}'.format(k))
 
-            row[2 * i + 1].boxplot(numpy.array(g['m1_v'].apply(pandas.Series)))
+            row[2 * i + 1].boxplot(np.array(g['m1_v'].apply(pd.Series)))
             row[2 * i + 1].axhline(y=0, color='black')
             row[2 * i + 1].set_ylabel('Logit change in precision')
             row[2 * i + 1].set_xlabel('Annotation')
@@ -207,15 +207,15 @@ def _scalar_softplus(x):
     elif x > 30.0:
         return x
     else:
-        return numpy.log1p(numpy.exp(x))
+        return np.log1p(np.exp(x))
 
-_softplus = numpy.vectorize(_scalar_softplus)
+_softplus = np.vectorize(_scalar_softplus)
 
 def plot_synthetic_annotations():
     results = parse_results()
     plot_performance(results, 'score')
 
-    m1_w = results['m1_w'].apply(pandas.Series)
+    m1_w = results['m1_w'].apply(pd.Series)
     annotations = list(m1_w.columns)
     m1_w['m0_b'] = results['m0_b']
     m1_w['true_b'] = results['true_b']
@@ -226,14 +226,14 @@ def plot_synthetic_annotations():
     keys = []
     for a, (k, g) in zip(ax.flatten(), m1_w.groupby(['true_b', 'annotation'])):
         keys.append(k)
-        a.boxplot(numpy.array(g[annotations]))
+        a.boxplot(np.array(g[annotations]))
         a.axhline(y=0, color='black')
         expected_log_odds_ratio = (k[0] - g['m0_b']).mean()
         a.axhline(y=expected_log_odds_ratio, color='red')
         a.set_xticklabels([0, 1])
-        null_log_odds_ratio = (-numpy.log(results.loc[0, 'simulation'].p) - g['m0_b']).mean()
+        null_log_odds_ratio = (-np.log(results.loc[0, 'simulation'].p) - g['m0_b']).mean()
         a.axhline(y=null_log_odds_ratio, color='red', linestyle='dashed')
-    keys = numpy.array(keys).reshape(3, 2, 2)
+    keys = np.array(keys).reshape(3, 2, 2)
     for row, logodds in zip(ax, keys[:,0,0]):
         row[0].set_ylabel('Log odds ratio')
         row[1].set_ylabel('Causal log odds={:.3f}'.format(float(logodds)))
@@ -250,7 +250,7 @@ def plot_real_annotations():
     results = parse_results()
     plot_performance(results, 'score')
 
-    m1_w = results['m1_w'].apply(pandas.Series)
+    m1_w = results['m1_w'].apply(pd.Series)
     annotations = list(m1_w.columns)
     m1_w['m0_b'] = results['m0_b']
     m1_w['true_b'] = results['true_b']
@@ -271,7 +271,7 @@ def plot_real_annotations():
     savefig('log-odds')
     close()
 
-    m1_scale = 1 / (results['m0_c'] + results['m1_v']).apply(pandas.Series).apply(_softplus)
+    m1_scale = 1 / (results['m0_c'] + results['m1_v']).apply(pd.Series).apply(_softplus)
 
     fig = gcf()
     clf()
