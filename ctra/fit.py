@@ -33,6 +33,7 @@ def _parser():
     parser.add_argument('-A', '--annotation-matrix', help='Annotation matrix')
     parser.add_argument('-l', '--log-level', choices=['INFO', 'DEBUG'], help='Log level', default='INFO')
     parser.add_argument('-o', '--output', help='Output file for pickled result', default=None)
+    parser.add_argument('-s', '--seed', type=int, help='Random seed', default=0)
     return parser
 
 def _validate(args):
@@ -46,15 +47,6 @@ def _validate(args):
 
 def _load_data(args):
     result = {}
-
-    if args.annotation_matrix is not None:
-        logger.debug('Loading annotation matrix')
-        with gzip.open(args.annotation_matrix, 'rt') as f:
-            result['a'] = np.loadtxt(f).astype('int8')
-        if a.shape[0] != args.num_variants:
-            raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
-    else:
-        result['a'] = np.ones((args.num_variants, 1))
 
     with pyplink.PyPlink(args.load_plink) as f:
         if args.num_samples is None:
@@ -76,6 +68,16 @@ def _load_data(args):
         # Mask missing genotypes before centering
         x = np.ma.masked_equal(x, -1)
         y = f.get_fam()[args.pheno].values[:args.num_samples] - 1
+
+    if args.annotation_matrix is not None:
+        logger.debug('Loading annotation matrix')
+        with gzip.open(args.annotation_matrix, 'rt') as f:
+            result['a'] = np.loadtxt(f).astype('int8')
+        if a.shape[0] != args.num_variants:
+            raise _A('{} variants present in annotations file, but {} specified'.format(a.shape[0], args.num_variants))
+    else:
+        result['a'] = np.ones((args.num_variants, 1))
+
     # Hold out samples
     if args.model == 'logistic':
         x, x_validate, y, y_validate = sklearn.model_selection.train_test_split(
@@ -115,7 +117,7 @@ class ModelFit(dict):
     def __repr__(self):
         return '\n'.join(['{} = {:.3f}'.format(k, v) for k, v in self.items()])
 
-def _fit(args, x, y, x_validate, y_validate, a):
+def _fit(args, random, x, y, x_validate, y_validate, a):
     result = {'args': args}
     model = {'gaussian': ctra.model.GaussianSGVB,
              'logistic': ctra.model.LogisticSGVB,
@@ -128,7 +130,7 @@ def _fit(args, x, y, x_validate, y_validate, a):
         else:
             result = ModelFit('m1')
         m = model(x, y, a, m0=m0, weights=weights, stoch_samples=50,
-                  learning_rate=0.1, rho=0.9)
+                  learning_rate=0.1, rho=0.9, random_state=random)
         m.fit(max_epochs=400, xv=x_validate, yv=y_validate)
         result['theta'] = m.theta
         result['pip'] = m.pip
@@ -143,7 +145,7 @@ def _fit(args, x, y, x_validate, y_validate, a):
         return m, result
 
     if args.bootstrap:
-        weights = np.random.multinomial(args.num_samples, [1 / args.num_samples] * args.num_samples)
+        weights = random.multinomial(args.num_samples, [1 / args.num_samples] * args.num_samples)
     else:
         weights = None
 
@@ -165,10 +167,10 @@ def _fit(args, x, y, x_validate, y_validate, a):
 def main():
     args = _parser().parse_args()
     _validate(args)
+    random = np.random.RandomState(args.seed)
     logging.getLogger('ctra').setLevel(args.log_level)
-    args.num_samples += args.validation
     data = _load_data(args)
-    _fit(args, **data)
+    _fit(args=args, random=random, **data)
 
 if __name__ == '__main__':
     main()
