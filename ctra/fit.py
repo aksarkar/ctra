@@ -23,17 +23,11 @@ _A = argparse.ArgumentTypeError
 
 def _parser():
     parser = argparse.ArgumentParser(description='Fit the model')
-    req_args = parser.add_argument_group('Required arguments', '')
-    req_args.add_argument('-m', '--model', choices=['gaussian', 'logistic', 'bslmm'], help='Type of model to fit', required=True)
-    req_args.add_argument('-n', '--num-samples', type=int, help='Number of samples', required=True)
-    req_args.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', required=True)
-    req_args.add_argument('-v', '--validation', type=int, help='Hold out validation set size', required=True)
-
-    input_args = parser.add_mutually_exclusive_group()
-    input_args.add_argument('-P', '--load-plink', help='Plink data set (prefix)', default=None)
-    input_args.add_argument('-G', '--load-oxstats', nargs='+', help='OXSTATS data sets (.sample, .gen.gz)', default=None)
-    input_args.add_argument('-H', '--load-hdf5', help='HDF5 data set', default=None)
-
+    parser.add_argument('-P', '--load-plink', metavar='PREFIX', help='Plink binary data set (prefix)', default=None)
+    parser.add_argument('-m', '--model', choices=['gaussian', 'logistic', 'bslmm'], help='Type of model to fit', required=True)
+    parser.add_argument('-v', '--validation', type=int, help='Hold out validation set size', default=1000)
+    parser.add_argument('-n', '--num-samples', type=int, help='Number of samples', default=None)
+    parser.add_argument('-p', '--num-variants', type=int, help='Number of genetic variants', default=None)
     parser.add_argument('--pheno', help='Phenotype column name', default='pheno')
     parser.add_argument('-b', '--bootstrap', action='store_true', help='Bootstrap the samples', default=False)
     parser.add_argument('-A', '--annotation-matrix', help='Annotation matrix')
@@ -43,9 +37,9 @@ def _parser():
 
 def _validate(args):
     """Validate command line arguments"""
-    if args.num_samples <= 0:
+    if args.num_samples is not None and args.num_samples <= 0:
         raise _A('Number of samples must be positive')
-    if args.num_variants <= 0:
+    if args.num_samples is not None and args.num_variants <= 0:
         raise _A('Number of variants must be positive')
     if args.validation <= 0:
         raise _A('Number of held-out samples must be positive')
@@ -62,47 +56,26 @@ def _load_data(args):
     else:
         result['a'] = np.ones((args.num_variants, 1))
 
-    if args.load_oxstats:
-        logger.debug('Loading OXSTATS datasets')
-        with contextlib.ExitStack() as stack:
-            data = [stack.enter_context(ctra.formats.oxstats_genotypes(*a))
-                    for a in ctra.algorithms.kwise(args.load_oxstats, 2)]
-            samples = list(itertools.chain.from_iterable(s for _, _, s, _ in data))
-            merged = ctra.formats.merge_oxstats([d for _, _, _, d in data])
-            probs = ([float(x) for x in row[5:]] for row in merged)
-            if args.num_samples > len(samples):
-                logger.error('{} individuals present in OXSTATS data, but {} were specified'.format(len(samples), args.num_samples))
-                sys.exit(1)
-            x = np.array(list(itertools.islice(probs, args.num_variants)))
-        p, n = x.shape
-        if p < args.num_variants:
-            logger.error('{} variants present in OXSTATS data, but {} were specified'.format(p, args.num_variants))
+    with pyplink.PyPlink(args.load_plink) as f:
+        if args.num_samples is None:
+            args.num_samples = f.get_nb_samples()
+        elif args.num_samples > f.get_nb_samples():
+            logger.error('{} individuals present in Plink data, but {} were specified'.format(f.get_nb_samples(), args.num_samples))
             sys.exit(1)
-        n = n // 3
-        x = (x.reshape(p, -1, 3) * np.array([0, 1, 2])).sum(axis=2).T[:n,:]
-        raise NotImplementedError("Load y")
-    elif args.load_hdf5:
-        with h5py.File(args.load_hdf5) as f:
-            logger.debug('Loading HDF5 dataset')
-            x = f['dosage'][:args.num_samples, :args.num_variants]
-        raise NotImplementedError("Load y")
-    elif args.load_plink:
-        with pyplink.PyPlink(args.load_plink) as f:
-            if args.num_samples > f.get_nb_samples():
-                logger.error('{} individuals present in Plink data, but {} were specified'.format(f.get_nb_samples(), args.num_samples))
-                sys.exit(1)
-            if args.num_variants > f.get_nb_markers():
-                logger.error('{} variants present in Plink data, but {} were specified'.format(f.get_nb_markers(), args.num_variants))
-                sys.exit(1)
-            logger.debug('Loading Plink dataset')
-            x = np.zeros((args.num_samples, args.num_variants), dtype='float32')
-            for i, (_, geno) in enumerate(f):
-                if i >= args.num_variants:
-                    break
-                x[:,i] = geno[:args.num_samples].astype('float32')
-            # Mask missing genotypes before centering
-            x = np.ma.masked_equal(x, -1)
-            y = f.get_fam()[args.pheno].values[:args.num_samples] - 1
+        if args.num_variants is None:
+            args.num_variants = f.get_nb_markers()
+        elif args.num_variants > f.get_nb_markers():
+            logger.error('{} variants present in Plink data, but {} were specified'.format(f.get_nb_markers(), args.num_variants))
+            sys.exit(1)
+        logger.debug('Loading Plink dataset')
+        x = np.zeros((args.num_samples, args.num_variants), dtype='float32')
+        for i, (_, geno) in enumerate(f):
+            if i >= args.num_variants:
+                break
+            x[:,i] = geno[:args.num_samples].astype('float32')
+        # Mask missing genotypes before centering
+        x = np.ma.masked_equal(x, -1)
+        y = f.get_fam()[args.pheno].values[:args.num_samples] - 1
     # Hold out samples
     if args.model == 'logistic':
         x, x_validate, y, y_validate = sklearn.model_selection.train_test_split(
