@@ -7,14 +7,7 @@ presented in:
 Sarkar, Park, Kellis, "Contrasting regulatory architectures of complex traits".
 
 * Installation
-
-#+BEGIN_SRC sh
-pip install git://github.mit.edu/aksarkar/ctra
-#+END_SRC
-
-* Dependencies
-  - Python > 3
-  - numpy
-  - scipy
-  - Theano
-  - nvcc (optional)
+  
+  #+BEGIN_SRC sh
+    pip install "git+https://www.github.com/aksarkar/ctra#egg=ctra"
+  #+END_SRC
